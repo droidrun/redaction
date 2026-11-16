@@ -53,6 +53,23 @@ describe('positive fixtures — one per rule family', () => {
         expect(text).not.toContain('S0mmer2026!xTr0ub4dor');
     });
 
+    test('leading BOM preserves input-relative redaction ranges', async () => {
+        const { text, hits } = await redactText('\ufeffpassword: S0mmer2026!xTr0ub4dor');
+        expect(text).toBe('\ufeffpassword: [REDACTED:generic-keyword:4dor]');
+        expect(hits).toHaveLength(1);
+    });
+
+    test('BOM at the second scan window start preserves redaction ranges', async () => {
+        const secret = 'password: S0mmer2026!xTr0ub4dor';
+        const filler = 'a '.repeat(60_000);
+        const input = filler.slice(0, 89_760) + '\ufeff' + filler.slice(89_761, 105_000) +
+            secret + filler.slice(105_000 + secret.length);
+        const { text } = await redactText(input);
+        expect(text).toContain('password: [REDACTED:generic-keyword:4dor]');
+        expect(text).not.toContain('S0mmer2026');
+        expect(text).not.toContain(']r');
+    });
+
     test('generic keyword+value: snake_case label (session_token) — identifier-aware match', async () => {
         const { text } = await redactText('session_token: aB3xK9mQ2pL7wZ4v');
         expect(text).not.toContain('aB3xK9mQ2pL7wZ4v');

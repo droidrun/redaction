@@ -86,6 +86,8 @@ shorter matches become `[REDACTED:<rule>]`. Rule names omit the
 merge into one span, keeping the first rule's name. The final four characters
 of longer matches remain visible by design.
 
+Leading byte order marks (BOMs), including at scan-window starts, preserve correct redaction ranges.
+
 Known gaps:
 
 - Secrets split across different string leaves are not reassembled or detected.

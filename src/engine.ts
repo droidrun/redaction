@@ -49,6 +49,7 @@ function supportsText({ rule }: SecretLintCoreConfigRule): boolean {
 /** Unconditional scan. The caller owns windowing and fail-open handling. */
 export async function scanText(content: string): Promise<EngineHit[]> {
     const hasBOM = content.charCodeAt(0) === 0xfeff;
+    const bomOffset = hasBOM ? 1 : 0;
     // Like core, strip the BOM before the rules run. The fixed scanner list
     // never uses the source-location methods on SecretLintSourceCode.
     const source = {
@@ -80,5 +81,6 @@ export async function scanText(content: string): Promise<EngineHit[]> {
         // All configured rules use its default "error" severity.
         .filter((report, index) => !visible.slice(index + 1).some((other) => isDuplicate(report, other)))
         .sort((a, b) => a.range[0] - b.range[0] || a.range[1] - b.range[1])
-        .map(({ ruleId, range }) => ({ ruleId, range }));
+        // Unlike core, return ranges relative to the caller's input, including its BOM.
+        .map(({ ruleId, range }) => ({ ruleId, range: [range[0] + bomOffset, range[1] + bomOffset] }));
 }
