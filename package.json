@@ -1,0 +1,42 @@
+{
+  "name": "@droidrun/redaction",
+  "version": "0.1.0",
+  "description": "Secret detection and redaction for text and JSON values",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/droidrun/redaction.git"
+  },
+  "packageManager": "pnpm@10.18.1",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@secretlint/secretlint-rule-preset-recommend": "13.0.4",
+    "@secretlint/types": "13.0.4"
+  },
+  "devDependencies": {
+    "@secretlint/core": "13.0.4",
+    "@types/bun": "1.4.3",
+    "typescript": "6.0.3"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
