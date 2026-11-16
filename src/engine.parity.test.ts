@@ -33,7 +33,7 @@ const awsSecret = 'wJalrXUtnFEMIK7MDENGbPxRfiCYzzzzKEY9xxx1';
 const fake1Password = 'ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFB' +
     'QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==';
 
-type PositiveCase = [label: string, input: string, expectedRuleIds: string[]];
+type PositiveCase = [label: string, input: string, expectedRuleIds: string[], rangeOffset?: number];
 const positives: PositiveCase[] = [
     ['AWS ID', 'creds: AKIAQR7ZKT4MW2PLX9BD', ['@secretlint/secretlint-rule-aws']],
     ['AWS secret and overlapping rules', `AWS_SECRET_ACCESS_KEY=${awsSecret}`, [
@@ -79,7 +79,8 @@ const positives: PositiveCase[] = [
     ['100k boundary', 'w'.repeat(99_960) + ' apiKey=Vr8tGq3mXpL6bWc9zNe2sYh5fKd1uAoI', [
         'mobilerun-redaction/generic-keyword',
     ]],
-    ['BOM', '\ufeffpassword: S0mmer2026!xTr0ub4dor', ['mobilerun-redaction/generic-keyword']],
+    // Deliberate deviation: our BOM ranges refer to the original input; core strips its BOM.
+    ['BOM', '\ufeffpassword: S0mmer2026!xTr0ub4dor', ['mobilerun-redaction/generic-keyword'], 1],
     ['Slack', 'xoxb-111111111111-222222222222-fakefixture', ['@secretlint/secretlint-rule-slack']],
     ['npm', `npm_${'A'.repeat(36)}`, ['@secretlint/secretlint-rule-npm']],
     ['Anthropic', `sk-ant-api03-${'A'.repeat(93)}AA`, ['@secretlint/secretlint-rule-anthropic']],
@@ -105,14 +106,16 @@ const negatives: [string, string][] = [
 ];
 
 describe('runner parity against the original core configuration', () => {
-    test.each(positives)('%s', async (_label, content, expectedRuleIds) => {
+    test.each(positives)('%s', async (_label, content, expectedRuleIds, rangeOffset = 0) => {
         const expected = await lintSource({
             source: { filePath: 'message.txt', content, ext: '.txt', contentType: 'text' },
             options: { config: { rules } },
         });
         const actual = await scanText(content);
         expect(actual.map(({ ruleId }) => ruleId)).toEqual(expectedRuleIds);
-        expect(actual).toEqual(expected.messages.map(({ ruleId, range }) => ({ ruleId, range })));
+        expect(actual).toEqual(expected.messages.map(({ ruleId, range }) => ({
+            ruleId, range: [range[0] + rangeOffset, range[1] + rangeOffset],
+        })));
     });
 
     test.each(negatives)('%s', async (_label, content) => {
