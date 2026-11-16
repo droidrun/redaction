@@ -1,11 +1,7 @@
 /**
- * redact-text.ts — W1 core: `detectSecrets` (length-guarded secretlint scan)
- * and `redactText` (detect + replace, fail-open, always on).
- *
- * `redactText` is the ONE function every other redaction entry point
- * (`redact-value.ts`, `parts.ts`, and the direct auto-title/handoff/
- * bug-report call sites) composes on top of — so its fail-open guarantee
- * ("never throws, never persists nothing") is inherited by all of them.
+ * Text secret detection and replacement. `redactText` is the shared entry
+ * point for plain text and the JSON-value visitor. Detector failures return
+ * the original text and no hits; consumers never lose data to a scan failure.
  */
 import { scanText, type EngineHit } from './engine.js';
 import { buildPlaceholder } from './placeholder.js';
@@ -157,12 +153,15 @@ export type RedactTextOpts = {
      *  test only. */
     detect?: (text: string) => Promise<Hit[]>;
     /** Receives safe scan metadata. Callback failures cannot interrupt redaction. */
-    onEvent?: (name: string, attrs: Record<string, unknown>) => void;
+    onEvent?: (name: string, attrs: Record<string, unknown>) => void | Promise<void>;
 };
 
 function emitEvent(opts: RedactTextOpts, name: string, attrs: Record<string, unknown>): void {
     try {
-        opts.onEvent?.(name, attrs);
+        const pending = opts.onEvent?.(name, attrs);
+        if (pending) {
+            void Promise.resolve(pending).catch(() => {});
+        }
     } catch {
         // Observability must never break the fail-open contract.
     }
@@ -170,7 +169,7 @@ function emitEvent(opts: RedactTextOpts, name: string, attrs: Record<string, unk
 
 /**
  * Detect + replace. NEVER THROWS: a detector failure logs a warning (with NO
- * exception-message passthrough — `errAttrs`'s `error.message` could itself
+ * exception-message passthrough — an exception's `message` could itself
  * echo a slice of the very input that broke the regex engine, which would
  * turn the failure-logging path into a secret-logging path) and returns the
  * ORIGINAL text unredacted rather than losing the caller's data. Warnings
@@ -185,7 +184,7 @@ export async function redactText(
         if (hits.length === 0) return { text, hits: [] };
         return { text: applyRedactions(text, hits), hits };
     } catch (err) {
-        // Deliberately NOT errAttrs(err) / err.message — see doc comment above.
+        // Deliberately omit err.message — see doc comment above.
         emitEvent(opts, 'redaction.detect.failed', {
             errorName: err instanceof Error ? err.constructor.name : typeof err,
         });

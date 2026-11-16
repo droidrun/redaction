@@ -1,70 +1,30 @@
 /**
- * redact-value.ts — generic recursive JSON-value redaction, shared by the
- * contract-aware parts visitor (`parts.ts`) and any plain-JSON callers (bug
- * report `context`).
+ * Generic recursive JSON-value redaction.
  *
  * Two rules, applied at every depth:
  *
- *   1. Structural skip-list: keys that are identifiers/enums per the
- *      `@droidrun/agent-stream-contract` part schemas (`type`, `id`,
- *      `toolCallId`, `state`, `toolName`, `questionId`, attachment
- *      `fileId`/`mimeType`/`filename`/`url`, ...) are never scanned OR
- *      force-redacted — a UUID or enum value coincidentally tripping the
- *      generic-keyword entropy check must never corrupt an id the FE/DB
- *      joins on.
- *   2. Key-context rule: a STRING value reached through a credential-
- *      suspicious key (`password`, `secret`, `token`, `apiKey`,
- *      `AWS_SECRET_ACCESS_KEY`, ...) is force-redacted even if the value
- *      alone wouldn't trip any secretlint rule (e.g. a short, low-entropy
- *      password) — the key name itself is the evidence. The key is never
- *      touched, only the value.
+ *   1. Structural skip keys are never scanned or force-redacted, preserving
+ *      identifiers byte-for-byte. The minimal default is `type` and `id`;
+ *      consumers replace it with their own set through `opts.skipKeys`.
+ *   2. A nonempty STRING value reached through a credential-suspicious key
+ *      (`password`, `secret`, `token`, `apiKey`, `AWS_SECRET_ACCESS_KEY`, ...)
+ *      is force-redacted even if the value alone would not trip a scanner
+ *      (for example, a short, low-entropy password). The key is never touched.
  *
- * Neither rule is a shortcut around the other: a key can be BOTH
- * non-structural and non-suspicious, in which case the value still goes
- * through the normal `redactText` detector pass.
+ * Other string values go through the normal `redactText` detector pass.
  *
- * KNOWN TRADE-OFFS (disclosed, not fixed by this wave):
- *   - Each STRING leaf is scanned independently. A secret that happens to be
- *     SPLIT across two sibling leaves (e.g. one JSON field holds the first
- *     half of a key, another holds the second half) is not reassembled and
- *     therefore not detected — this walk has no cross-leaf lookback/lookahead.
- *   - `STRUCTURAL_SKIP_KEYS` fields (url, filename, etc.) are never scanned
- *     OR force-redacted, even if their string value happens to embed
- *     something secret-shaped (e.g. a token baked into a query string) —
- *     intentional, to keep FE/DB join keys byte-stable.
+ * KNOWN TRADE-OFFS:
+ *   - Each STRING leaf is scanned independently. Secrets split across
+ *     sibling leaves are not reassembled and therefore may not be detected.
+ *   - Skip-key fields are never scanned or force-redacted, even if they
+ *     contain secret-shaped content. Consumers choose which values must
+ *     remain byte-stable by supplying their own skip set.
  */
 import { redactText, type Hit, type RedactTextOpts } from './redact-text.js';
 import { buildPlaceholder } from './placeholder.js';
 
-// Derived from @droidrun/agent-stream-contract/src/parts.ts: identifiers,
-// enums, and attachment display fields that must survive byte-for-byte for
-// the FE/DB to keep working (reconciliation keys, joins, enum unions).
-export const STRUCTURAL_SKIP_KEYS = new Set([
-    'type',
-    'id',
-    'toolCallId',
-    'state',
-    'toolName',
-    'questionId',
-    'questionID',
-    'fileId',
-    'mimeType',
-    'filename',
-    'url',
-    'status',
-    'errorClass',
-    'deviceId',
-    'verb',
-    'buildId',
-    'phase',
-    'slug',
-    'agentName',
-    'messageId',
-    'eventType',
-    // Charset-validated avatar identifier, never credential content.
-    'avatarSeed',
-    'code',
-]);
+/** minimal default; consumers pass their own structural keys via `opts.skipKeys` */
+export const STRUCTURAL_SKIP_KEYS: ReadonlySet<string> = new Set(['type', 'id']);
 
 export const CREDENTIAL_KEY_RE = new RegExp(
     'password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|' +

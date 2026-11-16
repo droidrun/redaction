@@ -4,6 +4,8 @@
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { detectSecrets, redactText } from './redact-text.js';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 describe('positive fixtures — one per rule family', () => {
     test('AWS: Access Key ID (needs enableIDScanRule — spike-verified default is OFF ' +
@@ -357,7 +359,7 @@ bUYm3BPmcU25IA5I3TuFELVEQm3dwFnr52EgbIAl8ov82Xs5FsNeVJTkvSsJwkA0
 
 describe('fail-open: detector exceptions never throw, never leak the exception message into logs', () => {
     test('a throwing detector: redactText returns the ORIGINAL text unredacted ' +
-        'rather than losing the row', async () => {
+        'rather than losing data', async () => {
         const throwingDetect = async (): Promise<never> => {
             throw new Error('regex engine choked on: sk-supersecretvalue123456');
         };
@@ -392,6 +394,49 @@ describe('fail-open: detector exceptions never throw, never leak the exception m
         expect(text).toBe('some message text');
         expect(hits).toEqual([]);
     });
+
+    test('an event callback failure cannot break detector fail-open', async () => {
+        const result = await redactText('some message text', {
+            detect: async () => {
+                throw new Error('detector failed');
+            },
+            onEvent: () => {
+                throw new Error('telemetry failed');
+            },
+        });
+        expect(result).toEqual({ text: 'some message text', hits: [] });
+    });
+
+    test('an async event callback rejection cannot escape detector fail-open', () => {
+        const result = spawnSync(process.execPath, ['--eval', `
+            import { strict as assert } from 'node:assert';
+            const { redactText } = await import('./src/index.ts');
+            let unhandledRejections = 0;
+            process.on('unhandledRejection', () => {
+                unhandledRejections++;
+            });
+            const events = [];
+            const result = await redactText('some message text', {
+                detect: async () => {
+                    throw new Error('detector failed');
+                },
+                onEvent: async (name, attrs) => {
+                    events.push([name, attrs]);
+                    throw new Error('async telemetry failed');
+                },
+            });
+            await new Promise((resolve) => setImmediate(resolve));
+            assert.deepEqual(result, { text: 'some message text', hits: [] });
+            assert.deepEqual(events, [['redaction.detect.failed', { errorName: 'Error' }]]);
+            assert.equal(unhandledRejections, 0);
+        `], {
+            cwd: fileURLToPath(new URL('..', import.meta.url)),
+            encoding: 'utf8',
+            timeout: 10_000,
+        });
+        expect(result.error).toBeUndefined();
+        expect(result.status, result.stderr).toBe(0);
+    }, 20_000);
 });
 
 describe('detectSecrets (the unconditional primitive, used directly by redactText)', () => {
@@ -407,16 +452,4 @@ describe('detectSecrets (the unconditional primitive, used directly by redactTex
             expect(hit.range).toHaveLength(2);
         }
     });
-});
-
-test('an event callback failure cannot break detector fail-open', async () => {
-    const result = await redactText('some message text', {
-        detect: async () => {
-            throw new Error('detector failed');
-        },
-        onEvent: () => {
-            throw new Error('telemetry failed');
-        },
-    });
-    expect(result).toEqual({ text: 'some message text', hits: [] });
 });

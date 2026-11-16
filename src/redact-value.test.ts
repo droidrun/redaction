@@ -7,6 +7,34 @@
 import { describe, expect, test } from 'bun:test';
 import { redactJsonValue, STRUCTURAL_SKIP_KEYS, type RedactValueStats } from './redact-value.js';
 
+// Explicit consumer keys from the original structural skip list.
+const LEGACY_SKIP_KEYS: ReadonlySet<string> = new Set([
+    'type',
+    'id',
+    'toolCallId',
+    'state',
+    'toolName',
+    'questionId',
+    'questionID',
+    'fileId',
+    'mimeType',
+    'filename',
+    'url',
+    'status',
+    'errorClass',
+    'deviceId',
+    'verb',
+    'buildId',
+    'phase',
+    'slug',
+    'agentName',
+    'messageId',
+    'eventType',
+    // Charset-validated avatar identifier, never credential content.
+    'avatarSeed',
+    'code',
+]);
+
 function newStats(): RedactValueStats {
     return { hits: [] };
 }
@@ -75,9 +103,11 @@ describe('structural skip-list', () => {
         // Would trip the generic-keyword rule if scanned.
         const adversarial = 'password: S0mmer2026!xTr0ub4dor';
         const input: Record<string, unknown> = {};
-        for (const key of STRUCTURAL_SKIP_KEYS) input[key] = adversarial;
-        const out = (await redactJsonValue(input, stats, undefined)) as Record<string, unknown>;
-        for (const key of STRUCTURAL_SKIP_KEYS) {
+        for (const key of LEGACY_SKIP_KEYS) input[key] = adversarial;
+        const out = (await redactJsonValue(
+            input, stats, undefined, { skipKeys: LEGACY_SKIP_KEYS },
+        )) as Record<string, unknown>;
+        for (const key of LEGACY_SKIP_KEYS) {
             expect(out[key]).toBe(adversarial);
         }
         expect(stats.hits).toEqual([]);
@@ -89,9 +119,42 @@ describe('structural skip-list', () => {
         const out = (await redactJsonValue(
             { toolCallId: 'call_abc123', errorText: 'password: S0mmer2026!xTr0ub4dor' },
             stats,
+            undefined,
+            { skipKeys: LEGACY_SKIP_KEYS },
         )) as Record<string, unknown>;
         expect(out.toolCallId).toBe('call_abc123');
         expect(out.errorText).not.toContain('S0mmer2026!xTr0ub4dor');
+    });
+
+    test('custom skip keys preserve their values while siblings are redacted', async () => {
+        const stats = newStats();
+        const secret = 'password: S0mmer2026!xTr0ub4dor';
+        const out = await redactJsonValue(
+            { customKey: secret, notes: secret, type: secret },
+            stats,
+            undefined,
+            { skipKeys: new Set(['customKey']) },
+        );
+        expect(out).toEqual({
+            customKey: secret,
+            notes: 'password: [REDACTED:generic-keyword:4dor]',
+            type: 'password: [REDACTED:generic-keyword:4dor]',
+        });
+        expect(stats.hits).toHaveLength(2);
+    });
+
+    test('the minimal default preserves type and id but scans url and code', async () => {
+        const stats = newStats();
+        const secret = 'password: S0mmer2026!xTr0ub4dor';
+        const out = await redactJsonValue({ type: secret, id: secret, url: secret, code: secret }, stats);
+        expect([...STRUCTURAL_SKIP_KEYS]).toEqual(['type', 'id']);
+        expect(out).toEqual({
+            type: secret,
+            id: secret,
+            url: 'password: [REDACTED:generic-keyword:4dor]',
+            code: 'password: [REDACTED:generic-keyword:4dor]',
+        });
+        expect(stats.hits).toHaveLength(2);
     });
 });
 
@@ -120,20 +183,4 @@ describe('recursion', () => {
         const out = await redactJsonValue({ count: 42, active: true, missing: null }, stats, undefined);
         expect(out).toEqual({ count: 42, active: true, missing: null });
     });
-});
-
-test('custom skip keys preserve their values while siblings are redacted', async () => {
-    const stats = newStats();
-    const secret = 'password: S0mmer2026!xTr0ub4dor';
-    const out = await redactJsonValue(
-        { customKey: secret, notes: secret },
-        stats,
-        undefined,
-        { skipKeys: new Set(['customKey']) },
-    );
-    expect(out).toEqual({
-        customKey: secret,
-        notes: 'password: [REDACTED:generic-keyword:4dor]',
-    });
-    expect(stats.hits).toHaveLength(1);
 });

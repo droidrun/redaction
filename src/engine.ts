@@ -3,6 +3,8 @@
  * (which loads a process-wide profiler). Only ruleId + range leave this layer.
  * The pinned scanners use content/filePath/ext, report, and translation;
  * the comment filter that needs source-location helpers is excluded.
+ * Exact 13.0.4 pins for preset-recommend and types are load-bearing;
+ * dependency bumps require the parity and rule-shape guard tests to pass.
  */
 import type {
     SecretLintRuleContext,

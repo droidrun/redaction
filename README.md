@@ -58,13 +58,16 @@ console.log(safeLog.text); // login password: [REDACTED:generic-keyword]
 - `RedactTextOpts`: optional `detect` override and `onEvent(name, attrs)` hook.
   Without a hook nothing is logged. Events are `redaction.scan.capped`
   (`{ originalLength, scannedLength }`) and `redaction.detect.failed` (`{ errorName }`).
-  Exception messages and input text are never sent to the hook.
+  Exception messages and input text are never sent to the hook. Hooks can return
+  `void` or `Promise<void>`; synchronous throws and asynchronous rejections are ignored.
 - `redactJsonValue(value, stats, parentKey?, opts?)`: recursively scans string leaves,
   appending findings to `stats.hits`. Credential-shaped keys force redaction of
   nonempty string values, including short passwords. Primitives pass through.
-- `STRUCTURAL_SKIP_KEYS`: the default skip set. Pass `opts.skipKeys` as a
+- `STRUCTURAL_SKIP_KEYS`: the minimal default skip set, exactly `type` and `id`,
+  exported as `ReadonlySet<string>`. Keys such as `url` and `code` are scanned
+  unless the consumer skips them. Pass `opts.skipKeys` as a
   `ReadonlySet<string>` to **replace** it. For example:
-  `redactJsonValue(result, stats, undefined, { skipKeys: new Set(['recordId']) })`.
+  `redactJsonValue(result, stats, undefined, { skipKeys: new Set(['type', 'id', 'recordId']) })`.
   Skipping a key preserves its entire value, including nested objects, at every depth.
 - `CREDENTIAL_KEY_RE`: the shared credential-key matcher.
 - `buildPlaceholder(ruleId, matched)`, `shortenRuleId(ruleId)`, `PLACEHOLDER_RE`:
@@ -90,7 +93,7 @@ Known gaps:
 - Text is scanned in 100,000-character windows with 10,240-character overlap.
   A match using an unbounded quantifier (JWT segments or credential values) that
   exceeds that overlap and crosses a boundary can be missed.
-- Only the first 2,000,000 characters (the 2 MB scan cap) of each leaf are scanned.
+- Only the first 2,000,000 characters (UTF-16 code units) of each leaf are scanned.
   Beyond that cap, text is preserved and the optional cap event is emitted.
 - Short, unlabeled passwords in free text are not detected. A credential-shaped
   JSON key provides the context to redact such a value.
@@ -107,9 +110,12 @@ bun test
 pnpm run build
 ```
 
+The exact `13.0.4` pins of `@secretlint/secretlint-rule-preset-recommend` and
+`@secretlint/types` are load-bearing: dependency bumps need green parity and rule-shape guard tests.
 Parity tests use `@secretlint/core` only as a development dependency. A separate
 process verifies that importing the public entry and scanning a 300 kB input
 loads neither core nor the profiler.
 
 After merge, a `v0.1.0` tag triggers publishing to GitHub Packages. The workflow
-checks the tag against `package.json` and uses `GITHUB_TOKEN` with `packages:write`.
+checks the tag against `package.json`, requires the tagged commit to be on `main`,
+runs typecheck and tests, and uses `GITHUB_TOKEN` with `packages:write`.
