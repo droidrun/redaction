@@ -14,7 +14,7 @@
 import type { SecretLintRuleCreator } from '@secretlint/types';
 import { PLACEHOLDER_RE } from '../placeholder.js';
 
-// password|passwd|pwd|secret|token|api[_-]?key per the plan; a few more
+// password|passwd|pwd|secret|token|api[_-]?key; a few more
 // common aliases folded in since they're the same threat shape and the
 // negative corpus already has to cover them (accessKey, clientSecret,
 // privateKey, credential(s), authorization/bearer).

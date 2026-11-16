@@ -43,7 +43,7 @@ describe('key-context rule', () => {
     test('a short, low-entropy value under a "password" key is force-redacted even ' +
         'though it alone would never trip a rule', async () => {
         const stats = newStats();
-        const out = (await redactJsonValue({ password: 'abc123' }, stats, undefined)) as Record<
+        const out = (await redactJsonValue({ password: 'abc123' }, stats)) as Record<
             string,
             unknown
         >;
@@ -54,7 +54,7 @@ describe('key-context rule', () => {
 
     test('the KEY itself is never touched, only the value', async () => {
         const stats = newStats();
-        const out = (await redactJsonValue({ AWS_SECRET_ACCESS_KEY: 'x' }, stats, undefined)) as Record<
+        const out = (await redactJsonValue({ AWS_SECRET_ACCESS_KEY: 'x' }, stats)) as Record<
             string,
             unknown
         >;
@@ -73,7 +73,7 @@ describe('key-context rule', () => {
             privateKey: 'v6',
             credential: 'v7',
         };
-        const out = (await redactJsonValue(input, stats, undefined)) as Record<string, unknown>;
+        const out = (await redactJsonValue(input, stats)) as Record<string, unknown>;
         for (const key of Object.keys(input)) {
             expect(String(out[key])).toMatch(/^\[REDACTED:key-context\]$/);
         }
@@ -83,7 +83,7 @@ describe('key-context rule', () => {
         'detector instead (not force-redacted)', async () => {
         const stats = newStats();
         // "notes" isn't credential-suspicious and "just a note" won't trip any rule.
-        const out = (await redactJsonValue({ notes: 'just a note' }, stats, undefined)) as Record<
+        const out = (await redactJsonValue({ notes: 'just a note' }, stats)) as Record<
             string,
             unknown
         >;
@@ -92,7 +92,7 @@ describe('key-context rule', () => {
 
     test('empty string value under a suspicious key is left as-is (nothing to redact)', async () => {
         const stats = newStats();
-        const out = (await redactJsonValue({ password: '' }, stats, undefined)) as Record<string, unknown>;
+        const out = (await redactJsonValue({ password: '' }, stats)) as Record<string, unknown>;
         expect(out.password).toBe('');
     });
 });
@@ -105,7 +105,7 @@ describe('structural skip-list', () => {
         const input: Record<string, unknown> = {};
         for (const key of LEGACY_SKIP_KEYS) input[key] = adversarial;
         const out = (await redactJsonValue(
-            input, stats, undefined, { skipKeys: LEGACY_SKIP_KEYS },
+            input, stats, { skipKeys: LEGACY_SKIP_KEYS },
         )) as Record<string, unknown>;
         for (const key of LEGACY_SKIP_KEYS) {
             expect(out[key]).toBe(adversarial);
@@ -119,7 +119,6 @@ describe('structural skip-list', () => {
         const out = (await redactJsonValue(
             { toolCallId: 'call_abc123', errorText: 'password: S0mmer2026!xTr0ub4dor' },
             stats,
-            undefined,
             { skipKeys: LEGACY_SKIP_KEYS },
         )) as Record<string, unknown>;
         expect(out.toolCallId).toBe('call_abc123');
@@ -132,7 +131,6 @@ describe('structural skip-list', () => {
         const out = await redactJsonValue(
             { customKey: secret, notes: secret, type: secret },
             stats,
-            undefined,
             { skipKeys: new Set(['customKey']) },
         );
         expect(out).toEqual({
@@ -180,7 +178,7 @@ describe('recursion', () => {
 
     test('non-string primitives pass through untouched', async () => {
         const stats = newStats();
-        const out = await redactJsonValue({ count: 42, active: true, missing: null }, stats, undefined);
+        const out = await redactJsonValue({ count: 42, active: true, missing: null }, stats);
         expect(out).toEqual({ count: 42, active: true, missing: null });
     });
 });

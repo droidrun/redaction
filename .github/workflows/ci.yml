@@ -23,6 +23,6 @@ jobs:
       - name: Setup pnpm
         run: corepack enable && corepack prepare pnpm@10.18.1 --activate
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec tsc --noEmit
-      - run: bun test
+      - run: pnpm run typecheck
+      - run: pnpm test
       - run: pnpm run build

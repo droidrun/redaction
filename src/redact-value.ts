@@ -34,18 +34,25 @@ export const CREDENTIAL_KEY_RE = new RegExp(
 
 export type RedactValueStats = { hits: Hit[] };
 
-/**
- * Recursively redact a JSON value. `parentKey` is the object key this value
- * was reached through (undefined for the root call and for array elements —
- * arrays have no keys, so the key-context rule never applies to their
- * elements directly, only to nested objects inside them). `opts.skipKeys`
- * replaces the default structural skip set at every depth.
- */
+export type RedactValueOpts = RedactTextOpts & { skipKeys?: ReadonlySet<string> };
+
+/** Recursively redact a JSON value. `opts.skipKeys` replaces the default
+ *  structural skip set at every depth. */
 export async function redactJsonValue(
     value: unknown,
     stats: RedactValueStats,
-    parentKey?: string,
-    opts: RedactTextOpts & { skipKeys?: ReadonlySet<string> } = {},
+    opts: RedactValueOpts = {},
+): Promise<unknown> {
+    return visit(value, stats, undefined, opts);
+}
+
+/** `parentKey` is the object key this value was reached through. Array
+ *  elements have no parent key; key-context applies only inside their objects. */
+async function visit(
+    value: unknown,
+    stats: RedactValueStats,
+    parentKey: string | undefined,
+    opts: RedactValueOpts,
 ): Promise<unknown> {
     if (typeof value === 'string') {
         if (value.length === 0) return value;
@@ -56,13 +63,13 @@ export async function redactJsonValue(
             return placeholder;
         }
         const { text, hits } = await redactText(value, opts);
-        if (hits.length > 0) stats.hits.push(...hits);
+        stats.hits.push(...hits);
         return text;
     }
     if (Array.isArray(value)) {
         const out: unknown[] = [];
         for (const v of value) {
-            out.push(await redactJsonValue(v, stats, undefined, opts));
+            out.push(await visit(v, stats, undefined, opts));
         }
         return out;
     }
@@ -71,7 +78,7 @@ export async function redactJsonValue(
         const out: Record<string, unknown> = {};
         const skipKeys = opts.skipKeys ?? STRUCTURAL_SKIP_KEYS;
         for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            out[k] = skipKeys.has(k) ? v : await redactJsonValue(v, stats, k, opts);
+            out[k] = skipKeys.has(k) ? v : await visit(v, stats, k, opts);
         }
         return out;
     }

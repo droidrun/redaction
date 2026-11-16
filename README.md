@@ -60,18 +60,19 @@ console.log(safeLog.text); // login password: [REDACTED:generic-keyword]
   (`{ originalLength, scannedLength }`) and `redaction.detect.failed` (`{ errorName }`).
   Exception messages and input text are never sent to the hook. Hooks can return
   `void` or `Promise<void>`; synchronous throws and asynchronous rejections are ignored.
-- `redactJsonValue(value, stats, parentKey?, opts?)`: recursively scans string leaves,
+- `redactJsonValue(value, stats, opts?)`: recursively scans string leaves,
   appending findings to `stats.hits`. Credential-shaped keys force redaction of
   nonempty string values, including short passwords. Primitives pass through.
 - `STRUCTURAL_SKIP_KEYS`: the minimal default skip set, exactly `type` and `id`,
   exported as `ReadonlySet<string>`. Keys such as `url` and `code` are scanned
   unless the consumer skips them. Pass `opts.skipKeys` as a
   `ReadonlySet<string>` to **replace** it. For example:
-  `redactJsonValue(result, stats, undefined, { skipKeys: new Set(['type', 'id', 'recordId']) })`.
+  `redactJsonValue(result, stats, { skipKeys: new Set(['type', 'id', 'recordId']) })`.
   Skipping a key preserves its entire value, including nested objects, at every depth.
 - `CREDENTIAL_KEY_RE`: the shared credential-key matcher.
 - `buildPlaceholder(ruleId, matched)`, `shortenRuleId(ruleId)`, `PLACEHOLDER_RE`:
-  placeholder utilities. Types `Hit`, `RedactTextOpts`, and `RedactValueStats` are exported.
+  placeholder utilities. Types `Hit`, `RedactTextOpts`, `RedactValueOpts`, and
+  `RedactValueStats` are exported.
 
 Detection uses the recommended secretlint scanner rules, excluding the comment filter
 so `secretlint-disable` comments cannot suppress findings. AWS ID scanning is enabled.
@@ -105,8 +106,8 @@ Requires Node.js 22 or later, pnpm 10.18.1, and Bun for tests.
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm exec tsc --noEmit
-bun test
+pnpm run typecheck
+pnpm test
 pnpm run build
 ```
 

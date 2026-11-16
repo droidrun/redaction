@@ -13,8 +13,7 @@ const MIN_SCAN_LEN = 8;
 
 /**
  * Scan window size — a single string this long or shorter is scanned in one
- * `scanText` call, byte-for-byte identical to the pre-chunking behavior.
- * Longer strings are walked in overlapping windows of this size (see
+ * `scanText` call. Longer strings are walked in overlapping windows of this size (see
  * `detectSecrets`) rather than truncated, so a secret anywhere in the
  * string — not just its first 100k chars — gets caught.
  */
@@ -52,9 +51,8 @@ const SCAN_OVERLAP = 10_240;
  * be multi-MB, and secretlint's regex rules would otherwise re-run their
  * full match sweep over an unbounded amount of content per message. A real
  * pasted credential is never anywhere near this long; anything beyond the
- * cap simply isn't scanned (documented trade-off, not a bug) — the cap
- * itself is logged via a counter so a systematic miss would show up in
- * telemetry rather than silently.
+ * cap simply isn't scanned (documented trade-off, not a bug). The cap is
+ * reported as the `redaction.scan.capped` event.
  */
 const MAX_TOTAL_SCAN_LEN = 2_000_000;
 
@@ -86,14 +84,25 @@ function dedupeRanges(hits: readonly Hit[]): Hit[] {
     return merged;
 }
 
+export type RedactTextOpts = {
+    /** Overrides the detector. */
+    detect?: (text: string) => Promise<Hit[]>;
+    /** Receives safe scan metadata. Callback failures cannot interrupt redaction. */
+    onEvent?: (name: string, attrs: Record<string, unknown>) => void | Promise<void>;
+};
+
+function emitEvent(opts: RedactTextOpts, name: string, attrs: Record<string, unknown>): void {
+    // Observability must never break the fail-open contract.
+    void (async () => opts.onEvent?.(name, attrs))().catch(() => {});
+}
+
 /**
- * Unconditional, length-guarded secretlint scan. No flag-gating, no
- * fail-open (a throw here is expected to propagate to `redactText`, the one
- * place that owns the fail-open contract).
+ * Unconditional, length-guarded secretlint scan. Errors propagate to
+ * `redactText`, which owns the fail-open contract.
  *
- * For text at or below `MAX_SCAN_LEN`, this is a single `scanText` call —
- * identical to the pre-chunking behavior. Longer text is walked in
- * overlapping `MAX_SCAN_LEN`-sized windows (stride = `MAX_SCAN_LEN -
+ * For text at or below `MAX_SCAN_LEN`, this is a single `scanText` call.
+ * Longer text is walked in overlapping `MAX_SCAN_LEN`-sized windows
+ * (stride = `MAX_SCAN_LEN -
  * SCAN_OVERLAP`) up to `MAX_TOTAL_SCAN_LEN`, so the TAIL of a long string
  * (e.g. a large raw file-read tool output) is scanned too, not silently
  * dropped. Each window's hit ranges are offset back to ABSOLUTE indices
@@ -136,11 +145,8 @@ export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Pr
  *  own start, so earlier (lower-index, not-yet-processed) ranges in `out`
  *  are still at their ORIGINAL positions when their turn comes. */
 function applyRedactions(text: string, hits: readonly Hit[]): string {
-    const deduped = dedupeRanges(hits);
     let out = text;
-    for (let i = deduped.length - 1; i >= 0; i--) {
-        const hit = deduped[i];
-        if (!hit) continue;
+    for (const hit of dedupeRanges(hits).reverse()) {
         const [start, end] = hit.range;
         const matched = text.slice(start, end);
         out = out.slice(0, start) + buildPlaceholder(hit.ruleId, matched) + out.slice(end);
@@ -148,32 +154,11 @@ function applyRedactions(text: string, hits: readonly Hit[]): string {
     return out;
 }
 
-export type RedactTextOpts = {
-    /** Overrides the detector — for the fail-open/exception-message-leak
-     *  test only. */
-    detect?: (text: string) => Promise<Hit[]>;
-    /** Receives safe scan metadata. Callback failures cannot interrupt redaction. */
-    onEvent?: (name: string, attrs: Record<string, unknown>) => void | Promise<void>;
-};
-
-function emitEvent(opts: RedactTextOpts, name: string, attrs: Record<string, unknown>): void {
-    try {
-        const pending = opts.onEvent?.(name, attrs);
-        if (pending) {
-            void Promise.resolve(pending).catch(() => {});
-        }
-    } catch {
-        // Observability must never break the fail-open contract.
-    }
-}
-
 /**
- * Detect + replace. NEVER THROWS: a detector failure logs a warning (with NO
- * exception-message passthrough — an exception's `message` could itself
- * echo a slice of the very input that broke the regex engine, which would
- * turn the failure-logging path into a secret-logging path) and returns the
- * ORIGINAL text unredacted rather than losing the caller's data. Warnings
- * are delivered only through the optional `onEvent` callback.
+ * Detect + replace. NEVER THROWS: a detector failure emits
+ * `redaction.detect.failed` without the exception message, because it could
+ * echo a slice of the input that broke the engine and leak secret material.
+ * Returns the original text unredacted rather than losing the caller's data.
  */
 export async function redactText(
     text: string,

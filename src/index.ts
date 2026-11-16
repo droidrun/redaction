@@ -2,6 +2,7 @@ export { detectSecrets, redactText, type Hit, type RedactTextOpts } from './reda
 export {
     redactJsonValue,
     type RedactValueStats,
+    type RedactValueOpts,
     STRUCTURAL_SKIP_KEYS,
     CREDENTIAL_KEY_RE,
 } from './redact-value.js';

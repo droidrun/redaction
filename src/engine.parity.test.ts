@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { lintSource } from '@secretlint/core';
 import { creator as presetRecommend } from '@secretlint/secretlint-rule-preset-recommend';
 import { scanText } from './engine.js';
-import { RULES } from './secretlint-engine.js';
+import { RULES } from './rules/index.js';
 import { jwtRule } from './rules/jwt-rule.js';
 import { genericKeywordRule } from './rules/generic-keyword-rule.js';
 import { gcpApiKeyRule } from './rules/gcp-api-key-rule.js';

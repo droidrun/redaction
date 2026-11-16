@@ -3,11 +3,8 @@
  *
  * `@secretlint/secretlint-rule-gcp` (bundled in preset-recommend) ONLY
  * inspects `.p12`/`.json` FILE content for GCP Service Account keys — it has
- * no regex for the `AIza…` API-key STRING shape (verified via the spike, see
- * redaction-plan.md: `grep -in "gcp\|AIza"` over the installed preset's
- * compiled source shows only the p12/json service-account-file scanners, no
- * `AIza` pattern anywhere). A pasted `AIza…` browser/server API key was
- * therefore never redacted. This rule closes that gap.
+ * no regex for the `AIza…` API-key STRING shape. This rule detects pasted
+ * `AIza…` browser/server API keys.
  *
  * `AIza` followed by exactly 35 chars from the base64url-ish alphabet Google
  * uses for these keys (`[0-9A-Za-z_-]`) — 39 chars total, matching the

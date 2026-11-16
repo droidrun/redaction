@@ -7,13 +7,14 @@
  * dependency bumps require the parity and rule-shape guard tests to pass.
  */
 import type {
+    SecretLintCoreConfigRule,
     SecretLintRuleContext,
     SecretLintRuleIgnoreDescriptor,
     SecretLintRuleLocalizeMessages,
     SecretLintRuleMessageTranslate,
     SecretLintSourceCode,
 } from '@secretlint/types';
-import { RULES } from './secretlint-engine.js';
+import { RULES } from './rules/index.js';
 
 export type EngineHit = { ruleId: string; range: readonly [number, number] };
 type Report = EngineHit & { message: string };
@@ -40,6 +41,11 @@ function isDuplicate(report: Report, other: Report): boolean {
     return sameRange && report.message === other.message;
 }
 
+function supportsText({ rule }: SecretLintCoreConfigRule): boolean {
+    const contentTypes = rule.meta.supportedContentTypes;
+    return contentTypes.includes('text') || contentTypes.includes('all');
+}
+
 /** Unconditional scan. The caller owns windowing and fail-open handling. */
 export async function scanText(content: string): Promise<EngineHit[]> {
     const hasBOM = content.charCodeAt(0) === 0xfeff;
@@ -55,7 +61,7 @@ export async function scanText(content: string): Promise<EngineHit[]> {
     } as SecretLintSourceCode;
     const reports: Report[] = [];
     const ignores: SecretLintRuleIgnoreDescriptor[] = [];
-    const handlers = RULES.map(({ id, rule, options }) => {
+    await Promise.all(RULES.filter(supportsText).map(async ({ id, rule, options }) => {
         const context: SecretLintRuleContext = {
             sharedOptions: {},
             createTranslator,
@@ -66,13 +72,7 @@ export async function scanText(content: string): Promise<EngineHit[]> {
                 ignores.push(descriptor);
             },
         };
-        return { rule, handler: rule.create(context, options ?? {}) };
-    });
-    await Promise.all(handlers.map(({ rule, handler }) => {
-        const supportsText = rule.meta.supportedContentTypes.includes('text') ||
-            rule.meta.supportedContentTypes.includes('all');
-        if (!supportsText) return;
-        return handler.file?.(source);
+        await rule.create(context, options ?? {}).file?.(source);
     }));
     const visible = reports.filter((report) => !ignores.some((ignored) => isIgnored(report, ignored)));
     return visible

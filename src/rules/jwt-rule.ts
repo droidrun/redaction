@@ -1,9 +1,8 @@
 /**
  * jwt-rule.ts — custom secretlint rule: JSON Web Tokens.
  *
- * Not covered by `@secretlint/secretlint-rule-preset-recommend` (verified via
- * the spike — see redaction-plan.md). Three base64url segments joined by
- * dots; the header segment is required to start with `eyJ` (base64 of
+ * Not covered by `@secretlint/secretlint-rule-preset-recommend`.
+ * Three base64url segments joined by dots; the header segment is required to start with `eyJ` (base64 of
  * `{"` — true for every standard JWT header, since it always opens with
  * `{"alg":...}` or `{"typ":...}`) to keep false positives near zero on
  * ordinary dotted identifiers. Bounded quantifiers only (no nested
