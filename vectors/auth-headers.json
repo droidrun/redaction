@@ -4,38 +4,32 @@
     {
       "name": "bearer header",
       "input": "Authorization: Bearer abc.def-1=",
-      "expectedSync": "Authorization: Bearer [REDACTED:auth-header]",
-      "expectedAsync": "Authorization: Bearer [REDACTED:auth-header]"
+      "expected": "Authorization: Bearer [REDACTED:auth-header]"
     },
     {
       "name": "bearer lower case",
       "input": "authorization: bearer abc.def-1= for the call",
-      "expectedSync": "authorization: bearer [REDACTED:auth-header] for the call",
-      "expectedAsync": "authorization: bearer [REDACTED:auth-header] for the call"
+      "expected": "authorization: bearer [REDACTED:auth-header] for the call"
     },
     {
       "name": "bearer in a sentence",
       "input": "sent x Bearer zzz y",
-      "expectedSync": "sent x Bearer [REDACTED:auth-header] y",
-      "expectedAsync": "sent x Bearer [REDACTED:auth-header] y"
+      "expected": "sent x Bearer [REDACTED:auth-header] y"
     },
     {
       "name": "basic credentials",
       "input": "Authorization: Basic dXNlcjpwYXNzd29yZA==",
-      "expectedSync": "Authorization: Basic [REDACTED:auth-header]",
-      "expectedAsync": "Authorization: Basic [REDACTED:auth-header]"
+      "expected": "Authorization: Basic [REDACTED:auth-header]"
     },
     {
       "name": "basic lower case",
       "input": "basic dXNlcjpwYXNz",
-      "expectedSync": "basic [REDACTED:auth-header]",
-      "expectedAsync": "basic [REDACTED:auth-header]"
+      "expected": "basic [REDACTED:auth-header]"
     },
     {
       "name": "token scheme",
       "input": "Authorization: Token 9f8e7d6c5b4a3210",
-      "expectedSync": "Authorization: Token [REDACTED:auth-header]",
-      "expectedAsync": "Authorization: Token [REDACTED:auth-header]"
+      "expected": "Authorization: Token [REDACTED:auth-header]"
     },
     {
       "name": "proxy authorization header in a json value",
@@ -43,11 +37,7 @@
         "Proxy-Authorization": "Basic dXNlcjpwYXNzd29yZA==",
         "accept": "json"
       },
-      "expectedSync": {
-        "Proxy-Authorization": "[REDACTED:key-context]",
-        "accept": "json"
-      },
-      "expectedAsync": {
+      "expected": {
         "Proxy-Authorization": "[REDACTED:key-context]",
         "accept": "json"
       }
@@ -60,13 +50,7 @@
           "accept": "json"
         }
       },
-      "expectedSync": {
-        "headers": {
-          "X-Forwarded": "Bearer [REDACTED:auth-header]",
-          "accept": "json"
-        }
-      },
-      "expectedAsync": {
+      "expected": {
         "headers": {
           "X-Forwarded": "Bearer [REDACTED:auth-header]",
           "accept": "json"
@@ -76,20 +60,42 @@
     {
       "name": "prose with Token",
       "input": "Token expired, Basic information, token refresh",
-      "expectedSync": "Token expired, Basic information, token refresh",
-      "expectedAsync": "Token expired, Basic information, token refresh"
+      "expected": "Token expired, Basic information, token refresh"
     },
     {
       "name": "prose with Basic",
       "input": "Basic Authentication",
-      "expectedSync": "Basic Authentication",
-      "expectedAsync": "Basic Authentication"
+      "expected": "Basic Authentication"
     },
     {
       "name": "prose with token",
       "input": "use the token",
-      "expectedSync": "use the token",
-      "expectedAsync": "use the token"
+      "expected": "use the token"
+    },
+    {
+      "name": "cookie header line",
+      "input": "Cookie: sid=abc123; theme=dark; other=1",
+      "expected": "Cookie: [REDACTED:cookie]"
+    },
+    {
+      "name": "set-cookie header line",
+      "input": "Set-Cookie: session=xyz; Path=/; HttpOnly\nHost: example.test",
+      "expected": "Set-Cookie: [REDACTED:cookie]\nHost: example.test"
+    },
+    {
+      "name": "guard: Cookie without a pair",
+      "input": "Cookie: enabled",
+      "expected": "Cookie: enabled"
+    },
+    {
+      "name": "guard: missing bearer prose",
+      "input": "Missing or invalid bearer token",
+      "expected": "Missing or invalid bearer token"
+    },
+    {
+      "name": "guard: bearer scheme prose",
+      "input": "Use the Bearer scheme in the Authorization header",
+      "expected": "Use the Bearer scheme in the Authorization header"
     }
   ]
 }

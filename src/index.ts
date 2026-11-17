@@ -12,12 +12,6 @@ export {
     type RedactJsonSyncOpts,
     type RedactTextSyncOpts,
 } from './redact-sync.js';
-export { restoreRedacted } from './restore.js';
+export { restoreRedacted, type RestoreOpts, type RestoreResult } from './restore.js';
 export { isSecretKeyName } from './key-names.js';
-export {
-    buildPlaceholder,
-    buildReadPlaceholder,
-    shortenRuleId,
-    PLACEHOLDER_RE,
-    PLACEHOLDER_ANYWHERE_RE,
-} from './placeholder.js';
+export { buildPlaceholder, buildReadPlaceholder, shortenRuleId, PLACEHOLDER_RE } from './placeholder.js';

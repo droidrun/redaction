@@ -20,11 +20,15 @@ export function shortenRuleId(ruleId: string): string {
     return ruleId.replace(/^@secretlint\/secretlint-rule-/, '').replace(/^mobilerun-redaction\//, '');
 }
 
+/** Brackets would end a placeholder early, so they are masked in the last4. */
+function safeLast4(matched: string): string {
+    return matched.slice(-4).replace(/[[\]]/g, '*');
+}
+
 export function buildPlaceholder(ruleId: string, matched: string): string {
     const shortId = shortenRuleId(ruleId);
     if (matched.length >= LAST4_THRESHOLD) {
-        const last4 = matched.slice(-4);
-        return `[REDACTED:${shortId}:${last4}]`;
+        return `[REDACTED:${shortId}:${safeLast4(matched)}]`;
     }
     return `[REDACTED:${shortId}]`;
 }
@@ -36,11 +40,30 @@ export function buildReadPlaceholder(ruleId: string): string {
     return `[REDACTED:${shortenRuleId(ruleId)}]`;
 }
 
-/** Matches any marker this module produces (with or without the `:last4`
- *  suffix) and the legacy bare `[REDACTED]`. Anchored (`^...$`) — only matches a
- *  value that IS entirely a placeholder, not one that merely contains one. */
-export const PLACEHOLDER_RE = /^\[REDACTED(?::[^[\]:]+(?::[^[\]]*)?)?\]$/;
+// One grammar for every check. Forms: the bare legacy `[REDACTED]`,
+// `[REDACTED:<rule>]`, `[REDACTED:<rule>:<last4>]`. The rule has no brackets,
+// colons or whitespace; the suffix is whatever `buildPlaceholder` can emit
+// (any four characters except brackets, spaces included).
+const PLACEHOLDER_SOURCE = String.raw`\[REDACTED(?::[^[\]:\s]+(?::[^[\]]*)?)?\]`;
 
-/** The same markers anywhere inside a string (global; use `.test` on a fresh
- *  copy or `matchAll`). Used by `restoreRedacted` and the sync rules. */
-export const PLACEHOLDER_ANYWHERE_RE = /\[REDACTED(?::[^[\]:\s]+(?::[^[\]\s]*)?)?\]/;
+/** Matches a string that IS one placeholder (anchored): any of the three forms. */
+export const PLACEHOLDER_RE = new RegExp(`^${PLACEHOLDER_SOURCE}$`);
+
+/** A placeholder anywhere in a string (not anchored, not global). Internal. */
+export const PLACEHOLDER_ANYWHERE_RE = new RegExp(PLACEHOLDER_SOURCE);
+
+const PLACEHOLDER_STICKY_RE = new RegExp(PLACEHOLDER_SOURCE, 'y');
+const PLACEHOLDER_GLOBAL_RE = new RegExp(PLACEHOLDER_SOURCE, 'g');
+
+/** End index of the placeholder starting exactly at `start`, or -1. */
+export function placeholderEndAt(text: string, start: number): number {
+    PLACEHOLDER_STICKY_RE.lastIndex = start;
+    const match = PLACEHOLDER_STICKY_RE.exec(text);
+    return match ? start + match[0].length : -1;
+}
+
+/** The text between placeholders: `a[REDACTED]b` -> ['a', 'b']. One entry more
+ *  than there are placeholders; empty strings kept. */
+export function literalSegments(text: string): string[] {
+    return text.split(PLACEHOLDER_GLOBAL_RE);
+}

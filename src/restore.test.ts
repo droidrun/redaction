@@ -1,89 +1,91 @@
 /**
  * restore.test.ts — `restoreRedacted(incoming, stored)`: a placeholder that
- * comes back keeps the stored value; everything else is what the client sent.
+ * comes back keeps the stored value only where that is safe (matching item,
+ * unchanged siblings, matching string segments); everything else is a conflict.
  */
 import { describe, expect, test } from 'bun:test';
 import { redactJsonValue, redactJsonValueSync, restoreRedacted } from './index.js';
 
 const SECRET = 'Zk9-fakeMARKER_7q2x';
+const PH = '[REDACTED:key-context]';
+
+const restore = (incoming: unknown, stored: unknown) => restoreRedacted(incoming, stored);
 
 describe('strings', () => {
-    test.each([
-        '[REDACTED:key-context]',
-        '[REDACTED:generic-keyword:4dor]',
-        '[REDACTED]',
-    ])('a whole placeholder %s keeps the stored string', (placeholder) => {
-        expect(restoreRedacted({ a: placeholder }, { a: SECRET })).toEqual({ a: SECRET });
+    test.each([PH, '[REDACTED:generic-keyword:4dor]', '[REDACTED]', '[REDACTED:last4:a b]'])(
+        'a whole placeholder %s keeps the stored string',
+        (placeholder) => {
+            const out = restore({ a: placeholder }, { a: SECRET });
+            expect(out).toEqual({ value: { a: SECRET }, conflicts: [] });
+        },
+    );
+
+    test('a string that contains a placeholder keeps the stored string if its literals match', () => {
+        const stored = { run: `curl -H "Authorization: Bearer ${SECRET}" https://x.test` };
+        const incoming = { run: 'curl -H "Authorization: Bearer [REDACTED:auth-header]" https://x.test' };
+        expect(restore(incoming, stored)).toEqual({ value: stored, conflicts: [] });
     });
 
-    test('a string that contains a placeholder keeps the stored string whole', () => {
-        const stored = { run: `curl -H "Authorization: Bearer ${SECRET}"` };
-        const incoming = { run: 'curl -H "Authorization: Bearer [REDACTED:auth-header]"' };
-        expect(restoreRedacted(incoming, stored)).toEqual(stored);
+    test('edited text around a placeholder is a conflict, the placeholder stays', () => {
+        const stored = { run: `curl -H "Authorization: Bearer ${SECRET}" https://good.test` };
+        const incoming = { run: 'curl -H "Authorization: Bearer [REDACTED:auth-header]" https://evil.test' };
+        expect(restore(incoming, stored)).toEqual({ value: incoming, conflicts: ['$.run'] });
+    });
+
+    test('literals in the wrong order, a missing prefix or suffix, are conflicts', () => {
+        const stored = { a: `one ${SECRET} two ${SECRET} three` };
+        const cases = [
+            'two [REDACTED] one [REDACTED] three',
+            'zero one [REDACTED] two [REDACTED] three',
+            'one [REDACTED] two [REDACTED] three four',
+        ];
+        for (const text of cases) {
+            expect(restore({ a: text }, stored).conflicts).toEqual(['$.a']);
+        }
+        expect(restore({ a: 'one [REDACTED] two [REDACTED] three' }, stored).conflicts).toEqual([]);
     });
 
     test('a string without a placeholder is the new value', () => {
-        expect(restoreRedacted({ a: 'new' }, { a: SECRET })).toEqual({ a: 'new' });
+        expect(restore({ a: 'new' }, { a: SECRET })).toEqual({ value: { a: 'new' }, conflicts: [] });
     });
 
-    test('a placeholder with no stored value behind it stays a placeholder (never invented)', () => {
-        expect(restoreRedacted({ a: '[REDACTED:key-context]' }, {})).toEqual({ a: '[REDACTED:key-context]' });
-        expect(restoreRedacted({ a: '[REDACTED:key-context]' }, { a: null })).toEqual({
-            a: '[REDACTED:key-context]',
-        });
-        expect(restoreRedacted({ a: '[REDACTED:key-context]' }, { a: true })).toEqual({
-            a: '[REDACTED:key-context]',
-        });
+    test('a placeholder with no stored value behind it stays and is a conflict (never invented)', () => {
+        expect(restore({ a: PH }, {})).toEqual({ value: { a: PH }, conflicts: ['$.a'] });
+        expect(restore({ a: PH }, { a: null })).toEqual({ value: { a: PH }, conflicts: ['$.a'] });
+        expect(restore({ a: PH }, { a: true })).toEqual({ value: { a: PH }, conflicts: ['$.a'] });
     });
 
     test('text that only looks similar is not a placeholder', () => {
         for (const text of ['[REDACTED', 'REDACTED]', '[redacted]', '[REDACTED: x]']) {
-            expect(restoreRedacted({ a: text }, { a: SECRET })).toEqual({ a: text });
+            expect(restore({ a: text }, { a: SECRET })).toEqual({ value: { a: text }, conflicts: [] });
         }
     });
 });
 
-describe('whole values replaced under a secret-named key', () => {
+describe('whole values under a legacy placeholder', () => {
     test('a whole placeholder restores a stored number, object or array', () => {
         const stored = { pin: 1234, client_secret: { id: 1, v: 'x' }, tokens: ['a', 'b'] };
-        const incoming = {
-            pin: '[REDACTED:key-context]',
-            client_secret: '[REDACTED:key-context]',
-            tokens: '[REDACTED:key-context]',
-        };
-        expect(restoreRedacted(incoming, stored)).toEqual(stored);
+        const incoming = { pin: PH, client_secret: PH, tokens: PH };
+        expect(restore(incoming, stored)).toEqual({ value: stored, conflicts: [] });
     });
 
     test('a placeholder INSIDE a longer string does not restore a non-string', () => {
-        expect(restoreRedacted({ a: 'x [REDACTED] y' }, { a: { b: 1 } })).toEqual({ a: 'x [REDACTED] y' });
+        const out = restore({ a: 'x [REDACTED] y' }, { a: { b: 1 } });
+        expect(out).toEqual({ value: { a: 'x [REDACTED] y' }, conflicts: ['$.a'] });
     });
 });
 
 describe('structure', () => {
     test('new keys win, removed keys are gone, kept keys are restored', () => {
-        const stored = { a: SECRET, b: SECRET, c: 'old' };
-        const incoming = { a: '[REDACTED:key-context]', c: 'edited', d: 'added' };
-        expect(restoreRedacted(incoming, stored)).toEqual({ a: SECRET, c: 'edited', d: 'added' });
-    });
-
-    test('nested objects and arrays are matched by key and index', () => {
-        const stored = { steps: [{ with: { token: SECRET } }, { with: { token: 'other' } }] };
-        const ph = '[REDACTED:key-context]';
-        const incoming = {
-            steps: [{ with: { token: ph } }, { with: { token: ph } }, { with: { token: 'brand-new' } }],
-        };
-        expect(restoreRedacted(incoming, stored)).toEqual({
-            steps: [
-                { with: { token: SECRET } },
-                { with: { token: 'other' } },
-                { with: { token: 'brand-new' } },
-            ],
-        });
+        const stored = { token: SECRET, apiKey: SECRET, password: 'old' };
+        const incoming = { token: PH, password: 'edited', secret: 'added' };
+        const expected = { token: SECRET, password: 'edited', secret: 'added' };
+        expect(restore(incoming, stored)).toEqual({ value: expected, conflicts: [] });
     });
 
     test('a type change takes the incoming value', () => {
-        expect(restoreRedacted({ a: { b: 1 } }, { a: 'str' })).toEqual({ a: { b: 1 } });
-        expect(restoreRedacted({ a: [1] }, { a: { x: 1 } })).toEqual({ a: [1] });
+        expect(restore({ a: { b: 1 } }, { a: 'str' }).value).toEqual({ a: { b: 1 } });
+        expect(restore({ a: [1] }, { a: { x: 1 } }).value).toEqual({ a: [1] });
     });
 
     test('does not mutate either argument', () => {
@@ -91,7 +93,7 @@ describe('structure', () => {
         const stored = { a: SECRET, n: { b: SECRET } };
         const incomingCopy = structuredClone(incoming);
         const storedCopy = structuredClone(stored);
-        restoreRedacted(incoming, stored);
+        restore(incoming, stored);
         expect(incoming).toEqual(incomingCopy);
         expect(stored).toEqual(storedCopy);
     });
@@ -99,7 +101,7 @@ describe('structure', () => {
     test('keys named __proto__ or constructor are plain keys', () => {
         const incoming = JSON.parse('{"__proto__":"[REDACTED]","constructor":"[REDACTED]"}');
         const stored = JSON.parse('{"__proto__":"s1","constructor":"s2"}');
-        const out = restoreRedacted(incoming, stored) as Record<string, unknown>;
+        const out = restore(incoming, stored).value as Record<string, unknown>;
         expect(Object.keys(out)).toEqual(['__proto__', 'constructor']);
         expect(Object.getOwnPropertyDescriptor(out, '__proto__')?.value).toBe('s1');
         expect(Object.getOwnPropertyDescriptor(out, 'constructor')?.value).toBe('s2');
@@ -107,10 +109,110 @@ describe('structure', () => {
     });
 
     test('top-level values', () => {
-        expect(restoreRedacted('[REDACTED]', SECRET)).toBe(SECRET);
-        expect(restoreRedacted(['[REDACTED]', 'x'], [SECRET, 'y'])).toEqual([SECRET, 'x']);
-        expect(restoreRedacted(5, 6)).toBe(5);
-        expect(restoreRedacted(null, { a: 1 })).toBeNull();
+        expect(restore('[REDACTED]', SECRET)).toEqual({ value: SECRET, conflicts: [] });
+        expect(restore(5, 6)).toEqual({ value: 5, conflicts: [] });
+        expect(restore(null, { a: 1 })).toEqual({ value: null, conflicts: [] });
+    });
+});
+
+describe('arrays: matched by identity, never by a shifted index', () => {
+    const step = (id: string, token: string, extra: Record<string, unknown> = {}) => ({
+        id,
+        url: `https://${id}.test`,
+        token,
+        ...extra,
+    });
+    const stored = [step('a', 'tok-a'), step('b', 'tok-b'), step('c', 'tok-c')];
+    const redacted = (items: unknown[]) => items.map((item) => ({ ...(item as object), token: PH }));
+
+    test('unchanged array restores everything', () => {
+        expect(restore(redacted(stored), stored)).toEqual({ value: stored, conflicts: [] });
+    });
+
+    test('delete: the right secret stays with the right item', () => {
+        const incoming = redacted([stored[0], stored[2]]);
+        expect(restore(incoming, stored)).toEqual({ value: [stored[0], stored[2]], conflicts: [] });
+    });
+
+    test('insert: the new item has no stored secret, a placeholder there is a conflict', () => {
+        const added = { id: 'n', url: 'https://n.test', token: PH };
+        const incoming = [...redacted(stored.slice(0, 1)), added, ...redacted(stored.slice(1))];
+        const out = restore(incoming, stored);
+        expect(out.value).toEqual([stored[0], added, stored[1], stored[2]]);
+        expect(out.conflicts).toEqual(['$[1].token']);
+    });
+
+    test('reorder: secrets follow their ids', () => {
+        const incoming = redacted([stored[2], stored[0], stored[1]]);
+        const expected = [stored[2], stored[0], stored[1]];
+        expect(restore(incoming, stored)).toEqual({ value: expected, conflicts: [] });
+    });
+
+    test('duplicate ids match in order', () => {
+        const dup = [step('x', 'first'), step('x', 'second')];
+        expect(restore(redacted(dup), dup)).toEqual({ value: dup, conflicts: [] });
+        const out = restore(redacted([dup[1]]), dup);
+        expect(out.value).toEqual([dup[0]]);
+    });
+
+    test('identify option', () => {
+        const items = [{ name: 'a', token: 't1' }, { name: 'b', token: 't2' }];
+        const incoming = [{ name: 'b', token: PH }, { name: 'a', token: PH }];
+        const out = restoreRedacted(incoming, items, { identify: (item) => (item as { name: string }).name });
+        expect(out).toEqual({ value: [items[1], items[0]], conflicts: [] });
+    });
+
+    test('no identity: index match only when the length is unchanged', () => {
+        const items = [{ token: 't0', note: 'n' }, { token: 't1', note: 'm' }];
+        const same = restore([{ token: PH, note: 'n' }, { token: PH, note: 'm' }], items);
+        expect(same).toEqual({ value: items, conflicts: [] });
+        const shorter = restore([{ token: PH, note: 'm' }], items);
+        expect(shorter.value).toEqual([{ token: PH, note: 'm' }]);
+        expect(shorter.conflicts).toEqual(['$[0].token']);
+    });
+
+    test('strings in an array: placeholders restore only when nothing else moved', () => {
+        const strings = ['a', SECRET, 'c'];
+        expect(restore(['a', PH, 'c'], strings)).toEqual({ value: strings, conflicts: [] });
+        expect(restore(['c', PH], strings).conflicts).toEqual(['$[1]']);
+        expect(restore(['a', PH, 'edited'], strings).conflicts).toEqual(['$[1]']);
+    });
+});
+
+describe('siblings (L1): a placeholder does not follow a changed destination', () => {
+    const stored = { url: 'https://good.test/hook', method: 'POST', headers: { Authorization: SECRET } };
+
+    test('unchanged url and method restore the secret', () => {
+        const incoming = { url: stored.url, method: 'POST', headers: { Authorization: PH } };
+        expect(restore(incoming, stored)).toEqual({ value: stored, conflicts: [] });
+    });
+
+    test('a changed url next to the placeholder leaves it unrestored', () => {
+        const incoming = { url: 'https://evil.test', token: PH };
+        const withToken = { url: 'https://good.test/hook', token: SECRET };
+        expect(restore(incoming, withToken)).toEqual({ value: incoming, conflicts: ['$.token'] });
+    });
+
+    test('a changed method, a new sibling or a removed sibling also block', () => {
+        const base = { url: 'https://good.test', method: 'GET', token: SECRET };
+        expect(restore({ url: base.url, method: 'POST', token: PH }, base).conflicts).toEqual(['$.token']);
+        const added = restore({ url: base.url, method: 'GET', extra: 1, token: PH }, base);
+        expect(added.conflicts).toEqual(['$.token']);
+        expect(restore({ url: base.url, token: PH }, base).conflicts).toEqual(['$.token']);
+    });
+
+    test('a sibling that is itself redacted must match its stored string', () => {
+        const base = { url: 'https://x.test/?token=abc123', token: SECRET };
+        expect(restore({ url: 'https://x.test/?token=[REDACTED:key-context]', token: PH }, base).conflicts)
+            .toEqual([]);
+        expect(restore({ url: 'https://y.test/?token=[REDACTED:key-context]', token: PH }, base).conflicts)
+            .toEqual(['$.url', '$.token']);
+    });
+
+    test('secret-named siblings may change freely', () => {
+        const base = { url: 'https://x.test', token: SECRET, password: 'p' };
+        const out = restore({ url: base.url, token: PH, password: 'new' }, base);
+        expect(out).toEqual({ value: { url: base.url, token: SECRET, password: 'new' }, conflicts: [] });
     });
 });
 
@@ -119,10 +221,15 @@ describe('round trip with both redactors', () => {
         name: 'routine',
         steps: [
             {
+                id: 's1',
                 type: 'http',
                 with: { url: 'https://x.test/?token=abc123&x=1', headers: { 'X-Api-Key': SECRET } },
             },
-            { type: 'script', with: { code: `curl -H "Authorization: Bearer ${SECRET}"`, pin: 4242 } },
+            {
+                id: 's2',
+                type: 'script',
+                with: { code: `curl -H "Authorization: Bearer ${SECRET}"`, pin: 4242 },
+            },
         ],
         nested: { password: SECRET, list: ['plain', `password=${SECRET}`], flag: true, none: null },
     };
@@ -130,25 +237,25 @@ describe('round trip with both redactors', () => {
     test('restore(redactSync(x), x) == x', () => {
         const redacted = redactJsonValueSync(stored);
         expect(JSON.stringify(redacted)).not.toContain(SECRET);
-        expect(restoreRedacted(redacted, stored)).toEqual(stored);
+        expect(restore(redacted, stored)).toEqual({ value: stored, conflicts: [] });
     });
 
     test('restore(redactAsync(x), x) == x', async () => {
         const redacted = await redactJsonValue(stored, { hits: [] });
         expect(JSON.stringify(redacted)).not.toContain(SECRET);
-        expect(restoreRedacted(redacted, stored)).toEqual(stored);
+        expect(restore(redacted, stored)).toEqual({ value: stored, conflicts: [] });
     });
 
     test('a read-modify-write that edits one field keeps the secrets', () => {
         const redacted = redactJsonValueSync(stored) as typeof stored;
         redacted.name = 'renamed';
-        expect(restoreRedacted(redacted, stored)).toEqual({ ...stored, name: 'renamed' });
+        expect(restore(redacted, stored)).toEqual({ value: { ...stored, name: 'renamed' }, conflicts: [] });
     });
 
     test('limit placeholders restore the subtree they replaced', () => {
         const deep = { a: { b: { c: { password: SECRET } } } };
         const redacted = redactJsonValueSync(deep, { maxDepth: 2 });
         expect(redacted).toEqual({ a: { b: '[REDACTED:depth-limit]' } });
-        expect(restoreRedacted(redacted, deep)).toEqual(deep);
+        expect(restore(redacted, deep)).toEqual({ value: deep, conflicts: [] });
     });
 });

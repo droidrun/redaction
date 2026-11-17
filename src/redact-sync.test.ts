@@ -18,19 +18,23 @@ describe('redactTextSync', () => {
         expect(redactTextSync('pw=abc')).toEqual({ text: 'pw=abc', hits: [] });
     });
 
-    test('text over maxChars is cut and the tail replaced, never passed through', () => {
-        const tail = `password=${FAKE}`;
-        const { text, hits } = redactTextSync(`${'a '.repeat(50)}${tail}`, { maxChars: 100 });
-        expect(text).toBe(`${'a '.repeat(50)}[REDACTED:size-limit]`);
-        expect(text).not.toContain(FAKE);
-        expect(hits.at(-1)).toEqual({ ruleId: 'size-limit', range: [100, 100 + tail.length] });
+    test('text over maxChars is replaced whole: no prefix of a straddling secret is exposed', () => {
+        const input = `${'a '.repeat(50)}password=${FAKE}`;
+        const { text, hits } = redactTextSync(input, { maxChars: 100 });
+        expect(text).toBe('[REDACTED:size-limit]');
+        expect(hits).toEqual([{ ruleId: 'size-limit', range: [0, input.length] }]);
     });
 
-    test('a secret inside the scanned part of an over-long text is still redacted', () => {
-        const input = `password=${FAKE} ${'x '.repeat(100)}`;
-        const { text } = redactTextSync(input, { maxChars: 120 });
-        expect(text.startsWith('password=[REDACTED:generic-keyword] ')).toBe(true);
-        expect(text.endsWith('[REDACTED:size-limit]')).toBe(true);
+    test('the limit applies before the short-text shortcut', () => {
+        expect(redactTextSync('abcdefg', { maxChars: 3 }).text).toBe('[REDACTED:size-limit]');
+        expect(redactTextSync('abc', { maxChars: 3 }).text).toBe('abc');
+    });
+
+    test('non-string input never throws', () => {
+        for (const value of [null, undefined, 5, true, {}, Symbol('s')]) {
+            expect(() => redactTextSync(value as unknown as string)).not.toThrow();
+        }
+        expect(redactTextSync(5 as unknown as string).text).toBe('5');
     });
 
     test('adversarial input stays linear: many unterminated quotes', () => {
@@ -89,19 +93,62 @@ describe('redactJsonValueSync', () => {
         expect(() => redactJsonValueSync(deep)).not.toThrow();
     });
 
-    test('values beyond maxNodes are replaced', () => {
-        const out = redactJsonValueSync([{ a: 1 }, { a: 2 }, { a: 3 }], { maxNodes: 2 }) as unknown[];
-        expect(out[0]).toEqual({ a: 1 });
-        expect(out[2]).toBe('[REDACTED:size-limit]');
+    test('every visited value counts: traversal stops at maxNodes with a marker', () => {
+        const wide = Array.from({ length: 1000 }, (_, i) => i);
+        const out = redactJsonValueSync(wide, { maxNodes: 10 }) as unknown[];
+        expect(out).toHaveLength(10);
+        expect(out[9]).toBe('[REDACTED:size-limit]');
     });
 
-    test('strings beyond the maxChars budget are cut or replaced', () => {
-        const out = redactJsonValueSync({ a: 'x'.repeat(60), b: `password=${FAKE}` }, { maxChars: 50 }) as {
+    test('a wide object stops at the budget without reading every key', () => {
+        const wide: Record<string, unknown> = {};
+        for (let i = 0; i < 50_000; i++) wide[`k${i}`] = i;
+        const out = redactJsonValueSync(wide, { maxNodes: 100 }) as Record<string, unknown>;
+        expect(Object.keys(out)).toHaveLength(100);
+        expect(Object.values(out).at(-1)).toBe('[REDACTED:size-limit]');
+    });
+
+    test('a leaf over the maxChars budget is replaced whole (no prefix exposure)', () => {
+        const out = redactJsonValueSync({ a: 'x'.repeat(60), b: 'short' }, { maxChars: 50 }) as {
             a: string;
             b: string;
         };
-        expect(out.a).toBe(`${'x'.repeat(50)}[REDACTED:size-limit]`);
+        expect(out.a).toBe('[REDACTED:size-limit]');
         expect(out.b).toBe('[REDACTED:size-limit]');
+    });
+
+    test('typed arrays and buffers are replaced, never walked', () => {
+        const out = redactJsonValueSync({ a: Buffer.from('x'.repeat(1000)), b: new Uint8Array(10) });
+        expect(out).toEqual({ a: '[REDACTED:size-limit]', b: '[REDACTED:size-limit]' });
+    });
+
+    test('an Error is read as name, message and stack, then scanned', () => {
+        const out = redactJsonValueSync(new Error(`boom password=${FAKE}`)) as Record<string, string>;
+        expect(out.name).toBe('Error');
+        expect(out.message).toBe('boom password=[REDACTED:generic-keyword]');
+        expect(out.stack).not.toContain(FAKE);
+    });
+
+    test('an object with toJSON is read through toJSON, then scanned', () => {
+        const value = { toJSON: () => ({ note: `password=${FAKE}` }) };
+        const out = redactJsonValueSync({ v: value });
+        expect(out).toEqual({ v: { note: 'password=[REDACTED:generic-keyword]' } });
+    });
+
+    test('skip keys keep primitives but containers below them are walked', () => {
+        const out = redactJsonValueSync({ type: { password: FAKE }, id: `password=${FAKE}` });
+        expect(out).toEqual({ type: { password: '[REDACTED:key-context]' }, id: `password=${FAKE}` });
+    });
+
+    test('a secret in an object key is replaced in the key', () => {
+        const out = redactJsonValueSync({ [`Bearer ${FAKE}`]: 1 });
+        expect(out).toEqual({ 'Bearer [REDACTED:auth-header]': 1 });
+    });
+
+    test('token counts stay numbers, secret numbers are replaced', () => {
+        const out = redactJsonValueSync({ max_tokens: 100, tokens: [1, 2], pin: 1234, token: 5 });
+        const ph = '[REDACTED:key-context]';
+        expect(out).toEqual({ max_tokens: 100, tokens: [1, 2], pin: ph, token: ph });
     });
 
     test('a circular reference becomes a placeholder', () => {

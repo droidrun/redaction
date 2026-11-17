@@ -8,17 +8,33 @@
  * strings): see the `lifted` tests.
  */
 import { describe, expect, test } from 'bun:test';
-import { isSecretKeyName, redactJsonValueSync, redactTextSync } from './index.js';
+import {
+    isSecretKeyName,
+    redactJsonValue,
+    redactJsonValueSync,
+    redactText,
+    redactTextSync,
+} from './index.js';
 
 const KW = '[REDACTED:generic-keyword]';
 const AUTH = '[REDACTED:auth-header]';
 const KEY = '[REDACTED:key-context]';
-const redact = (text: string): string => redactTextSync(text).text;
-const redactJson = (value: unknown): unknown => redactJsonValueSync(value);
+// Every case runs through BOTH entry points and must give the same output.
+async function redact(text: string): Promise<string> {
+    const sync = redactTextSync(text).text;
+    expect((await redactText(text)).text).toBe(sync);
+    return sync;
+}
+
+async function redactJson(value: unknown): Promise<unknown> {
+    const sync = redactJsonValueSync(value);
+    expect(await redactJsonValue(value, { hits: [] })).toEqual(sync);
+    return sync;
+}
 
 describe('redactEvidence cases', () => {
-    test('redacts bearer tokens', () => {
-        expect(redact('Authorization: Bearer abc.def-1=')).toBe(`Authorization: Bearer ${AUTH}`);
+    test('redacts bearer tokens', async () => {
+        expect(await redact('Authorization: Bearer abc.def-1=')).toBe(`Authorization: Bearer ${AUTH}`);
     });
 
     test.each([
@@ -29,39 +45,39 @@ describe('redactEvidence cases', () => {
         ['auth_token = "a b"', `auth_token = "${KW}"`],
         ['password="she said \\"hi there\\" ok" tail', `password="${KW}" tail`],
         ["secret='it''s fine' rest", `secret='${KW}''s fine' rest`],
-    ])('quoted value with spaces: %s', (input, expected) => {
-        expect(redact(input)).toBe(expected);
+    ])('quoted value with spaces: %s', async (input, expected) => {
+        expect(await redact(input)).toBe(expected);
     });
 
-    test('quoted values leave no fragment of the secret behind', () => {
+    test('quoted values leave no fragment of the secret behind', async () => {
         for (const q of ['"', "'"]) {
-            const out = redact(`access_token=${q}top secret value${q}`);
+            const out = await redact(`access_token=${q}top secret value${q}`);
             expect(out).not.toContain('top');
             expect(out).not.toContain('secret value');
             expect(out).not.toContain('value');
         }
     });
 
-    test('unquoted and unterminated values are still redacted', () => {
-        expect(redact('api_key=sk-live-1,next=2')).toBe(`api_key=${KW},next=2`);
-        expect(redact('password: hunter2')).toBe(`password: ${KW}`);
-        expect(redact('password="truncated-by-cut')).toBe(`password="${KW}`);
+    test('unquoted and unterminated values are still redacted', async () => {
+        expect(await redact('api_key=sk-live-1,next=2')).toBe(`api_key=${KW},next=2`);
+        expect(await redact('password: hunter2')).toBe(`password: ${KW}`);
+        expect(await redact('password="truncated-by-cut')).toBe(`password="${KW}`);
     });
 
-    test('is idempotent', () => {
-        const once = redact('password="a b" api_key=zzz Bearer q');
-        expect(redact(once)).toBe(once);
+    test('is idempotent', async () => {
+        const once = await redact('password="a b" api_key=zzz Bearer q');
+        expect(await redact(once)).toBe(once);
     });
 
-    test('leaves unrelated text alone', () => {
+    test('leaves unrelated text alone', async () => {
         const text = 'ValueError: boom password-reset flow ok';
-        expect(redact(text)).toBe(text);
+        expect(await redact(text)).toBe(text);
     });
 });
 
 describe('prepareStepInput: redaction by key name', () => {
-    test('replaces nested values under secret key names, whatever their type', () => {
-        const stored = redactJson({
+    test('replaces nested values under secret key names, whatever their type', async () => {
+        const stored = await redactJson({
             url: 'https://example.test',
             headers: { 'X-Api-Key': 'k-1', accept: 'json' },
             body: { user: { password: 'hunter2', profile: { apiKey: 'abc', client_secret: { id: 1 } } } },
@@ -70,13 +86,13 @@ describe('prepareStepInput: redaction by key name', () => {
         expect(stored).toEqual({
             url: 'https://example.test',
             headers: { 'X-Api-Key': KEY, accept: 'json' },
-            body: { user: { password: KEY, profile: { apiKey: KEY, client_secret: KEY } } },
+            body: { user: { password: KEY, profile: { apiKey: KEY, client_secret: { id: 1 } } } },
             list: [{ accessToken: KEY }, { authToken: KEY }],
         });
     });
 
-    test('masks Bearer tokens in strings anywhere in the structure', () => {
-        const stored = redactJson({
+    test('masks Bearer tokens in strings anywhere in the structure', async () => {
+        const stored = await redactJson({
             headers: { 'X-Forwarded': 'Bearer abc.def-ghi' },
             notes: ['x Bearer zzz y'],
         });
@@ -86,15 +102,15 @@ describe('prepareStepInput: redaction by key name', () => {
         });
     });
 
-    test('lifted: keyword pairs inside other strings are masked too', () => {
+    test('lifted: keyword pairs inside other strings are masked too', async () => {
         // triggers kept `prompt: 'use password=hunter2'` ("documents its limit").
-        expect(redactJson({ prompt: 'use password=hunter2', login: 'plain' }))
+        expect(await redactJson({ prompt: 'use password=hunter2', login: 'plain' }))
             .toEqual({ prompt: `use password=${KW}`, login: 'plain' });
     });
 
-    test('a key named __proto__ stays a plain key', () => {
+    test('a key named __proto__ stays a plain key', async () => {
         const input = JSON.parse('{"__proto__":{"polluted":true},"a":1}');
-        const stored = redactJson(input) as Record<string, unknown>;
+        const stored = await redactJson(input) as Record<string, unknown>;
         expect(Object.keys(stored)).toEqual(['__proto__', 'a']);
         expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     });
@@ -121,15 +137,15 @@ describe('isSecretKeyName: words of the key, not substrings', () => {
         'refreshtoken', 'setcookie',
         // contain the word: accepted
         'hasPassword', 'passwordPolicy', 'userPassword2', 'maxTokens',
-        // absorbed from chat-agents-api
-        'proxy-authorization', 'Proxy-Authorization',
+        // absorbed from chat-agents-api, and `auth` (whole key only; was not secret in triggers)
+        'proxy-authorization', 'Proxy-Authorization', 'auth',
     ])('%s is secret', (key) => {
         expect(isSecretKeyName(key)).toBe(true);
     });
 
     test.each([
         'name', 'prompt', 'url', 'key', 'keys', 'api', 'private', 'client', 'card', 'number', 'access',
-        'auth',
+        'passThrough', 'sid', 'callSid', 'bypass', 'cwd',
         'secretary', 'passwordless', 'tokenizer', 'tokenization', 'cookbook', 'credentialed',
         'pinned', 'spin', 'pineapple', 'pins', 'pinCode', 'opt', 'options', 'cvvv', 'pwdx',
         'author', 'authorName', 'authority', 'authors', 'designature', 'passwordlessLogin',
@@ -139,8 +155,8 @@ describe('isSecretKeyName: words of the key, not substrings', () => {
 });
 
 describe('prepareStepInput: authorization values in strings', () => {
-    test('masks Bearer, Basic and Token values, keeping the scheme', () => {
-        expect(redactJson({
+    test('masks Bearer, Basic and Token values, keeping the scheme', async () => {
+        expect(await redactJson({
             a: 'Bearer abc.def',
             b: 'Basic dXNlcjpwYXNzd29yZA==',
             c: 'Token 9f8e7d6c5b4a3210',
@@ -153,24 +169,24 @@ describe('prepareStepInput: authorization values in strings', () => {
         });
     });
 
-    test('lifted: a token: label with a credential-shaped value is masked as a keyword pair', () => {
+    test('lifted: a token: label with a credential-shaped value is masked as a keyword pair', async () => {
         // triggers kept `token: ghp_abcdef123456`; the keyword rule has evidence for it.
-        expect(redact('token: ghp_abcdef123456')).toBe(`token: ${KW}`);
+        expect(await redact('token: ghp_abcdef123456')).toBe(`token: ${KW}`);
     });
 
-    test('leaves prose that only contains the words alone', () => {
+    test('leaves prose that only contains the words alone', async () => {
         const prose = {
             a: 'Token expired, Basic information, token refresh',
             b: 'Basic Authentication',
             c: 'use the token',
         };
-        expect(redactJson(prose)).toEqual(prose);
+        expect(await redactJson(prose)).toEqual(prose);
     });
 });
 
 describe('prepareStepInput: redaction runs before size decisions', () => {
-    test('a huge value under a secret key is replaced, not copied', () => {
+    test('a huge value under a secret key is replaced, not copied', async () => {
         const big = { password: 'p'.repeat(1_000_000), keep: 1 };
-        expect(redactJson(big)).toEqual({ password: KEY, keep: 1 });
+        expect(await redactJson(big)).toEqual({ password: KEY, keep: 1 });
     });
 });

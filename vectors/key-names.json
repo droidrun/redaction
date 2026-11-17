@@ -8,12 +8,7 @@
         "client_secret": "def",
         "url": "https://example.test"
       },
-      "expectedSync": {
-        "apiKey": "[REDACTED:key-context]",
-        "client_secret": "[REDACTED:key-context]",
-        "url": "https://example.test"
-      },
-      "expectedAsync": {
+      "expected": {
         "apiKey": "[REDACTED:key-context]",
         "client_secret": "[REDACTED:key-context]",
         "url": "https://example.test"
@@ -29,15 +24,7 @@
           "accept": "json"
         }
       },
-      "expectedSync": {
-        "headers": {
-          "X-Api-Key": "[REDACTED:key-context]",
-          "x-auth-token": "[REDACTED:key-context]",
-          "Set-Cookie": "[REDACTED:key-context]",
-          "accept": "json"
-        }
-      },
-      "expectedAsync": {
+      "expected": {
         "headers": {
           "X-Api-Key": "[REDACTED:key-context]",
           "x-auth-token": "[REDACTED:key-context]",
@@ -66,25 +53,7 @@
           }
         ]
       },
-      "expectedSync": {
-        "body": {
-          "user": {
-            "password": "[REDACTED:key-context]",
-            "profile": {
-              "apiKey": "[REDACTED:key-context]"
-            }
-          }
-        },
-        "list": [
-          {
-            "accessToken": "[REDACTED:key-context]"
-          },
-          {
-            "authToken": "[REDACTED:key-context]"
-          }
-        ]
-      },
-      "expectedAsync": {
+      "expected": {
         "body": {
           "user": {
             "password": "[REDACTED:key-context]",
@@ -112,12 +81,11 @@
         },
         "keep": 1
       },
-      "expectedSync": {
-        "client_secret": "[REDACTED:key-context]",
-        "keep": 1
-      },
-      "expectedAsync": {
-        "client_secret": "[REDACTED:key-context]",
+      "expected": {
+        "client_secret": {
+          "id": 1,
+          "value": "[REDACTED:key-context]"
+        },
         "keep": 1
       }
     },
@@ -129,11 +97,11 @@
           "b"
         ]
       },
-      "expectedSync": {
-        "tokens": "[REDACTED:key-context]"
-      },
-      "expectedAsync": {
-        "tokens": "[REDACTED:key-context]"
+      "expected": {
+        "tokens": [
+          "[REDACTED:key-context]",
+          "[REDACTED:key-context]"
+        ]
       }
     },
     {
@@ -142,11 +110,7 @@
         "pin": 1234,
         "name": "card"
       },
-      "expectedSync": {
-        "pin": "[REDACTED:key-context]",
-        "name": "card"
-      },
-      "expectedAsync": {
+      "expected": {
         "pin": "[REDACTED:key-context]",
         "name": "card"
       }
@@ -161,15 +125,7 @@
         "cvc": "456",
         "name": "n"
       },
-      "expectedSync": {
-        "pwd": "[REDACTED:key-context]",
-        "otp": "[REDACTED:key-context]",
-        "totp": "[REDACTED:key-context]",
-        "cvv": "[REDACTED:key-context]",
-        "cvc": "[REDACTED:key-context]",
-        "name": "n"
-      },
-      "expectedAsync": {
+      "expected": {
         "pwd": "[REDACTED:key-context]",
         "otp": "[REDACTED:key-context]",
         "totp": "[REDACTED:key-context]",
@@ -185,12 +141,7 @@
         "password": null,
         "token": false
       },
-      "expectedSync": {
-        "hasPassword": true,
-        "password": null,
-        "token": false
-      },
-      "expectedAsync": {
+      "expected": {
         "hasPassword": true,
         "password": null,
         "token": false
@@ -202,11 +153,7 @@
         "password": "",
         "name": "n"
       },
-      "expectedSync": {
-        "password": "",
-        "name": "n"
-      },
-      "expectedAsync": {
+      "expected": {
         "password": "",
         "name": "n"
       }
@@ -216,10 +163,7 @@
       "input": {
         "password": "[REDACTED:key-context]"
       },
-      "expectedSync": {
-        "password": "[REDACTED:key-context]"
-      },
-      "expectedAsync": {
+      "expected": {
         "password": "[REDACTED:key-context]"
       }
     },
@@ -228,10 +172,7 @@
       "input": {
         "password": "[REDACTED]"
       },
-      "expectedSync": {
-        "password": "[REDACTED]"
-      },
-      "expectedAsync": {
+      "expected": {
         "password": "[REDACTED]"
       }
     },
@@ -242,12 +183,7 @@
         "id": "token",
         "password": "x"
       },
-      "expectedSync": {
-        "type": "password",
-        "id": "token",
-        "password": "[REDACTED:key-context]"
-      },
-      "expectedAsync": {
+      "expected": {
         "type": "password",
         "id": "token",
         "password": "[REDACTED:key-context]"
@@ -258,10 +194,7 @@
       "input": {
         "secretary": "Jane Doe"
       },
-      "expectedSync": {
-        "secretary": "Jane Doe"
-      },
-      "expectedAsync": {
+      "expected": {
         "secretary": "Jane Doe"
       }
     },
@@ -271,11 +204,7 @@
         "passwordless": "enabled",
         "passwordlessLogin": "on"
       },
-      "expectedSync": {
-        "passwordless": "enabled",
-        "passwordlessLogin": "on"
-      },
-      "expectedAsync": {
+      "expected": {
         "passwordless": "enabled",
         "passwordlessLogin": "on"
       }
@@ -288,13 +217,7 @@
         "author": "me",
         "authority": "x"
       },
-      "expectedSync": {
-        "tokenizer": "bpe",
-        "cookbook": "pasta",
-        "author": "me",
-        "authority": "x"
-      },
-      "expectedAsync": {
+      "expected": {
         "tokenizer": "bpe",
         "cookbook": "pasta",
         "author": "me",
@@ -308,15 +231,233 @@
         "spin": "right",
         "options": "a"
       },
-      "expectedSync": {
+      "expected": {
         "pinned": "yes",
         "spin": "right",
         "options": "a"
+      }
+    },
+    {
+      "name": "token counts stay numbers",
+      "input": {
+        "tokens": [
+          1,
+          2,
+          3
+        ],
+        "max_tokens": 100,
+        "prompt_tokens": 12,
+        "token_count": 7
       },
-      "expectedAsync": {
-        "pinned": "yes",
-        "spin": "right",
-        "options": "a"
+      "expected": {
+        "tokens": [
+          1,
+          2,
+          3
+        ],
+        "max_tokens": 100,
+        "prompt_tokens": 12,
+        "token_count": 7
+      }
+    },
+    {
+      "name": "usage object stays",
+      "input": {
+        "usage": {
+          "prompt_tokens": 3,
+          "completion_tokens": 4,
+          "total_tokens": 7
+        }
+      },
+      "expected": {
+        "usage": {
+          "prompt_tokens": 3,
+          "completion_tokens": 4,
+          "total_tokens": 7
+        }
+      }
+    },
+    {
+      "name": "strings under a plural key are replaced",
+      "input": {
+        "tokens": [
+          "a",
+          "b"
+        ]
+      },
+      "expected": {
+        "tokens": [
+          "[REDACTED:key-context]",
+          "[REDACTED:key-context]"
+        ]
+      }
+    },
+    {
+      "name": "container under a secret key is walked, strings replaced",
+      "input": {
+        "client_secret": {
+          "id": 1,
+          "value": "x",
+          "n": 5
+        }
+      },
+      "expected": {
+        "client_secret": {
+          "id": 1,
+          "value": "[REDACTED:key-context]",
+          "n": "[REDACTED:key-context]"
+        }
+      }
+    },
+    {
+      "name": "numeric secret under a singular key",
+      "input": {
+        "token": 12345,
+        "password": 20240101,
+        "pin": 1234
+      },
+      "expected": {
+        "token": "[REDACTED:key-context]",
+        "password": "[REDACTED:key-context]",
+        "pin": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "pwd suffix",
+      "input": {
+        "MYSQL_PWD": "a",
+        "dbPwd": "b",
+        "adminpwd": "c",
+        "pwd": "d",
+        "cwd": "/home"
+      },
+      "expected": {
+        "MYSQL_PWD": "[REDACTED:key-context]",
+        "dbPwd": "[REDACTED:key-context]",
+        "adminpwd": "[REDACTED:key-context]",
+        "pwd": "[REDACTED:key-context]",
+        "cwd": "/home"
+      }
+    },
+    {
+      "name": "compound lower-case names",
+      "input": {
+        "secretkey": "a",
+        "accesskeyid": "b",
+        "privatekeypem": "c",
+        "apikeyvalue": "d"
+      },
+      "expected": {
+        "secretkey": "[REDACTED:key-context]",
+        "accesskeyid": "[REDACTED:key-context]",
+        "privatekeypem": "[REDACTED:key-context]",
+        "apikeyvalue": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "more secret names",
+      "input": {
+        "pass": "a",
+        "auth": "b",
+        "basicAuth": "c",
+        "privKey": "d",
+        "signingKey": "e",
+        "encryptionKey": "f",
+        "masterKey": "g",
+        "sshKey": "h",
+        "serviceAccountKey": "i",
+        "dsn": "j",
+        "connectionString": "k",
+        "recoveryCodes": [
+          "l"
+        ]
+      },
+      "expected": {
+        "pass": "[REDACTED:key-context]",
+        "auth": "[REDACTED:key-context]",
+        "basicAuth": "[REDACTED:key-context]",
+        "privKey": "[REDACTED:key-context]",
+        "signingKey": "[REDACTED:key-context]",
+        "encryptionKey": "[REDACTED:key-context]",
+        "masterKey": "[REDACTED:key-context]",
+        "sshKey": "[REDACTED:key-context]",
+        "serviceAccountKey": "[REDACTED:key-context]",
+        "dsn": "[REDACTED:key-context]",
+        "connectionString": "[REDACTED:key-context]",
+        "recoveryCodes": [
+          "[REDACTED:key-context]"
+        ]
+      }
+    },
+    {
+      "name": "guard: sid is an ordinary id",
+      "input": {
+        "sid": "AC1234567890",
+        "callSid": "CA123"
+      },
+      "expected": {
+        "sid": "AC1234567890",
+        "callSid": "CA123"
+      }
+    },
+    {
+      "name": "guard: passThrough and bypass",
+      "input": {
+        "passThrough": "x",
+        "bypass": "y",
+        "passenger": "z"
+      },
+      "expected": {
+        "passThrough": "x",
+        "bypass": "y",
+        "passenger": "z"
+      }
+    },
+    {
+      "name": "0.1.1 matched keys still match",
+      "input": {
+        "AWS_SECRET_ACCESS_KEY": "a",
+        "accessKeyId": "b",
+        "secretKeyBase": "c",
+        "GITHUB_TOKEN": "d",
+        "DB_PASSWD": "e",
+        "api_keys": "f",
+        "user_credentials": "g",
+        "session_token_id": "h"
+      },
+      "expected": {
+        "AWS_SECRET_ACCESS_KEY": "[REDACTED:key-context]",
+        "accessKeyId": "[REDACTED:key-context]",
+        "secretKeyBase": "[REDACTED:key-context]",
+        "GITHUB_TOKEN": "[REDACTED:key-context]",
+        "DB_PASSWD": "[REDACTED:key-context]",
+        "api_keys": "[REDACTED:key-context]",
+        "user_credentials": "[REDACTED:key-context]",
+        "session_token_id": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "structural keys skip primitives only",
+      "input": {
+        "type": {
+          "password": "hunter2"
+        },
+        "id": "password=hunter2abcd"
+      },
+      "expected": {
+        "type": {
+          "password": "[REDACTED:key-context]"
+        },
+        "id": "password=hunter2abcd"
+      }
+    },
+    {
+      "name": "secret in an object key",
+      "input": {
+        "Bearer abc12345678": 1
+      },
+      "expected": {
+        "Bearer [REDACTED:auth-header]": 1
       }
     }
   ]

@@ -1,13 +1,16 @@
 /**
  * Text secret detection and replacement. `redactText` is the shared entry
- * point for plain text and the JSON-value visitor. Detector failures return
- * the original text and no hits; consumers never lose data to a scan failure.
+ * point for plain text and the JSON-value visitor. A scanner failure falls
+ * back to the deterministic rules (see `redactText`); it never passes a secret.
  */
 import { scanText } from './engine.js';
 import { applyHits, dedupeRanges, type Hit } from './hits.js';
+import { buildReadPlaceholder } from './placeholder.js';
 import { detectSyncHits } from './sync-rules.js';
 
 export type { Hit };
+
+const ERROR_RULE_ID = 'error';
 
 /** Below this, not worth invoking the engine — no real secret is <8 chars. */
 const MIN_SCAN_LEN = 8;
@@ -34,15 +37,8 @@ const MAX_SCAN_LEN = 100_000;
  * block can be ~10k+ chars — every custom rule here and every provider-key
  * shape from the upstream preset is far shorter than that.
  *
- * Residual gap (disclosed, not fixed by any overlap size): a few rules use
- * UNBOUNDED quantifiers — the custom JWT rule's `[\w-]{10,}` segments and
- * `generic-keyword-rule`'s `{8,}` value capture. A pathological match from
- * one of those longer than this overlap, straddling a window boundary,
- * could still be missed. This is a low-severity trade-off: both rule
- * families are keyword/structure-gated (a JWT needs 3 dot-separated
- * base64url segments; generic-keyword needs a credential-shaped label
- * immediately before the value), so a legitimate match realistically stays
- * far under 10k chars — nothing in real traffic exercises this edge.
+ * The custom rules (JWT, keywords, Google, xAI) are the sync rules now and run
+ * over the whole text, so only the upstream scanners are windowed.
  */
 const SCAN_OVERLAP = 10_240;
 
@@ -73,19 +69,16 @@ function emitEvent(opts: RedactTextOpts, name: string, attrs: Record<string, unk
 }
 
 /**
- * Unconditional, length-guarded scan: the secretlint scanners plus the sync
- * rules (`sync-rules.ts`), so the async path finds everything the sync path
- * does. Errors propagate to `redactText`, which owns the fail-open contract.
+ * Unconditional, length-guarded scan: the upstream secretlint scanners plus
+ * the sync rules (`sync-rules.ts`), so the async path finds everything the
+ * sync path does. Errors propagate to `redactText`, which owns the fail-open
+ * contract. Overlapping hits are merged.
  *
- * For text at or below `MAX_SCAN_LEN`, this is a single `scanText` call.
- * Longer text is walked in overlapping `MAX_SCAN_LEN`-sized windows
- * (stride = `MAX_SCAN_LEN -
- * SCAN_OVERLAP`) up to `MAX_TOTAL_SCAN_LEN`, so the TAIL of a long string
- * (e.g. a large raw file-read tool output) is scanned too, not silently
- * dropped. Each window's hit ranges are offset back to ABSOLUTE indices
- * before merging, and `dedupeRanges` collapses the resulting overlaps (a
- * secret straddling a window boundary is reported once per window it falls
- * in, fully or partially — the union still covers it completely).
+ * The scanners see the first `MAX_TOTAL_SCAN_LEN` characters, in overlapping
+ * windows when longer than `MAX_SCAN_LEN` (offsets are mapped back to absolute
+ * indices; a secret straddling a boundary is covered by the union). The sync
+ * rules run over the WHOLE text, so past the scanner cap only the scanner-only
+ * formats are not found; a text that long is reported as `redaction.scan.capped`.
  */
 export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Promise<Hit[]> {
     if (text.length < MIN_SCAN_LEN) return [];
@@ -97,19 +90,9 @@ export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Pr
             scannedLength: MAX_TOTAL_SCAN_LEN,
         });
     }
-    const scanLen = capped ? MAX_TOTAL_SCAN_LEN : text.length;
-    const scanned = capped ? text.slice(0, scanLen) : text;
+    const scanned = capped ? text.slice(0, MAX_TOTAL_SCAN_LEN) : text;
     const scannerHits = await scanWindows(scanned);
-    return [...scannerHits, ...uncoveredSyncHits(scannerHits, detectSyncHits(scanned))];
-}
-
-/** Sync hits a scanner hit does not already contain, so a secret both find is
- *  reported once, under the scanner's rule id. */
-function uncoveredSyncHits(scannerHits: readonly Hit[], syncHits: readonly Hit[]): Hit[] {
-    if (scannerHits.length === 0) return [...syncHits];
-    return syncHits.filter((hit) => !scannerHits.some((scanner) => {
-        return scanner.range[0] <= hit.range[0] && hit.range[1] <= scanner.range[1];
-    }));
+    return dedupeRanges([...scannerHits, ...detectSyncHits(text)]);
 }
 
 /** The secretlint scanners over `text` (already capped), in windows when long. */
@@ -135,7 +118,8 @@ async function scanWindows(text: string): Promise<Hit[]> {
  * Detect + replace. NEVER THROWS: a detector failure emits
  * `redaction.detect.failed` without the exception message, because it could
  * echo a slice of the input that broke the engine and leak secret material.
- * Returns the original text unredacted rather than losing the caller's data.
+ * It then falls back to the deterministic rules alone (`[REDACTED:error]` for
+ * the whole text if those fail too): a failing scanner never passes a secret.
  */
 export async function redactText(
     text: string,
@@ -150,6 +134,18 @@ export async function redactText(
         emitEvent(opts, 'redaction.detect.failed', {
             errorName: err instanceof Error ? err.constructor.name : typeof err,
         });
-        return { text, hits: [] };
+        return degradedRedaction(text);
+    }
+}
+
+/** The scanners failed: the deterministic rules still run, and if they fail too
+ *  the text is replaced. A scan failure never lets a secret through. */
+function degradedRedaction(text: string): { text: string; hits: Hit[] } {
+    try {
+        const hits = detectSyncHits(text);
+        return { text: applyHits(text, hits), hits };
+    } catch {
+        const hit: Hit = { ruleId: ERROR_RULE_ID, range: [0, 0] };
+        return { text: buildReadPlaceholder(ERROR_RULE_ID), hits: [hit] };
     }
 }

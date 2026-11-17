@@ -1,0 +1,48 @@
+/**
+ * sync-entry.test.ts — the `./sync` subpath: importing it must not load
+ * secretlint (the logger and edge workers import only this), and it exports
+ * the same functions as the full entry.
+ */
+import { expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import * as full from './index.js';
+import * as sync from './sync.js';
+
+test('importing the sync entry loads no secretlint module', () => {
+    const result = spawnSync(process.execPath, ['--eval', `
+        import { strict as assert } from 'node:assert';
+        const sync = await import('./src/sync.ts');
+        const out = sync.redactTextSync('login password: Zq9fakeMARKER_x1');
+        assert.equal(out.text, 'login password: [REDACTED:generic-keyword]');
+        assert.equal(sync.restoreRedacted({ a: '[REDACTED]' }, { a: 'x' }).value.a, 'x');
+        const loaded = Object.keys(require.cache).filter((path) => path.includes('secretlint'));
+        assert.deepEqual(loaded, []);
+    `], {
+        cwd: fileURLToPath(new URL('..', import.meta.url)),
+        encoding: 'utf8',
+        timeout: 10_000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+}, 20_000);
+
+test('the full entry loads secretlint (so the check above can fail)', () => {
+    const result = spawnSync(process.execPath, ['--eval', `
+        import { strict as assert } from 'node:assert';
+        await import('./src/index.ts');
+        const loaded = Object.keys(require.cache).filter((path) => path.includes('secretlint'));
+        assert.notEqual(loaded.length, 0);
+    `], {
+        cwd: fileURLToPath(new URL('..', import.meta.url)),
+        encoding: 'utf8',
+        timeout: 10_000,
+    });
+    expect(result.status, result.stderr).toBe(0);
+}, 20_000);
+
+test('every export of the sync entry is the same function as the full entry exports', () => {
+    for (const [name, value] of Object.entries(sync)) {
+        expect((full as Record<string, unknown>)[name], name).toBe(value);
+    }
+});

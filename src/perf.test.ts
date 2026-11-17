@@ -2,9 +2,9 @@
  * perf.test.ts — the latency budget for a list response: 1,000 realistic
  * action rows (about 0.5 MB of JSON, a third of them with a fake secret).
  *
- * Measured on an Apple-silicon laptop (bun 1.4): sync about 20 ms, async about
+ * Measured on an Apple-silicon laptop (bun 1.4): sync about 30 ms, async about
  * 75 ms per list, after one warm-up call. The budgets below leave roughly
- * 12x (sync) and 20x (async) headroom for slow CI runners and a cold JIT; a
+ * 8x (sync) and 20x (async) headroom for slow CI runners and a cold JIT; a
  * regression that breaks the budget is a real algorithmic change, not noise.
  * The median of five runs is compared, not the best or the worst.
  */

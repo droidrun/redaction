@@ -4,44 +4,35 @@
     {
       "name": "basic auth value",
       "input": "Authorization: Basic dXNlcjpwYXNzd29yZDEyMw==",
-      "expectedSync": "Authorization: Basic [REDACTED:auth-header]",
-      "expectedAsync": "Authorization: Basic [REDACTED:auth-header]"
+      "expected": "Authorization: Basic [REDACTED:auth-header]"
     },
     {
       "name": "base64 under a secret key",
       "input": {
         "password": "cGFzc3dvcmQxMjM0NTY3OA=="
       },
-      "expectedSync": {
-        "password": "[REDACTED:key-context]"
-      },
-      "expectedAsync": {
+      "expected": {
         "password": "[REDACTED:key-context]"
       }
     },
     {
       "name": "image data uri stays",
       "input": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
-      "expectedSync": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
-      "expectedAsync": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
+      "expected": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
     },
     {
       "name": "base64 blob under a neutral key stays",
       "input": {
         "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
       },
-      "expectedSync": {
-        "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-      },
-      "expectedAsync": {
+      "expected": {
         "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
       }
     },
     {
       "name": "uuid and sha stay",
       "input": "device 3fa85f64-5717-4562-b3fc-2c963f66afa6 commit a94a8fe5ccb19ba61c4c0873d391e987982fbbd3",
-      "expectedSync": "device 3fa85f64-5717-4562-b3fc-2c963f66afa6 commit a94a8fe5ccb19ba61c4c0873d391e987982fbbd3",
-      "expectedAsync": "device 3fa85f64-5717-4562-b3fc-2c963f66afa6 commit a94a8fe5ccb19ba61c4c0873d391e987982fbbd3"
+      "expected": "device 3fa85f64-5717-4562-b3fc-2c963f66afa6 commit a94a8fe5ccb19ba61c4c0873d391e987982fbbd3"
     }
   ]
 }
