@@ -1,0 +1,95 @@
+{
+  "description": "Bearer, Basic and Token authorization values",
+  "cases": [
+    {
+      "name": "bearer header",
+      "input": "Authorization: Bearer abc.def-1=",
+      "expectedSync": "Authorization: Bearer [REDACTED:auth-header]",
+      "expectedAsync": "Authorization: Bearer [REDACTED:auth-header]"
+    },
+    {
+      "name": "bearer lower case",
+      "input": "authorization: bearer abc.def-1= for the call",
+      "expectedSync": "authorization: bearer [REDACTED:auth-header] for the call",
+      "expectedAsync": "authorization: bearer [REDACTED:auth-header] for the call"
+    },
+    {
+      "name": "bearer in a sentence",
+      "input": "sent x Bearer zzz y",
+      "expectedSync": "sent x Bearer [REDACTED:auth-header] y",
+      "expectedAsync": "sent x Bearer [REDACTED:auth-header] y"
+    },
+    {
+      "name": "basic credentials",
+      "input": "Authorization: Basic dXNlcjpwYXNzd29yZA==",
+      "expectedSync": "Authorization: Basic [REDACTED:auth-header]",
+      "expectedAsync": "Authorization: Basic [REDACTED:auth-header]"
+    },
+    {
+      "name": "basic lower case",
+      "input": "basic dXNlcjpwYXNz",
+      "expectedSync": "basic [REDACTED:auth-header]",
+      "expectedAsync": "basic [REDACTED:auth-header]"
+    },
+    {
+      "name": "token scheme",
+      "input": "Authorization: Token 9f8e7d6c5b4a3210",
+      "expectedSync": "Authorization: Token [REDACTED:auth-header]",
+      "expectedAsync": "Authorization: Token [REDACTED:auth-header]"
+    },
+    {
+      "name": "proxy authorization header in a json value",
+      "input": {
+        "Proxy-Authorization": "Basic dXNlcjpwYXNzd29yZA==",
+        "accept": "json"
+      },
+      "expectedSync": {
+        "Proxy-Authorization": "[REDACTED:key-context]",
+        "accept": "json"
+      },
+      "expectedAsync": {
+        "Proxy-Authorization": "[REDACTED:key-context]",
+        "accept": "json"
+      }
+    },
+    {
+      "name": "header map",
+      "input": {
+        "headers": {
+          "X-Forwarded": "Bearer abc.def-ghi",
+          "accept": "json"
+        }
+      },
+      "expectedSync": {
+        "headers": {
+          "X-Forwarded": "Bearer [REDACTED:auth-header]",
+          "accept": "json"
+        }
+      },
+      "expectedAsync": {
+        "headers": {
+          "X-Forwarded": "Bearer [REDACTED:auth-header]",
+          "accept": "json"
+        }
+      }
+    },
+    {
+      "name": "prose with Token",
+      "input": "Token expired, Basic information, token refresh",
+      "expectedSync": "Token expired, Basic information, token refresh",
+      "expectedAsync": "Token expired, Basic information, token refresh"
+    },
+    {
+      "name": "prose with Basic",
+      "input": "Basic Authentication",
+      "expectedSync": "Basic Authentication",
+      "expectedAsync": "Basic Authentication"
+    },
+    {
+      "name": "prose with token",
+      "input": "use the token",
+      "expectedSync": "use the token",
+      "expectedAsync": "use the token"
+    }
+  ]
+}

@@ -26,8 +26,7 @@
  * lookahead still correctly rejects a 36+-char body run.
  */
 import type { SecretLintRuleCreator } from '@secretlint/types';
-
-const GCP_API_KEY_PATTERN = /(?<![0-9A-Za-z_-])AIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g;
+import { GCP_API_KEY_PATTERN } from '../patterns.js';
 
 const MESSAGES = {
     GCP_API_KEY: {

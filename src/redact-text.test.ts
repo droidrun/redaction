@@ -55,7 +55,7 @@ describe('positive fixtures — one per rule family', () => {
 
     test('leading BOM preserves input-relative redaction ranges', async () => {
         const { text, hits } = await redactText('\ufeffpassword: S0mmer2026!xTr0ub4dor');
-        expect(text).toBe('\ufeffpassword: [REDACTED:generic-keyword:4dor]');
+        expect(text).toBe('\ufeffpassword: [REDACTED:generic-keyword]');
         expect(hits).toHaveLength(1);
     });
 
@@ -65,7 +65,7 @@ describe('positive fixtures — one per rule family', () => {
         const input = filler.slice(0, 89_760) + '\ufeff' + filler.slice(89_761, 105_000) +
             secret + filler.slice(105_000 + secret.length);
         const { text } = await redactText(input);
-        expect(text).toContain('password: [REDACTED:generic-keyword:4dor]');
+        expect(text).toContain('password: [REDACTED:generic-keyword]');
         expect(text).not.toContain('S0mmer2026');
         expect(text).not.toContain(']r');
     });
@@ -217,7 +217,9 @@ describe('idempotence + overlap', () => {
         // The two ranges merge into ONE placeholder spanning the full union
         // — a single marker built from the merged (62-char) match, carrying
         // the ruleId of the earliest-starting hit (aws).
-        expect(out).toBe(`[REDACTED:aws:${secret.slice(-4)}]`);
+        expect(out).toBe('[REDACTED:aws]');
+        const legacy = await redactText(text, { last4: true });
+        expect(legacy.text).toBe(`[REDACTED:aws:${secret.slice(-4)}]`);
     });
 
     test('two independent, non-overlapping hits in one string both get placeholders', async () => {
@@ -231,8 +233,13 @@ describe('idempotence + overlap', () => {
 });
 
 describe('placeholder shape', () => {
-    test('match >=16 chars gets ruleId:last4', async () => {
+    test('the default placeholder carries no character of the secret', async () => {
         const { text } = await redactText('ghp_16C7e42F292c6912E7710c838347Ae178B4a');
+        expect(text).toBe('[REDACTED:github]');
+    });
+
+    test('opts.last4 restores the 0.1.1 form for matches of >=16 chars', async () => {
+        const { text } = await redactText('ghp_16C7e42F292c6912E7710c838347Ae178B4a', { last4: true });
         expect(text).toMatch(/^\[REDACTED:github:[A-Za-z0-9]{4}\]$/);
     });
 

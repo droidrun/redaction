@@ -24,8 +24,7 @@
  * as the other custom rules in this directory.
  */
 import type { SecretLintRuleCreator } from '@secretlint/types';
-
-const XAI_API_KEY_PATTERN = /\bxai-[0-9a-zA-Z_]{80}\b/g;
+import { XAI_API_KEY_PATTERN } from '../patterns.js';
 
 const MESSAGES = {
     XAI_API_KEY: {

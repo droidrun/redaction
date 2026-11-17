@@ -9,8 +9,8 @@
  * repetition) — safe against ReDoS on adversarial input.
  */
 import type { SecretLintRuleCreator } from '@secretlint/types';
+import { JWT_PATTERN } from '../patterns.js';
 
-const JWT_PATTERN = /\beyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}\b/g;
 
 const MESSAGES = {
     JWT: {

@@ -1,0 +1,65 @@
+{
+  "description": "known credential formats found by shape, with no keyword",
+  "cases": [
+    {
+      "name": "jwt",
+      "input": "token is eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVadQssw5c ok",
+      "expectedSync": "token is [REDACTED:jwt] ok",
+      "expectedAsync": "token is [REDACTED:jwt] ok"
+    },
+    {
+      "name": "jwt as bearer",
+      "input": "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVadQssw5c",
+      "expectedSync": "Authorization: Bearer [REDACTED:jwt]",
+      "expectedAsync": "Authorization: Bearer [REDACTED:jwt]"
+    },
+    {
+      "name": "google api key",
+      "input": "ref AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q done",
+      "expectedSync": "ref [REDACTED:gcp-api-key] done",
+      "expectedAsync": "ref [REDACTED:gcp-api-key] done"
+    },
+    {
+      "name": "xai api key",
+      "input": "xai-Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1ab",
+      "expectedSync": "[REDACTED:xai-api-key]",
+      "expectedAsync": "[REDACTED:xai-api-key]"
+    },
+    {
+      "name": "github token",
+      "input": "my github token is ghp_16C7e42F292c6912E7710c838347Ae178B4a",
+      "expectedSync": "my github token is [REDACTED:github]",
+      "expectedAsync": "my github token is [REDACTED:github]"
+    },
+    {
+      "name": "aws access key id",
+      "input": "creds: AKIAQR7ZKT4MW2PLX9BD",
+      "expectedSync": "creds: [REDACTED:aws]",
+      "expectedAsync": "creds: [REDACTED:aws]"
+    },
+    {
+      "name": "slack token",
+      "input": "hook xoxb-1234567890-abcdefghijkl",
+      "expectedSync": "hook [REDACTED:slack]",
+      "expectedAsync": "hook [REDACTED:slack]"
+    },
+    {
+      "name": "platform token srt1",
+      "input": "run srt1.3fa85f64-5717-4562-b3fc-2c963f66afa6.17.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA done",
+      "expectedSync": "run [REDACTED:platform-token] done",
+      "expectedAsync": "run [REDACTED:platform-token] done"
+    },
+    {
+      "name": "guard: decoy google key, 34-char body",
+      "input": "legacyId=AIzaS_f0sYnC4Rce_xcEmtOikZcYypDAJ7fS00",
+      "expectedSync": "legacyId=AIzaS_f0sYnC4Rce_xcEmtOikZcYypDAJ7fS00",
+      "expectedAsync": "legacyId=AIzaS_f0sYnC4Rce_xcEmtOikZcYypDAJ7fS00"
+    },
+    {
+      "name": "guard: bare xai- prefix as a name",
+      "input": "the xai-labs team renamed the xai-eval-harness repo",
+      "expectedSync": "the xai-labs team renamed the xai-eval-harness repo",
+      "expectedAsync": "the xai-labs team renamed the xai-eval-harness repo"
+    }
+  ]
+}

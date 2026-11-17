@@ -1,0 +1,47 @@
+{
+  "description": "secrets in URL query strings and URLs in free text",
+  "cases": [
+    {
+      "name": "token query parameter",
+      "input": "GET https://example.test/cb?token=abc123&x=1",
+      "expectedSync": "GET https://example.test/cb?token=[REDACTED:key-context]&x=1",
+      "expectedAsync": "GET https://example.test/cb?token=[REDACTED:key-context]&x=1"
+    },
+    {
+      "name": "api key after ampersand",
+      "input": "https://example.test/v1?x=1&api_key=Zk9fake&y=2",
+      "expectedSync": "https://example.test/v1?x=1&api_key=[REDACTED:generic-keyword]&y=2",
+      "expectedAsync": "https://example.test/v1?x=1&api_key=[REDACTED:generic-keyword]&y=2"
+    },
+    {
+      "name": "signature parameter",
+      "input": "https://files.example.test/o?sig=AbCdEf123&expires=99",
+      "expectedSync": "https://files.example.test/o?sig=[REDACTED:key-context]&expires=99",
+      "expectedAsync": "https://files.example.test/o?sig=[REDACTED:key-context]&expires=99"
+    },
+    {
+      "name": "encoded key name",
+      "input": "https://example.test/?access%5Ftoken=abc&z=1",
+      "expectedSync": "https://example.test/?access%5Ftoken=[REDACTED:key-context]&z=1",
+      "expectedAsync": "https://example.test/?access%5Ftoken=[REDACTED:key-context]&z=1"
+    },
+    {
+      "name": "placeholder already in query (idempotent)",
+      "input": "https://example.test/?token=[REDACTED:key-context]&x=1",
+      "expectedSync": "https://example.test/?token=[REDACTED:key-context]&x=1",
+      "expectedAsync": "https://example.test/?token=[REDACTED:key-context]&x=1"
+    },
+    {
+      "name": "guard: ordinary parameters",
+      "input": "see https://example.com/path?query=abcdefgh123&page=2 for docs",
+      "expectedSync": "see https://example.com/path?query=abcdefgh123&page=2 for docs",
+      "expectedAsync": "see https://example.com/path?query=abcdefgh123&page=2 for docs"
+    },
+    {
+      "name": "guard: author parameter",
+      "input": "https://example.test/?author=bob&tokenizer=bpe",
+      "expectedSync": "https://example.test/?author=bob&tokenizer=bpe",
+      "expectedAsync": "https://example.test/?author=bob&tokenizer=bpe"
+    }
+  ]
+}

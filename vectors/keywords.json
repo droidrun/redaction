@@ -1,0 +1,95 @@
+{
+  "description": "credential keywords followed by a value, in free text",
+  "cases": [
+    {
+      "name": "bare password pair",
+      "input": "password: hunter2",
+      "expectedSync": "password: [REDACTED:generic-keyword]",
+      "expectedAsync": "password: [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "password with mixed value",
+      "input": "login: admin password: S0mmer2026!xTr0ub4dor",
+      "expectedSync": "login: admin password: [REDACTED:generic-keyword]",
+      "expectedAsync": "login: admin password: [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "equals form, trailing comma kept",
+      "input": "api_key=sk-live-1,next=2",
+      "expectedSync": "api_key=[REDACTED:generic-keyword],next=2",
+      "expectedAsync": "api_key=[REDACTED:generic-keyword],next=2"
+    },
+    {
+      "name": "quoted value with spaces",
+      "input": "password=\"my secret phrase\" next",
+      "expectedSync": "password=\"[REDACTED:generic-keyword]\" next",
+      "expectedAsync": "password=\"[REDACTED:generic-keyword]\" next"
+    },
+    {
+      "name": "single quoted value",
+      "input": "password='my secret phrase' next",
+      "expectedSync": "password='[REDACTED:generic-keyword]' next",
+      "expectedAsync": "password='[REDACTED:generic-keyword]' next"
+    },
+    {
+      "name": "escaped quote inside value",
+      "input": "password=\"she said \\\"hi there\\\" ok\" tail",
+      "expectedSync": "password=\"[REDACTED:generic-keyword]\" tail",
+      "expectedAsync": "password=\"[REDACTED:generic-keyword]\" tail"
+    },
+    {
+      "name": "unterminated quote",
+      "input": "password=\"truncated-by-cut",
+      "expectedSync": "password=\"[REDACTED:generic-keyword]",
+      "expectedAsync": "password=\"[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "json object text",
+      "input": "{\"api_key\": \"has space, and comma\"}",
+      "expectedSync": "{\"api_key\": \"[REDACTED:generic-keyword]\"}",
+      "expectedAsync": "{\"api_key\": \"[REDACTED:generic-keyword]\"}"
+    },
+    {
+      "name": "json object text with client_secret",
+      "input": "{\"client_secret\":\"Zk9-fakeMARKER_7q2x\",\"ok\":true}",
+      "expectedSync": "{\"client_secret\":\"[REDACTED:generic-keyword]\",\"ok\":true}",
+      "expectedAsync": "{\"client_secret\":\"[REDACTED:generic-keyword]\",\"ok\":true}"
+    },
+    {
+      "name": "prefixed identifier",
+      "input": "session_token: Zk9-fakeMARKER_7q2x",
+      "expectedSync": "session_token: [REDACTED:generic-keyword]",
+      "expectedAsync": "session_token: [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "two pairs in one line",
+      "input": "user=bob password=hunter2 token=Zk9-fakeMARKER_7q2x",
+      "expectedSync": "user=bob password=[REDACTED:generic-keyword] token=[REDACTED:generic-keyword]",
+      "expectedAsync": "user=bob password=[REDACTED:generic-keyword] token=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "aws secret access key",
+      "input": "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYzzzzKEY9xxx1",
+      "expectedSync": "AWS_SECRET_ACCESS_KEY=[REDACTED:generic-keyword]",
+      "expectedAsync": "[REDACTED:aws]"
+    },
+    {
+      "name": "already a placeholder (idempotent)",
+      "input": "password: [REDACTED:generic-keyword]",
+      "expectedSync": "password: [REDACTED:generic-keyword]",
+      "expectedAsync": "password: [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "legacy bare placeholder stays",
+      "input": "password: [REDACTED]",
+      "expectedSync": "password: [REDACTED]",
+      "expectedAsync": "password: [REDACTED]"
+    },
+    {
+      "name": "legacy last4 placeholder stays",
+      "input": "password: [REDACTED:generic-keyword:4dor]",
+      "expectedSync": "password: [REDACTED:generic-keyword:4dor]",
+      "expectedAsync": "password: [REDACTED:generic-keyword:4dor]"
+    }
+  ]
+}

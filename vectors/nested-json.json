@@ -1,0 +1,173 @@
+{
+  "description": "strings inside nested JSON, arrays and mixed types",
+  "cases": [
+    {
+      "name": "secret in a nested string leaf",
+      "input": {
+        "steps": [
+          {
+            "name": "login",
+            "run": "curl -H \"Authorization: Bearer abc.def-1=\" https://example.test"
+          }
+        ]
+      },
+      "expectedSync": {
+        "steps": [
+          {
+            "name": "login",
+            "run": "curl -H \"Authorization: Bearer [REDACTED:auth-header]\" https://example.test"
+          }
+        ]
+      },
+      "expectedAsync": {
+        "steps": [
+          {
+            "name": "login",
+            "run": "curl -H \"Authorization: Bearer [REDACTED:auth-header]\" https://example.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "array of strings with keywords",
+      "input": [
+        "ok",
+        "password=hunter2",
+        "Bearer abc.def-1="
+      ],
+      "expectedSync": [
+        "ok",
+        "password=[REDACTED:generic-keyword]",
+        "Bearer [REDACTED:auth-header]"
+      ],
+      "expectedAsync": [
+        "ok",
+        "password=[REDACTED:generic-keyword]",
+        "Bearer [REDACTED:auth-header]"
+      ]
+    },
+    {
+      "name": "mixed types stay",
+      "input": {
+        "n": 1,
+        "b": true,
+        "z": null,
+        "s": "plain",
+        "a": [
+          1,
+          2,
+          {
+            "k": "v"
+          }
+        ]
+      },
+      "expectedSync": {
+        "n": 1,
+        "b": true,
+        "z": null,
+        "s": "plain",
+        "a": [
+          1,
+          2,
+          {
+            "k": "v"
+          }
+        ]
+      },
+      "expectedAsync": {
+        "n": 1,
+        "b": true,
+        "z": null,
+        "s": "plain",
+        "a": [
+          1,
+          2,
+          {
+            "k": "v"
+          }
+        ]
+      }
+    },
+    {
+      "name": "deep nesting",
+      "input": {
+        "a": {
+          "b": {
+            "c": {
+              "d": {
+                "password": "hunter2",
+                "e": "api_key=zzz"
+              }
+            }
+          }
+        }
+      },
+      "expectedSync": {
+        "a": {
+          "b": {
+            "c": {
+              "d": {
+                "password": "[REDACTED:key-context]",
+                "e": "api_key=[REDACTED:generic-keyword]"
+              }
+            }
+          }
+        }
+      },
+      "expectedAsync": {
+        "a": {
+          "b": {
+            "c": {
+              "d": {
+                "password": "[REDACTED:key-context]",
+                "e": "api_key=[REDACTED:generic-keyword]"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "same key twice at different depths",
+      "input": {
+        "token": "a",
+        "inner": {
+          "token": "b",
+          "note": "ok"
+        }
+      },
+      "expectedSync": {
+        "token": "[REDACTED:key-context]",
+        "inner": {
+          "token": "[REDACTED:key-context]",
+          "note": "ok"
+        }
+      },
+      "expectedAsync": {
+        "token": "[REDACTED:key-context]",
+        "inner": {
+          "token": "[REDACTED:key-context]",
+          "note": "ok"
+        }
+      }
+    },
+    {
+      "name": "empty containers",
+      "input": {
+        "a": {},
+        "b": [],
+        "c": ""
+      },
+      "expectedSync": {
+        "a": {},
+        "b": [],
+        "c": ""
+      },
+      "expectedAsync": {
+        "a": {},
+        "b": [],
+        "c": ""
+      }
+    }
+  ]
+}

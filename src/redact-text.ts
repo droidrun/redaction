@@ -3,10 +3,11 @@
  * point for plain text and the JSON-value visitor. Detector failures return
  * the original text and no hits; consumers never lose data to a scan failure.
  */
-import { scanText, type EngineHit } from './engine.js';
-import { buildPlaceholder } from './placeholder.js';
+import { scanText } from './engine.js';
+import { applyHits, dedupeRanges, type Hit } from './hits.js';
+import { detectSyncHits } from './sync-rules.js';
 
-export type Hit = EngineHit;
+export type { Hit };
 
 /** Below this, not worth invoking the engine — no real secret is <8 chars. */
 const MIN_SCAN_LEN = 8;
@@ -56,35 +57,10 @@ const SCAN_OVERLAP = 10_240;
  */
 const MAX_TOTAL_SCAN_LEN = 2_000_000;
 
-/** Sort ascending by start, then MERGE overlapping/touching ranges into their
- *  union — two rules firing on overlapping spans (e.g. an AWS-shaped match
- *  plus a generic-keyword match starting mid-way through it) must never be
- *  spliced independently (that would corrupt the string) NOR have the later
- *  one silently dropped (that would leave the un-covered tail of the union
- *  — real secret material — unredacted). The merged hit keeps the ruleId of
- *  the earliest-starting hit in the group; `applyRedactions` then builds the
- *  placeholder from the FULL merged span, so the last4-threshold in
- *  `buildPlaceholder` correctly sees the union's length, not either
- *  constituent hit's length alone. */
-function dedupeRanges(hits: readonly Hit[]): Hit[] {
-    const sorted = [...hits].sort((a, b) => a.range[0] - b.range[0]);
-    const merged: Hit[] = [];
-    for (const hit of sorted) {
-        const [start, end] = hit.range;
-        const last = merged[merged.length - 1];
-        const overlapsPrevious = last !== undefined && start <= last.range[1];
-        if (overlapsPrevious) {
-            if (end > last.range[1]) {
-                merged[merged.length - 1] = { ruleId: last.ruleId, range: [last.range[0], end] };
-            }
-            continue;
-        }
-        merged.push({ ruleId: hit.ruleId, range: [start, end] });
-    }
-    return merged;
-}
-
 export type RedactTextOpts = {
+    /** Use the 0.1.1 placeholder `[REDACTED:<rule>:<last4>]` for matches of at least
+     *  16 characters. Default: `[REDACTED:<rule>]`, which exposes nothing of the secret. */
+    last4?: boolean;
     /** Overrides the detector. */
     detect?: (text: string) => Promise<Hit[]>;
     /** Receives safe scan metadata. Callback failures cannot interrupt redaction. */
@@ -97,8 +73,9 @@ function emitEvent(opts: RedactTextOpts, name: string, attrs: Record<string, unk
 }
 
 /**
- * Unconditional, length-guarded secretlint scan. Errors propagate to
- * `redactText`, which owns the fail-open contract.
+ * Unconditional, length-guarded scan: the secretlint scanners plus the sync
+ * rules (`sync-rules.ts`), so the async path finds everything the sync path
+ * does. Errors propagate to `redactText`, which owns the fail-open contract.
  *
  * For text at or below `MAX_SCAN_LEN`, this is a single `scanText` call.
  * Longer text is walked in overlapping `MAX_SCAN_LEN`-sized windows
@@ -121,10 +98,24 @@ export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Pr
         });
     }
     const scanLen = capped ? MAX_TOTAL_SCAN_LEN : text.length;
+    const scanned = capped ? text.slice(0, scanLen) : text;
+    const scannerHits = await scanWindows(scanned);
+    return [...scannerHits, ...uncoveredSyncHits(scannerHits, detectSyncHits(scanned))];
+}
 
-    if (scanLen <= MAX_SCAN_LEN) {
-        return scanText(text.slice(0, scanLen));
-    }
+/** Sync hits a scanner hit does not already contain, so a secret both find is
+ *  reported once, under the scanner's rule id. */
+function uncoveredSyncHits(scannerHits: readonly Hit[], syncHits: readonly Hit[]): Hit[] {
+    if (scannerHits.length === 0) return [...syncHits];
+    return syncHits.filter((hit) => !scannerHits.some((scanner) => {
+        return scanner.range[0] <= hit.range[0] && hit.range[1] <= scanner.range[1];
+    }));
+}
+
+/** The secretlint scanners over `text` (already capped), in windows when long. */
+async function scanWindows(text: string): Promise<Hit[]> {
+    const scanLen = text.length;
+    if (scanLen <= MAX_SCAN_LEN) return scanText(text);
 
     const stride = MAX_SCAN_LEN - SCAN_OVERLAP;
     const allHits: Hit[] = [];
@@ -140,20 +131,6 @@ export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Pr
     return dedupeRanges(allHits);
 }
 
-/** Replace every (deduped) hit with its placeholder, walking from the END of
- *  the string backward — each splice only touches indices at-or-after its
- *  own start, so earlier (lower-index, not-yet-processed) ranges in `out`
- *  are still at their ORIGINAL positions when their turn comes. */
-function applyRedactions(text: string, hits: readonly Hit[]): string {
-    let out = text;
-    for (const hit of dedupeRanges(hits).reverse()) {
-        const [start, end] = hit.range;
-        const matched = text.slice(start, end);
-        out = out.slice(0, start) + buildPlaceholder(hit.ruleId, matched) + out.slice(end);
-    }
-    return out;
-}
-
 /**
  * Detect + replace. NEVER THROWS: a detector failure emits
  * `redaction.detect.failed` without the exception message, because it could
@@ -167,7 +144,7 @@ export async function redactText(
     try {
         const hits = opts.detect ? await opts.detect(text) : await detectSecrets(text, opts);
         if (hits.length === 0) return { text, hits: [] };
-        return { text: applyRedactions(text, hits), hits };
+        return { text: applyHits(text, hits, opts.last4 === true), hits };
     } catch (err) {
         // Deliberately omit err.message — see doc comment above.
         emitEvent(opts, 'redaction.detect.failed', {

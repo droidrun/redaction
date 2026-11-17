@@ -1,0 +1,323 @@
+{
+  "description": "values under secret-named object keys, whatever their type",
+  "cases": [
+    {
+      "name": "camelCase and snake_case keys",
+      "input": {
+        "apiKey": "abc",
+        "client_secret": "def",
+        "url": "https://example.test"
+      },
+      "expectedSync": {
+        "apiKey": "[REDACTED:key-context]",
+        "client_secret": "[REDACTED:key-context]",
+        "url": "https://example.test"
+      },
+      "expectedAsync": {
+        "apiKey": "[REDACTED:key-context]",
+        "client_secret": "[REDACTED:key-context]",
+        "url": "https://example.test"
+      }
+    },
+    {
+      "name": "header names",
+      "input": {
+        "headers": {
+          "X-Api-Key": "k-1",
+          "x-auth-token": "t",
+          "Set-Cookie": "sid=1",
+          "accept": "json"
+        }
+      },
+      "expectedSync": {
+        "headers": {
+          "X-Api-Key": "[REDACTED:key-context]",
+          "x-auth-token": "[REDACTED:key-context]",
+          "Set-Cookie": "[REDACTED:key-context]",
+          "accept": "json"
+        }
+      },
+      "expectedAsync": {
+        "headers": {
+          "X-Api-Key": "[REDACTED:key-context]",
+          "x-auth-token": "[REDACTED:key-context]",
+          "Set-Cookie": "[REDACTED:key-context]",
+          "accept": "json"
+        }
+      }
+    },
+    {
+      "name": "nested objects and arrays",
+      "input": {
+        "body": {
+          "user": {
+            "password": "hunter2",
+            "profile": {
+              "apiKey": "abc"
+            }
+          }
+        },
+        "list": [
+          {
+            "accessToken": "t"
+          },
+          {
+            "authToken": "t2"
+          }
+        ]
+      },
+      "expectedSync": {
+        "body": {
+          "user": {
+            "password": "[REDACTED:key-context]",
+            "profile": {
+              "apiKey": "[REDACTED:key-context]"
+            }
+          }
+        },
+        "list": [
+          {
+            "accessToken": "[REDACTED:key-context]"
+          },
+          {
+            "authToken": "[REDACTED:key-context]"
+          }
+        ]
+      },
+      "expectedAsync": {
+        "body": {
+          "user": {
+            "password": "[REDACTED:key-context]",
+            "profile": {
+              "apiKey": "[REDACTED:key-context]"
+            }
+          }
+        },
+        "list": [
+          {
+            "accessToken": "[REDACTED:key-context]"
+          },
+          {
+            "authToken": "[REDACTED:key-context]"
+          }
+        ]
+      }
+    },
+    {
+      "name": "object value under a secret key is replaced as a unit",
+      "input": {
+        "client_secret": {
+          "id": 1,
+          "value": "x"
+        },
+        "keep": 1
+      },
+      "expectedSync": {
+        "client_secret": "[REDACTED:key-context]",
+        "keep": 1
+      },
+      "expectedAsync": {
+        "client_secret": "[REDACTED:key-context]",
+        "keep": 1
+      }
+    },
+    {
+      "name": "array value under a secret key is replaced as a unit",
+      "input": {
+        "tokens": [
+          "a",
+          "b"
+        ]
+      },
+      "expectedSync": {
+        "tokens": "[REDACTED:key-context]"
+      },
+      "expectedAsync": {
+        "tokens": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "number under a secret key",
+      "input": {
+        "pin": 1234,
+        "name": "card"
+      },
+      "expectedSync": {
+        "pin": "[REDACTED:key-context]",
+        "name": "card"
+      },
+      "expectedAsync": {
+        "pin": "[REDACTED:key-context]",
+        "name": "card"
+      }
+    },
+    {
+      "name": "exact short names",
+      "input": {
+        "pwd": "a",
+        "otp": "123456",
+        "totp": "x",
+        "cvv": "123",
+        "cvc": "456",
+        "name": "n"
+      },
+      "expectedSync": {
+        "pwd": "[REDACTED:key-context]",
+        "otp": "[REDACTED:key-context]",
+        "totp": "[REDACTED:key-context]",
+        "cvv": "[REDACTED:key-context]",
+        "cvc": "[REDACTED:key-context]",
+        "name": "n"
+      },
+      "expectedAsync": {
+        "pwd": "[REDACTED:key-context]",
+        "otp": "[REDACTED:key-context]",
+        "totp": "[REDACTED:key-context]",
+        "cvv": "[REDACTED:key-context]",
+        "cvc": "[REDACTED:key-context]",
+        "name": "n"
+      }
+    },
+    {
+      "name": "boolean and null under a secret key stay",
+      "input": {
+        "hasPassword": true,
+        "password": null,
+        "token": false
+      },
+      "expectedSync": {
+        "hasPassword": true,
+        "password": null,
+        "token": false
+      },
+      "expectedAsync": {
+        "hasPassword": true,
+        "password": null,
+        "token": false
+      }
+    },
+    {
+      "name": "empty string under a secret key stays",
+      "input": {
+        "password": "",
+        "name": "n"
+      },
+      "expectedSync": {
+        "password": "",
+        "name": "n"
+      },
+      "expectedAsync": {
+        "password": "",
+        "name": "n"
+      }
+    },
+    {
+      "name": "placeholder under a secret key stays (idempotent)",
+      "input": {
+        "password": "[REDACTED:key-context]"
+      },
+      "expectedSync": {
+        "password": "[REDACTED:key-context]"
+      },
+      "expectedAsync": {
+        "password": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "legacy placeholder under a secret key stays",
+      "input": {
+        "password": "[REDACTED]"
+      },
+      "expectedSync": {
+        "password": "[REDACTED]"
+      },
+      "expectedAsync": {
+        "password": "[REDACTED]"
+      }
+    },
+    {
+      "name": "structural keys type and id are never touched",
+      "input": {
+        "type": "password",
+        "id": "token",
+        "password": "x"
+      },
+      "expectedSync": {
+        "type": "password",
+        "id": "token",
+        "password": "[REDACTED:key-context]"
+      },
+      "expectedAsync": {
+        "type": "password",
+        "id": "token",
+        "password": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "guard: secretary",
+      "input": {
+        "secretary": "Jane Doe"
+      },
+      "expectedSync": {
+        "secretary": "Jane Doe"
+      },
+      "expectedAsync": {
+        "secretary": "Jane Doe"
+      }
+    },
+    {
+      "name": "guard: passwordless",
+      "input": {
+        "passwordless": "enabled",
+        "passwordlessLogin": "on"
+      },
+      "expectedSync": {
+        "passwordless": "enabled",
+        "passwordlessLogin": "on"
+      },
+      "expectedAsync": {
+        "passwordless": "enabled",
+        "passwordlessLogin": "on"
+      }
+    },
+    {
+      "name": "guard: tokenizer",
+      "input": {
+        "tokenizer": "bpe",
+        "cookbook": "pasta",
+        "author": "me",
+        "authority": "x"
+      },
+      "expectedSync": {
+        "tokenizer": "bpe",
+        "cookbook": "pasta",
+        "author": "me",
+        "authority": "x"
+      },
+      "expectedAsync": {
+        "tokenizer": "bpe",
+        "cookbook": "pasta",
+        "author": "me",
+        "authority": "x"
+      }
+    },
+    {
+      "name": "guard: pinned",
+      "input": {
+        "pinned": "yes",
+        "spin": "right",
+        "options": "a"
+      },
+      "expectedSync": {
+        "pinned": "yes",
+        "spin": "right",
+        "options": "a"
+      },
+      "expectedAsync": {
+        "pinned": "yes",
+        "spin": "right",
+        "options": "a"
+      }
+    }
+  ]
+}
