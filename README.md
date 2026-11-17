@@ -198,12 +198,15 @@ A placeholder keeps the stored value only when all hold:
   default, or `opts.identify(item)`; the n-th item with an identity matches the n-th stored item
   with it, so deleting, inserting or reordering items cannot move a secret to another item.
   Items with no identity on either side match by **index only when both arrays have the same length**.
-- **Siblings unchanged.** In the object (or array) that holds the placeholder, every non-secret-named
-  primitive sibling (`url`, `host`, `method`, …) must equal the stored one; a sibling that itself
-  holds a placeholder must match its stored string as below. Keys added or removed beside the
-  placeholder count as a change. Without this a client could keep a placeholder and change the
-  destination the stored secret is sent to. Only the containing object is compared: a changed field
-  further up does not block a nested object whose own siblings are unchanged.
+- **Ancestor chain unchanged.** Along the path from the placeholder's object up to and
+  including the nearest array item (or the root, when there is none), every non-secret-named
+  primitive value (`url`, `host`, `method`, …) must equal the stored one; a value that itself
+  holds a placeholder must match its stored string as below. Keys added or removed count as a
+  change. Without this a client could keep a placeholder and change the destination the stored
+  secret is sent to, also from a level above it (`{ url, headers: { Authorization } }`).
+  Display-only keys (`name`, `title`, `label`, `description`, `comment`, `notes`, `position`,
+  `order`, `index`, `updatedAt`, `createdAt`) are ignored, so renaming a step does not block it.
+  An array item starts a new chain: a change in another item, or above the array, does not block.
 - **Strings.** An incoming string that contains placeholders keeps the **stored string** only if
   its literal segments appear in the stored string in order, the first at the start and the last at
   the end. Edited text around a placeholder is a conflict. A whole placeholder also restores a stored

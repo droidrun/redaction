@@ -14,12 +14,17 @@
  *     default, or `opts.identify(item)`); the n-th item with a given identity
  *     matches the n-th stored one. Items with no identity on either side match
  *     by index only when both arrays have the same length.
- *   - Siblings unchanged (L1). In the object (or array) that holds the
- *     placeholder, every non-secret-named primitive sibling (url, host,
- *     method, …) equals the stored one (a sibling that itself carries a
+ *   - Ancestor chain unchanged (L1). Along the path from the placeholder's
+ *     object up to and including the nearest array item (or the root when
+ *     there is none), every non-secret-named primitive value (url, host,
+ *     method, …) equals the stored one (a value that itself carries a
  *     placeholder must match its stored string, below). Otherwise a client
  *     could redirect a stored secret to a new destination by keeping its
- *     placeholder. Keys added or removed beside a placeholder count as changes.
+ *     placeholder, also from a level above it (`{ url, headers: { Authorization } }`).
+ *     Keys added or removed count as changes. Display-only keys (`name`,
+ *     `title`, `label`, `description`, `comment`, `notes`, `position`, `order`,
+ *     `index`, `updatedAt`, `createdAt`) are ignored, so renaming a step does not
+ *     block it; a change in another array item, or above the array, does not either.
  *   - Strings. An incoming string that contains placeholders keeps the stored
  *     string only if its literal segments appear in the stored string in
  *     order, the first at the start and the last at the end; edited text
@@ -40,6 +45,12 @@ export type RestoreOpts = {
 };
 
 export type RestoreResult = { value: unknown; conflicts: string[] };
+
+/** Keys that only describe or order an item: changing them never moves a secret. */
+const DISPLAY_KEYS = new Set([
+    'name', 'title', 'label', 'description', 'comment', 'notes', 'position', 'order', 'index',
+    'updatedat', 'createdat',
+]);
 
 type Ctx = { identify: (item: unknown) => string | undefined; conflicts: string[] };
 
@@ -94,11 +105,11 @@ function conflict(path: string, ctx: Ctx): void {
     ctx.conflicts.push(path);
 }
 
-/** Primitive, non-secret-named siblings: the destination-like fields. */
+/** Primitive, non-secret-named, non-display values: the destination-like fields. */
 function siblingsUnchanged(incoming: Record<string, unknown>, stored: Record<string, unknown>): boolean {
     const keys = new Set([...Object.keys(incoming), ...Object.keys(stored)]);
     for (const key of keys) {
-        if (isSecretKeyName(key)) continue;
+        if (isSecretKeyName(key) || DISPLAY_KEYS.has(key.toLowerCase())) continue;
         const inc = Object.hasOwn(incoming, key) ? incoming[key] : undefined;
         const sto = Object.hasOwn(stored, key) ? stored[key] : undefined;
         if (!isPrimitive(inc) && !isPrimitive(sto)) continue;
@@ -116,9 +127,15 @@ function restoreString(incoming: string, stored: unknown, path: string, ctx: Ctx
     return incoming;
 }
 
-function restoreRecord(incoming: Record<string, unknown>, stored: unknown, path: string, ctx: Ctx): unknown {
+function restoreRecord(
+    incoming: Record<string, unknown>,
+    stored: unknown,
+    path: string,
+    ctx: Ctx,
+    chainOk: boolean,
+): unknown {
     const storedRecord = isRecord(stored) ? stored : undefined;
-    const allowed = storedRecord !== undefined && siblingsUnchanged(incoming, storedRecord);
+    const allowed = chainOk && storedRecord !== undefined && siblingsUnchanged(incoming, storedRecord);
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(incoming)) {
         const counterpart = storedRecord && Object.hasOwn(storedRecord, key) ? storedRecord[key] : undefined;
@@ -147,20 +164,30 @@ function matchItems(incoming: unknown[], stored: unknown[] | undefined, ctx: Ctx
     });
 }
 
-function restoreArray(incoming: unknown[], stored: unknown, path: string, ctx: Ctx): unknown {
+function restoreArray(
+    incoming: unknown[],
+    stored: unknown,
+    path: string,
+    ctx: Ctx,
+    chainOk: boolean,
+): unknown {
     const storedArray = Array.isArray(stored) ? stored : undefined;
     const matches = matchItems(incoming, storedArray, ctx);
     // Primitive items (strings holding placeholders) are matched by index, so
     // every primitive item must be unchanged for them to count as restorable.
-    const allowed = storedArray !== undefined && incoming.length === storedArray.length &&
+    const primitivesOk = chainOk && storedArray !== undefined && incoming.length === storedArray.length &&
         incoming.every((item, index) => !isPrimitive(item) || sameOrRedactedFrom(item, matches[index]));
-    return incoming.map((item, index) => restore(item, matches[index], `${path}[${index}]`, ctx, allowed));
+    // An array item starts a new chain: what changed above it does not bind its secrets.
+    return incoming.map((item, index) => {
+        const itemChainOk = isPrimitive(item) ? primitivesOk : true;
+        return restore(item, matches[index], `${path}[${index}]`, ctx, itemChainOk);
+    });
 }
 
-function restore(incoming: unknown, stored: unknown, path: string, ctx: Ctx, allowed: boolean): unknown {
-    if (typeof incoming === 'string') return restoreString(incoming, stored, path, ctx, allowed);
-    if (Array.isArray(incoming)) return restoreArray(incoming, stored, path, ctx);
-    if (isRecord(incoming)) return restoreRecord(incoming, stored, path, ctx);
+function restore(incoming: unknown, stored: unknown, path: string, ctx: Ctx, chainOk: boolean): unknown {
+    if (typeof incoming === 'string') return restoreString(incoming, stored, path, ctx, chainOk);
+    if (Array.isArray(incoming)) return restoreArray(incoming, stored, path, ctx, chainOk);
+    if (isRecord(incoming)) return restoreRecord(incoming, stored, path, ctx, chainOk);
     return incoming;
 }
 

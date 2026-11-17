@@ -216,6 +216,77 @@ describe('siblings (L1): a placeholder does not follow a changed destination', (
     });
 });
 
+describe('ancestor chain (K19): a changed destination above the placeholder binds it', () => {
+    const stored = {
+        url: 'https://a.test',
+        headers: { Authorization: 'Bearer SECRET', accept: 'json' },
+    };
+
+    test('the audit repro: url changed next to the object holding the placeholder', () => {
+        const incoming = {
+            url: 'https://evil.test',
+            headers: { Authorization: PH, accept: 'json' },
+        };
+        const out = restore(incoming, stored);
+        expect(out.value).toEqual(incoming);
+        expect(out.conflicts).toEqual(['$.headers.Authorization']);
+    });
+
+    test('unchanged url and headers restore', () => {
+        const incoming = { url: 'https://a.test', headers: { Authorization: PH, accept: 'json' } };
+        expect(restore(incoming, stored)).toEqual({ value: stored, conflicts: [] });
+    });
+
+    test('url changed two levels up inside the same step', () => {
+        const deep = (token: string) => ({ options: { headers: { token } } });
+        const step = { id: 's1', url: 'https://a.test', request: deep(SECRET) };
+        const incoming = { id: 's1', url: 'https://evil.test', request: deep(PH) };
+        const out = restore([incoming], [step]);
+        expect(out.conflicts).toEqual(['$[0].request.options.headers.token']);
+        expect(restore([{ ...incoming, url: step.url }], [step]).conflicts).toEqual([]);
+    });
+
+    test('renaming the step (display keys) does not block', () => {
+        const base = { id: 's1', url: 'https://a.test' };
+        const step = { ...base, name: 'Old', description: 'a', headers: { token: SECRET } };
+        const incoming = { ...base, name: 'New', description: 'b', headers: { token: PH } };
+        expect(restore([incoming], [step])).toEqual({
+            value: [{ ...incoming, headers: { token: SECRET } }],
+            conflicts: [],
+        });
+    });
+
+    test('changing a sibling step (another array item) does not block', () => {
+        const steps = [
+            { id: 's1', url: 'https://a.test', token: SECRET },
+            { id: 's2', url: 'https://b.test', token: 'other' },
+        ];
+        const incoming = [
+            { id: 's1', url: 'https://a.test', token: PH },
+            { id: 's2', url: 'https://evil.test', token: PH },
+        ];
+        const out = restore(incoming, steps);
+        expect(out.conflicts).toEqual(['$[1].token']);
+        expect((out.value as { token: string }[])[0]?.token).toBe(SECRET);
+    });
+
+    test('a change at the root, outside the array item holding the secret, does not block', () => {
+        const item = (value: string) => ({ id: 's1', headers: { Authorization: value } });
+        const doc = { host: 'https://a.test', steps: [item(SECRET)] };
+        const incoming = { host: 'https://evil.test', steps: [item(PH)] };
+        expect(restore(incoming, doc)).toEqual({
+            value: { host: 'https://evil.test', steps: doc.steps },
+            conflicts: [],
+        });
+    });
+
+    test('a changed value above a placeholder string inside an array of strings blocks it', () => {
+        const doc = { url: 'https://a.test', args: ['x', SECRET] };
+        const out = restore({ url: 'https://evil.test', args: ['x', PH] }, doc);
+        expect(out.conflicts).toEqual(['$.args[1]']);
+    });
+});
+
 describe('round trip with both redactors', () => {
     const stored = {
         name: 'routine',
