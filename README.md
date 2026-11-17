@@ -257,7 +257,8 @@ unchanged). The files are published with the package and importable as
 - Latency (1,000 realistic action rows, about 0.5 MB of JSON, measured on an Apple-silicon laptop):
   sync about 30 ms, async about 75 ms. `src/perf.test.ts` enforces 250 ms (sync) and 1,500 ms
   (async) as the median of five runs. `src/adversarial.test.ts` runs worst-case texts (64 KB to
-  200 KB, measured 20 to 70 ms) against a 250 ms budget each, so a quadratic rule fails the build.
+  200 KB, measured 20 to 70 ms; the CI runner is about 5x slower) against a 1,000 ms budget each, so a
+  quadratic rule (seconds to minutes on these inputs) fails the build.
 
 ## Development and release
 
