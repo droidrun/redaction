@@ -49,6 +49,7 @@ class _Frame:
     depth: int
     index: int = 0
     out_key: str = ""
+    cur_key: str = ""
 
 
 class WalkState:
@@ -179,7 +180,7 @@ def _open_frame(value: Any, verdict: str, depth: int, state: WalkState) -> _Fram
     keys = _contract_keys(value)
     if not all(isinstance(key, str) for key in keys):
         return state.limit(_FAILED)
-    return _Frame(value, keys, [value[key] for key in keys], {}, verdict, depth)
+    return _Frame(value, keys, [value[key] for key in keys], [], verdict, depth)
 
 
 def _enter(value: Any, verdict: str, depth: int, state: WalkState) -> tuple[_Frame | None, Any]:
@@ -231,24 +232,37 @@ def _next_key(key: str, state: WalkState) -> str:
     return key if not hits else from_units(redacted)
 
 
-def _free_key(out: dict[str, Any], key: str) -> str:
-    """`key`, or when an earlier entry of `out` already has it (two keys redacted to the same text) the key
-    numbered inside its last placeholder, `[REDACTED:npm#2]`, `#3`, ...: no value is lost (SPEC L-P)."""
-    if key not in out:
+def _numbered(key: str, taken: dict[str, Any], reserved: set[str]) -> str:
+    """`key` when no entry has it; else the key numbered inside its last placeholder (`[REDACTED:npm#2]`,
+    `#3`, ...), skipping every name that is taken or reserved (SPEC L-P, L-Q)."""
+    if key not in taken and key not in reserved:
         return key
     number = 2
     while (numbered := number_last_placeholder(key, number)) is not None:
-        if numbered not in out:
+        if numbered not in taken and numbered not in reserved:
             return numbered
         number += 1
     return key
+
+
+def _assign_keys(entries: list[tuple[str, Any, bool]]) -> dict[str, Any]:
+    """The object of the (output key, value, changed) entries of one object, in iteration order.
+
+    No value is lost when keys redact to the same text. A key redaction left unchanged keeps its own name and
+    is reserved first; only a changed key gets a number, in iteration order, on a collision (SPEC L-P, L-Q).
+    """
+    reserved = {key for key, _value, changed in entries if not changed}
+    out: dict[str, Any] = {}
+    for key, value, changed in entries:
+        out[_numbered(key, out, reserved) if changed else key] = value
+    return out
 
 
 def _place(frame: _Frame, value: Any) -> None:
     if frame.keys is None:
         frame.out.append(value)
     else:
-        frame.out[_free_key(frame.out, frame.out_key)] = value
+        frame.out.append((frame.out_key, value, frame.out_key != frame.cur_key))
 
 
 def _nodes_exhausted(frame: _Frame, state: WalkState) -> None:
@@ -256,7 +270,8 @@ def _nodes_exhausted(frame: _Frame, state: WalkState) -> None:
     marker = state.limit(_SIZE_LIMIT)
     if frame.keys is not None:
         key_marker = build_read_placeholder(_SIZE_LIMIT)
-        frame.out_key = key_marker if state.strict else frame.keys[frame.index]
+        frame.cur_key = frame.keys[frame.index]
+        frame.out_key = key_marker if state.strict else frame.cur_key
     _place(frame, marker)
     frame.index = len(frame.items)
 
@@ -292,9 +307,10 @@ def walk_json(value: Any, state: WalkState) -> Any:
         if top.index >= len(top.items):
             stack.pop()
             state.ancestors.discard(id(top.source))
+            result = top.out if top.keys is None else _assign_keys(top.out)
             if not stack:
-                return top.out
-            _place(stack[-1], top.out)
+                return result
+            _place(stack[-1], result)
             continue
         if state.nodes <= 0:
             _nodes_exhausted(top, state)
@@ -306,6 +322,7 @@ def walk_json(value: Any, state: WalkState) -> Any:
             pending = (child, top.verdict, top.depth + 1)
             continue
         key = top.keys[index]
+        top.cur_key = key
         top.out_key = _next_key(key, state)
         if key in state.skip and _is_scalar(child):
             done, output = _skip_key_scalar(child, state)

@@ -454,12 +454,56 @@ def test_a_number_under_a_secret_key_and_a_key_context_collision_keep_every_valu
     }
 
 
-def test_a_key_that_already_is_the_plain_placeholder_makes_the_redacted_one_take_the_number():
-    value = {"[REDACTED:npm]": "literal", NPM: "token"}
-    assert redact_json(value, tier="full").value == {
-        "[REDACTED:npm]": "literal",
-        "[REDACTED:npm#2]": "token",
-    }
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_a_key_redaction_leaves_unchanged_keeps_its_name_whatever_the_order(mode):
+    after = redact_json({NPM: "token", "[REDACTED:npm]": "literal"}, tier="full", mode=mode).value
+    before = redact_json({"[REDACTED:npm]": "literal", NPM: "token"}, tier="full", mode=mode).value
+    assert list(after.items()) == [("[REDACTED:npm#2]", "token"), ("[REDACTED:npm]", "literal")]
+    assert list(before.items()) == [("[REDACTED:npm]", "literal"), ("[REDACTED:npm#2]", "token")]
+
+
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_numbering_skips_the_names_of_unchanged_keys(mode):
+    other = "npm_" + "B" * 36
+    third = "npm_" + "C" * 36
+    value = {NPM: 1, other: 2, "[REDACTED:npm#2]": 3, third: 4, "[REDACTED:npm]": 5}
+    assert list(redact_json(value, tier="full", mode=mode).value.items()) == [
+        ("[REDACTED:npm#3]", 1),
+        ("[REDACTED:npm#4]", 2),
+        ("[REDACTED:npm#2]", 3),
+        ("[REDACTED:npm#5]", 4),
+        ("[REDACTED:npm]", 5),
+    ]
+
+
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_a_key_that_contains_a_placeholder_gets_the_number_in_its_last_placeholder(mode):
+    other = "npm_" + "B" * 36
+    value = {f"label {NPM}": 1, f"label {other}": 2, f"{NPM} then {other}": 3, f"{other} then {NPM}": 4}
+    assert list(redact_json(value, tier="full", mode=mode).value.items()) == [
+        ("label [REDACTED:npm]", 1),
+        ("label [REDACTED:npm#2]", 2),
+        ("[REDACTED:npm] then [REDACTED:npm]", 3),
+        ("[REDACTED:npm] then [REDACTED:npm#2]", 4),
+    ]
+
+
+def test_a_key_that_contains_a_placeholder_and_is_unchanged_is_reserved():
+    value = {f"label {NPM}": 1, "label [REDACTED:npm]": 2}
+    assert list(redact_json(value, tier="full").value.items()) == [
+        ("label [REDACTED:npm#2]", 1),
+        ("label [REDACTED:npm]", 2),
+    ]
+
+
+def test_a_strict_node_limit_marker_key_does_not_take_a_name_from_an_unchanged_key():
+    value = {"[REDACTED:size-limit]": "literal", "b": 1, "c": 2}
+    out = redact_json(value, max_nodes=3).value
+    assert list(out.items()) == [
+        ("[REDACTED:size-limit]", "literal"),
+        ("b", 1),
+        ("[REDACTED:size-limit#2]", "[REDACTED:size-limit]"),
+    ]
 
 
 def test_a_numbered_key_is_a_placeholder_and_the_output_is_a_fixed_point():
