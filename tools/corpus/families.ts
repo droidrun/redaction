@@ -1058,10 +1058,34 @@ export function thresholdFamilies({ add, addGen }: Sinks, rng: Rng): void {
         'yourk',
         'mine',
     ]) {
-        for (const separator of ['_', '-', '.', ''])
+        for (const separator of ['_', '-', '.', '']) {
             add('doc-prefix', `secret=${prefix}${separator}abcdefghijkl`);
+            add('doc-prefix', `secret=${prefix}${separator}aabbaabbaabb`);
+        }
         add('doc-prefix', `secret=${prefix.toUpperCase()}_Abcdefghijkl`);
     }
+    for (const separator of ['_', '-', '.', '']) {
+        add('doc-suffix', `secret=aabbaabbaabb${separator}here`);
+        add('doc-suffix', `secret=aabbaabbaabb${separator}HERE`);
+    }
+    // A GitHub app token is the one scanner shape longer than the window overlap (up to 12,000
+    // units): these two are just too long for any scan window, or just fit the next one.
+    const appToken = (lead: number, middle: number): GenSpec => ({
+        parts: [
+            [' ', lead],
+            ['ghs_1_', 1],
+            ['a', 1000],
+            ['.', 1],
+            ['b', middle],
+            ['.', 1],
+            ['c', 1000],
+            [' tail', 1],
+        ],
+    });
+    addGen('window-edge', appToken(89000, 8993));
+    addGen('window-edge', appToken(89759, 8234));
+    addGen('window-edge', appToken(89760, 8234));
+    addGen('window-edge', appToken(1000, 8993));
     const piece = `?r=${'a'.repeat(1000)}&`;
     addGen('query-budget', {
         parts: [
