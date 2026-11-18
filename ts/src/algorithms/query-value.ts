@@ -24,8 +24,11 @@ export function labelStart(
 export function trimQueryValue(content: string, label: number, range: readonly [number, number]): Range {
     const before = content[label - 1];
     if (before !== '?' && before !== '&') return [range[0], range[1]];
-    const ampersand = content.indexOf('&', range[0]);
-    return ampersand !== -1 && ampersand < range[1] ? [range[0], ampersand] : [range[0], range[1]];
+    // Only inside the value range: a search to the end of the text is quadratic on `?token=` repeated.
+    for (let i = range[0]; i < range[1]; i++) {
+        if (content[i] === '&') return [range[0], i];
+    }
+    return [range[0], range[1]];
 }
 
 /** `decodeURIComponent`, or the value itself when it holds a malformed escape. */
