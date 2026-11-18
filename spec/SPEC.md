@@ -389,6 +389,15 @@ part is a `lit` or `alt`.
 4. A failed shape goes on with `s + 1`. A match `[s, p)` is dropped when `check` is set and the check fails on
    `text[s + checkFrom .. p)` (the match is still consumed); otherwise it is output. Scanning goes on at `p`.
 
+**Run memory (normative).** The end of a maximal run is measured once and reused: for every variable-run part of a
+shape (not for every class: two parts of one class are two memories) an implementation keeps the last run it
+measured in the scan (its start and end) and, when a later start asks for a run that begins inside it, answers
+with the remembered end instead of walking the run again. Starts only move forward, so the work of one rule over
+one text is linear. A memory per class is **not conforming**: the parts of one class overwrite each other, and
+`ghs_1_` repeated 170 times, then `.`, then 100,000 `a` measures the long run again at every start (about 2,000
+times slower than the memory per part on a 2,000,000-unit text; `tools/lib/attacks.ts` holds this attack for
+every shape with repeated run classes). The memory of a part is made when the part first runs in a scan.
+
 The maximal run equals what the backtracking expression finds under conditions that `tools/lint-spec` checks:
 what follows a variable run never starts with a unit of the run's class, and a variable run at the end of the
 shape (or followed only by runs with `min` 0) needs `notAfter` to contain its class, so every shorter run is

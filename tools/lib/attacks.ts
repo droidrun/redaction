@@ -1,7 +1,20 @@
-/** Attack units for the scaling test: each is repeated to 100 KB and 1 MB and run through every pattern. */
+/** Attack units for the scaling test: each is repeated to 100 KB and 1 MB and run through every pattern. A
+ *  composite attack (`head`) starts with a short cluster and then repeats the unit: a long run behind many starts. */
 import type { SpecDir } from './spec-patterns.ts';
 
-export type Attack = { name: string; unit: string };
+export type Attack = { name: string; unit: string; head?: string };
+
+/** The text of an attack at `size` units: the head, then the unit repeated up to `size`. */
+export function attackText(attack: Attack, size: number): string {
+    const head = attack.head ?? '';
+    return (
+        head +
+        attack.unit.repeat(Math.ceil(size / attack.unit.length)).slice(0, Math.max(0, size - head.length))
+    );
+}
+
+/** Starts of the cluster of a composite attack; each is within reach of the long run behind it. */
+const CLUSTER_STARTS = 170;
 
 const FIXED_UNITS = [
     'a-',
@@ -160,7 +173,42 @@ function wordUnits(spec: SpecDir): string[] {
     return words.flatMap((word) => [`${word}=`, `${word}:`, `${word}_`, `${word}"=`, `${word} : "`]);
 }
 
+type Part = Record<string, unknown>;
+
+const isVariableRun = (part: Part): boolean =>
+    typeof part.runClass === 'string' && (part.min !== part.max || part.tails !== undefined);
+
+function sampleOf(part: Part): string {
+    if (typeof part.lit === 'string') return part.lit;
+    if (Array.isArray(part.alt)) return String(part.alt[0]);
+    if (typeof part.runClass === 'string') return firstUnit(part.runClass).repeat(Number(part.min) || 1);
+    return '';
+}
+
+/** A shape with two variable runs of one class: its short cluster (the shape up to the first of them, repeated)
+ *  followed by a long run of the second one. A run memory per class measures that long run again at every start
+ *  of the cluster; a memory per part measures it once. */
+function compositeAttacks(spec: SpecDir): Attack[] {
+    return spec.rules.full.flatMap((rule) => {
+        if (rule.kind !== 'token') return [];
+        const parts = rule.parts as Part[];
+        const first = parts.findIndex(
+            (part, at) =>
+                isVariableRun(part) &&
+                parts.slice(at + 1).some((later) => isVariableRun(later) && later.runClass === part.runClass),
+        );
+        if (first === -1) return [];
+        const cluster = parts.slice(0, first).map(sampleOf).join('');
+        const separator = typeof parts[first + 1]?.lit === 'string' ? String(parts[first + 1]?.lit) : '';
+        const head = cluster.repeat(CLUSTER_STARTS) + separator;
+        const unit = firstUnit(String(parts[first]?.runClass));
+        return [
+            { name: `${String(rule.id)} cluster ${JSON.stringify(cluster)} then a long run`, unit, head },
+        ];
+    });
+}
+
 export function attacksFor(spec: SpecDir): Attack[] {
     const units = [...new Set([...FIXED_UNITS, ...wordUnits(spec), ...tokenUnits(spec)])];
-    return units.map((unit) => ({ name: JSON.stringify(unit), unit }));
+    return [...units.map((unit) => ({ name: JSON.stringify(unit), unit })), ...compositeAttacks(spec)];
 }

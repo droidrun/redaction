@@ -39,6 +39,9 @@ const MAX_RATIO = 30;
 const NOISE_FLOOR_MS = 10;
 const MAX_MS_AT_LARGE = 3000;
 const MAX_INTERPRETER_MS_AT_LARGE = 10_000;
+/** A composite attack (short cluster, long run) may cost at most this many times the plain text of its size. */
+const MAX_COMPOSITE_FACTOR = 20;
+const COMPOSITE_FLOOR_MS = 20;
 const SCALING_DEADLINE_MS = 900_000;
 
 type Problem = string;
@@ -187,8 +190,9 @@ function scalingProblems(patterns: NamedPattern[], dir: string): Problem[] {
 }
 
 /** Scaling through `detectSyncHits` and `detectFullHits` of the TypeScript package: the restart loops of every rule kind. */
-function interpreterScalingProblems(dir: string): Problem[] {
-    const payload = JSON.stringify({ attacks: attacksFor(readSpecDir(dir)), sizes: SIZES });
+export function interpreterScalingProblems(dir: string): Problem[] {
+    const attacks = attacksFor(readSpecDir(dir));
+    const payload = JSON.stringify({ attacks, sizes: SIZES });
     const result = spawnSync('bun', [join(ROOT, 'tools/lint/scaling-interpreter.ts')], {
         input: payload,
         encoding: 'utf8',
@@ -201,9 +205,19 @@ function interpreterScalingProblems(dir: string): Problem[] {
         byAttack.set(timing.attack, { ...(byAttack.get(timing.attack) ?? {}), [timing.size]: timing.ms });
     }
     const problems: Problem[] = [];
+    const composites = new Set(
+        attacks.filter((attack) => attack.head !== undefined).map((attack) => attack.name),
+    );
+    const plain = Math.max(byAttack.get('__plain')?.[SIZES[1] as number] ?? 0, COMPOSITE_FLOOR_MS);
     for (const [attack, times] of byAttack) {
         const small = Math.max(times[SIZES[0] as number] ?? 0, NOISE_FLOOR_MS);
         const large = times[SIZES[1] as number] ?? 0;
+        if (composites.has(attack) && large > plain * MAX_COMPOSITE_FACTOR) {
+            problems.push(
+                `interpreter scaling: ${attack}: ${Math.round(large)} ms at 1 MB, more than ` +
+                    `${MAX_COMPOSITE_FACTOR} times the plain text (${Math.round(plain)} ms): a long run is measured again per start`,
+            );
+        }
         if (large > small * MAX_RATIO || large > MAX_INTERPRETER_MS_AT_LARGE) {
             problems.push(
                 `interpreter scaling: ${attack}: ${Math.round(small)} ms at 100 KB, ` +

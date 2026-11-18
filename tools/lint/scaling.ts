@@ -3,16 +3,14 @@
  * every attack string at every size and prints the best time per run as JSON. Run by lint-spec
  * in a subprocess under an external deadline, because a catastrophic pattern would not return.
  */
+import { attackText, type Attack } from '../lib/attacks.ts';
+
 export type Payload = {
     patterns: Array<{ where: string; source: string }>;
-    attacks: Array<{ name: string; unit: string }>;
+    attacks: Attack[];
     sizes: number[];
     runs: number;
 };
-
-function build(unit: string, size: number): string {
-    return unit.repeat(Math.ceil(size / unit.length)).slice(0, size);
-}
 
 function scan(pattern: RegExp, text: string): void {
     pattern.lastIndex = 0;
@@ -27,7 +25,7 @@ for (const { where, source } of payload.patterns) {
     const pattern = new RegExp(source, 'g');
     for (const attack of payload.attacks) {
         for (const size of payload.sizes) {
-            const text = build(attack.unit, size);
+            const text = attackText(attack, size);
             let best = Number.POSITIVE_INFINITY;
             for (let run = 0; run < payload.runs; run++) {
                 const started = performance.now();

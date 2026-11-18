@@ -2,7 +2,9 @@
  * token — the key formats of the full tier (SPEC 4.11): a shape of literals and runs of units of a class,
  * an optional letter guard in front and a class that must not follow. Same matches as the lookaround
  * expressions it replaces (`(?<!\p{L})prefix_[A-Za-z0-9]{36}(?![A-Za-z0-9_])`) but deterministic: a
- * variable run is the maximal run, so there is nothing to backtrack into, and every start does bounded work.
+ * variable run is the maximal run, so there is nothing to backtrack into. The run a part measured at one start
+ * is remembered per PART for the next starts (SPEC 4.11), so a scan stays linear in the text; a memory per
+ * class would be overwritten by the other parts of the same class and measure the long run again at every start.
  * The linter checks the conditions under which that equals the backtracking expression.
  */
 import { charTest, type CharTest, type Range } from '../portable.js';
@@ -25,12 +27,16 @@ type TokenRule = Rule & {
     checkFrom?: number;
 };
 
-type Context = { text: string; runEnd: (classSource: string) => RunEnd };
+/** `memo[i]` is the run memory of the variable-run part number `i`, made when the part first runs in a scan. */
+type Context = { text: string; memo: Array<RunEnd | undefined> };
 type Continue = (position: number) => number;
 type Step = (context: Context, position: number, next: Continue) => number;
 
 const FAIL = -1;
 const CHECKS: Record<string, (value: string) => boolean> = { 'base64-json': isBase64Json };
+
+/** Numbers the variable-run parts of one rule, in the order they are compiled. */
+type Counter = { next: number };
 
 function literalStep(literal: string): Step {
     return ({ text }, position, next) =>
@@ -56,9 +62,14 @@ function fixedRunStep(inClass: CharTest, count: number): Step {
 }
 
 /** The maximal run; `tails` (first one the run ends with) are part of the run but not counted. */
-function maximalRunStep(part: { runClass: string; min: number; max: number; tails?: string[] }): Step {
+function maximalRunStep(
+    part: { runClass: string; min: number; max: number; tails?: string[] },
+    id: number,
+): Step {
+    const inClass = charTest(part.runClass);
     return (context, position, next) => {
-        const end = context.runEnd(part.runClass)(position);
+        const runEnd = (context.memo[id] ??= cachedRunEnd(context.text, inClass));
+        const end = runEnd(position);
         const length = end - position;
         const tail = part.tails?.find(
             (item) => length >= item.length && context.text.startsWith(item, end - item.length),
@@ -82,12 +93,14 @@ function optionalStep(inner: Step[]): Step {
     };
 }
 
-function compilePart(part: Part): Step {
+function compilePart(part: Part, counter: Counter): Step {
     if ('lit' in part) return literalStep(part.lit);
     if ('alt' in part) return alternativeStep(part.alt);
-    if ('opt' in part) return optionalStep(part.opt.map(compilePart));
+    if ('opt' in part) return optionalStep(part.opt.map((inner) => compilePart(inner, counter)));
     const isFixed = part.min === part.max && part.tails === undefined;
-    return isFixed ? fixedRunStep(charTest(part.runClass), part.min) : maximalRunStep(part);
+    if (isFixed) return fixedRunStep(charTest(part.runClass), part.min);
+    counter.next += 1;
+    return maximalRunStep(part, counter.next - 1);
 }
 
 function firstLiterals(first: Part | undefined): string[] {
@@ -96,23 +109,14 @@ function firstLiterals(first: Part | undefined): string[] {
     throw new Error('a token shape starts with a literal');
 }
 
-/** Every distinct class of a variable run in the shape (the scan keeps one run memory per class). */
-function runClasses(parts: Part[]): string[] {
-    return parts.flatMap((part) => {
-        if ('opt' in part) return runClasses(part.opt);
-        return 'runClass' in part ? [part.runClass] : [];
-    });
-}
-
 export function prepareToken(rule: TokenRule): Scanner {
-    const steps = rule.parts.map(compilePart);
+    const counter: Counter = { next: 0 };
+    const steps = rule.parts.map((part) => compilePart(part, counter));
     const starts = firstLiterals(rule.parts[0]);
-    const classes = [...new Set(runClasses(rule.parts))];
     const blocksAfter = rule.notAfter === undefined ? () => false : charTest(rule.notAfter);
     const check = rule.check === undefined ? undefined : (CHECKS[rule.check] as (value: string) => boolean);
     return (text) => {
-        const ends = new Map(classes.map((source) => [source, cachedRunEnd(text, charTest(source))]));
-        const context: Context = { text, runEnd: (source) => ends.get(source) as RunEnd };
+        const context: Context = { text, memo: [] };
         const endGuard: Continue = (position) =>
             position < text.length && blocksAfter(text[position] as string) ? FAIL : position;
         const nextStart = nextStartOf(text, starts);
