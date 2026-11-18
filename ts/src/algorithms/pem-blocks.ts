@@ -15,6 +15,15 @@ type PemRule = Rule & {
     bodyLimit: number;
 };
 
+/** First index in `[from, before)` where `marker` starts, or -1. The marker may run past `before`; a start at
+ *  or after `before` does not count, so the search never leaves the body run and stays linear overall. */
+function markerBefore(text: string, marker: string, from: number, before: number): number {
+    for (let i = from; i < before; i++) {
+        if (text.startsWith(marker, i)) return i;
+    }
+    return -1;
+}
+
 export function preparePemBlocks(rule: PemRule): Scanner {
     const header = compile(rule.header, 'g');
     const footer = compile(rule.footer, 'y');
@@ -29,9 +38,9 @@ export function preparePemBlocks(rule: PemRule): Scanner {
             const limit = Math.min(text.length, bodyStart + rule.bodyLimit);
             let bodyEnd = bodyStart;
             while (bodyEnd < limit && isBodyChar(text[bodyEnd] ?? '')) bodyEnd += 1;
-            const footerAt = text.indexOf(rule.footerMarker, bodyStart);
+            const footerAt = markerBefore(text, rule.footerMarker, bodyStart, bodyEnd);
             footer.lastIndex = footerAt;
-            const found = footerAt !== -1 && footerAt < bodyEnd ? footer.exec(text) : null;
+            const found = footerAt !== -1 ? footer.exec(text) : null;
             covered = found ? footerAt + found[0].length : bodyEnd;
             ranges.push([start, covered]);
         }
