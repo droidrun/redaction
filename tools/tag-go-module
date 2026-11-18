@@ -1,0 +1,38 @@
+#!/bin/sh
+# Pushes the tag go/vX.Y.Z (the Go module lives in go/) on the commit of the release tag vX.Y.Z, through the
+# GitHub API (`gh`, token from GH_TOKEN); no checkout is needed. Safe to run again: a tag that already points at
+# the same commit (a lightweight tag, or an annotated one that is peeled to its commit) is accepted, a tag on
+# another commit fails.
+#
+# Environment: GITHUB_REPOSITORY (owner/name), GITHUB_REF_NAME (vX.Y.Z), GITHUB_SHA (the commit), GH_TOKEN.
+set -eu
+
+go_tag="go/$GITHUB_REF_NAME"
+api="repos/$GITHUB_REPOSITORY"
+
+# `type sha` of the object the tag ref points at; empty when there is no such tag.
+object=$(gh api "$api/git/ref/tags/$go_tag" --jq '.object.type + " " + .object.sha' 2>/dev/null || true)
+
+if [ -z "$object" ]; then
+  gh api -X POST "$api/git/refs" -f ref="refs/tags/$go_tag" -f sha="$GITHUB_SHA" >/dev/null
+  echo "pushed $go_tag on $GITHUB_SHA"
+  exit 0
+fi
+
+type=${object%% *}
+sha=${object#* }
+# An annotated tag points at a tag object: follow it to the commit (a tag of a tag is followed too).
+depth=0
+while [ "$type" = tag ] && [ "$depth" -lt 5 ]; do
+  object=$(gh api "$api/git/tags/$sha" --jq '.object.type + " " + .object.sha')
+  type=${object%% *}
+  sha=${object#* }
+  depth=$((depth + 1))
+done
+
+if [ "$type" = commit ] && [ "$sha" = "$GITHUB_SHA" ]; then
+  echo "$go_tag already points at $GITHUB_SHA"
+  exit 0
+fi
+echo "the tag $go_tag exists and does not point at the commit $GITHUB_SHA" >&2
+exit 1

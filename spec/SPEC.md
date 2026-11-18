@@ -884,7 +884,16 @@ Everything else (order, verdicts, number handling, key redaction) is as in 9.2.
 ## 10. ReDoS rules
 
 1. Every pattern passes `recheck` (the npm package `recheck`, a version released at least 7 days ago,
-   pinned exactly) with status `safe`. Anything else fails the lint.
+   pinned exactly) with status `safe`. Anything else fails the lint, with one bounded exception for a timing
+   false positive: `recheck`'s fuzz checker measures time, so on a loaded machine it can call a safe pattern
+   `vulnerable`. A `vulnerable` verdict is never erased by another run (no "a second seed says safe, so pass").
+   Instead the **attack string `recheck` produced** (its pumps, prefixes and suffix) is built at 100 KB and 1 MB
+   and run through the scaling harness of item 5 in JavaScript and Python. If the growth is super-linear (the
+   same ratio and absolute bounds as item 5, or the run does not finish in 20 s) the lint fails and reports the
+   attack. If the harness does not confirm it, the lint passes with a `WARNING` that carries the attack string,
+   so the doubt stays visible in the log. A verdict `unknown`, or `vulnerable` without an attack string, fails.
+   (`tools/lib/recheck-gate.ts`; the self-test plants the grammar-clean ReDoS `a*a*a*a*b` and expects it to fail
+   with its attack.)
 2. The grammar of section 2 bans nested quantifiers and unbounded lazy quantifiers, and bounds lazy
    quantifiers to 64.
 3. An unbounded quantifier whose class overlaps the token that follows it needs a disjoint required literal

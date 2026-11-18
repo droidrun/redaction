@@ -17,6 +17,7 @@ jobs:
       ts: ${{ steps.filter.outputs.ts }}
       python: ${{ steps.filter.outputs.python }}
       go: ${{ steps.filter.outputs.go }}
+      differential: ${{ steps.filter.outputs.differential }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -31,6 +32,7 @@ jobs:
             echo "ts=true" >> "$GITHUB_OUTPUT"
             echo "python=true" >> "$GITHUB_OUTPUT"
             echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "differential=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" "$GITHUB_SHA")
@@ -53,6 +55,11 @@ jobs:
             echo "go=true" >> "$GITHUB_OUTPUT"
           else
             echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+          if printf '%s\n' "$changed" | grep -Eq '^(spec/|ts/|python/|go/|tools/|\.github/workflows/ci\.yml$)'; then
+            echo "differential=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "differential=false" >> "$GITHUB_OUTPUT"
           fi
 
   spec:
@@ -91,6 +98,8 @@ jobs:
         run: bun tools/lint-spec.ts
       - name: Lint self-test (planted non-portable patterns must fail)
         run: bun tools/lint-spec.ts --self-test
+      - name: Tools tests (the recheck gate's decisions)
+        run: bun test tools/lib
 
   ts:
     needs: changes
@@ -190,11 +199,62 @@ jobs:
       - name: Scaling at 100 KB and 1 MB
         run: go test -run TestAttackStrings -v ./...
       - name: Fuzz text
-        run: go test -run XXX -fuzz FuzzRedactText -fuzztime 30s ./...
+        run: go test -run XXX -fuzz FuzzRedactText -fuzztime 30s .
       - name: Fuzz JSON
-        run: go test -run XXX -fuzz FuzzRedactJSON -fuzztime 30s ./...
+        run: go test -run XXX -fuzz FuzzRedactJSON -fuzztime 30s .
       - name: Benchmarks run
         run: go test -run XXX -bench . -benchtime 1x ./...
       - name: Build and run from outside the module
         working-directory: go/testdata/consumer
         run: go run .
+
+  differential:
+    needs: changes
+    if: needs.changes.outputs.differential == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.22.1'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.4'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.26'
+      - name: Setup pnpm
+        run: corepack enable && corepack prepare pnpm@10.18.1 --activate
+      - name: Install uv (pinned by hash)
+        working-directory: python
+        run: python -m pip install --require-hashes -r ci-requirements.txt
+      - name: Install package dependencies (the TypeScript runner imports ts/src)
+        working-directory: ts
+        run: pnpm install --frozen-lockfile
+      - name: Install tools
+        working-directory: tools
+        run: pnpm install --frozen-lockfile
+      - name: Install the Python package
+        working-directory: python
+        run: uv sync --locked --python 3.11
+      - name: Differential driver tests (key order, lone surrogates, numbers, counts, line splitting)
+        run: bun test tools/diff tools/release-version
+      - name: Same cases through the TypeScript, Python and Go runners (a tier a language lacks is skipped)
+        run: bun tools/diff/driver.ts
+
+  versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.4'
+      - name: npm, Python and Go carry the same version
+        run: tools/release-version --check
+      - name: The release tools themselves (SemVer without leading zeros, set and check, the Go tag step)
+        run: bun test tools/release-version tools/tag-go-module

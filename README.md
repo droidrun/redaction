@@ -9,7 +9,7 @@ implementation per language, identical output.
 | [`ts/`](ts) | `@droidrun/redaction` for Node/Bun, reads its rules from a copy of `spec/` | this slice |
 | [`python/`](python) | `droidrun-redaction`, the standard and the full tier ([`python/README.md`](python/README.md)) | this slice |
 | [`go/`](go) | `github.com/droidrun/redaction/go`, both tiers ([`go/README.md`](go/README.md)) | this slice |
-| [`tools/`](tools) | `lint-spec`, `sync-spec`, `gen-letters`, the corpus generator, the pack check | this slice |
+| [`tools/`](tools) | `lint-spec`, `sync-spec`, `gen-letters`, the corpus generator, the pack check, the cross-language differential test (`tools/diff`), `release-version` | this slice |
 
 ## How it fits together
 
@@ -25,10 +25,20 @@ implementation per language, identical output.
 - `spec/vectors/*.json` are the conformance cases for both tiers and both modes. The golden corpus
   in `spec/corpus/` is the recorded output of the package before the move; the TypeScript test
   replays it byte for byte.
+- `tools/diff` is the differential test: the same 19,000+ seeded cases (corpus families, every vector,
+  the secretlint fixtures, the attack units at small sizes, random mixes with astral characters and lone
+  surrogates) go through a TypeScript, a Python and a Go runner over one JSONL protocol
+  ([`tools/diff/protocol.ts`](tools/diff/protocol.ts)), and the outputs must be byte-identical (key
+  order counts, numbers are compared as doubles, hits as rule-id counts). Each runner prints its
+  capabilities first, so a tier a language does not have yet is skipped and is checked automatically as
+  soon as that language gets it. CI runs it as the `differential` job.
 
 ## Commands
 
 ```sh
+bun tools/diff/driver.ts                       # differential test (needs ts/, tools/ and python/ installed, go on the PATH)
+bun test tools/diff                            # the driver's own tests
+tools/release-version --check                  # npm, Python and Go carry one version
 cd ts && pnpm install --frozen-lockfile && pnpm run typecheck && pnpm test && pnpm run build
 cd tools && pnpm install --frozen-lockfile    # recheck, ajv for lint-spec
 bun tools/lint-spec.ts                         # needs python3 and go on the PATH
@@ -39,3 +49,29 @@ bun tools/gen-letters.ts --check               # the Unicode 15.0.0 letter table
 ```
 
 The TypeScript package is documented in [`ts/README.md`](ts/README.md).
+
+## Releasing
+
+One version number for all three packages: `ts/package.json` (npm), `python/pyproject.toml` (with its
+entry in `python/uv.lock`) and the `Version` constant of `go/version.go`. CI checks on every pull request
+that they are equal (`tools/release-version --check`).
+
+1. **Bump PR.** On a branch from `main`: `tools/release-version X.Y.Z`, commit (`chore(redaction): release
+   X.Y.Z`), open a PR, get it reviewed and merged into `main`. Nothing else changes in that PR.
+2. **Tag.** Push the tag `vX.Y.Z` on the merge commit (`git tag vX.Y.Z <sha> && git push origin vX.Y.Z`). Only
+   the owner pushes release tags.
+3. **The workflow** (`publish.yml`, trigger: tag `v*`) has three jobs, each with only the permission it needs.
+   `check` (read only) verifies that the tag equals the version of all three packages and that the commit is on
+   `main`, then runs `sync-spec --check`, typecheck, tests, build, `lint-spec`, `gen-letters --check` (Unicode
+   table) and `check-pack`. `tag` (the only job with `contents: write`, no checkout and no install) pushes the
+   tag `go/vX.Y.Z` on the same commit through the API (the Go module lives in `go/`, so its tag carries the `go/`
+   prefix); a re-run finds an existing tag on the same commit, lightweight or annotated, and goes on; on another
+   commit it fails. `publish` (`packages: write`) builds and publishes the npm package. The Go tag comes first
+   because a tag step can be re-run and an npm publish cannot.
+   **If `publish` reports a failure, check the registry before re-running**: an upload that succeeded before the
+   failure was reported makes a re-run fail on the existing version (`npm view @droidrun/redaction@X.Y.Z
+   --registry https://npm.pkg.github.com`); then the release is done and nothing is published twice.
+4. **Python** is not published to an index. Consumers pin the full commit SHA of the release commit
+   (`rev = "<40-character SHA>"`, `subdirectory = "python"`, see [`python/README.md`](python/README.md)).
+5. **Go** consumers use `github.com/droidrun/redaction/go@vX.Y.Z`.
+
