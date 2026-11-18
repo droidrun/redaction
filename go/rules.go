@@ -75,6 +75,17 @@ func (b *builder) anchored(template string) *anchored {
 	return found
 }
 
+// unit is the one UTF-16 unit of spec text that must be exactly one unit (a separator, a dash, a mask
+// character); anything else is a malformed spec.
+func (b *builder) unit(text string) uint16 {
+	units := decodeUTF8(text)
+	if len(units) != 1 {
+		b.fail(errSpecRejected)
+		return 0
+	}
+	return units[0]
+}
+
 func (b *builder) classes(templates []string) []*unitSet {
 	sets := make([]*unitSet, len(templates))
 	for i, template := range templates {
@@ -149,10 +160,14 @@ func newEvidence(b *builder, found *placeholders, whitespace *unitSet) *evidence
 		placeholders: found,
 	}
 	for _, mask := range trivial.MaskChars {
-		v.maskChars = append(v.maskChars, decodeUTF8(mask)[0])
+		v.maskChars = append(v.maskChars, b.unit(mask))
 	}
 	for _, pair := range trivial.Wrappers {
-		v.wrappers = append(v.wrappers, [2]uint16{decodeUTF8(pair[0])[0], decodeUTF8(pair[1])[0]})
+		if len(pair) != 2 {
+			b.fail(errSpecRejected)
+			continue
+		}
+		v.wrappers = append(v.wrappers, [2]uint16{b.unit(pair[0]), b.unit(pair[1])})
 	}
 	return v
 }

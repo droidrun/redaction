@@ -149,7 +149,7 @@ func (e *engine) newDottedToken(b *builder, raw json.RawMessage) (scanner, error
 	}
 	return &dottedToken{
 		lead:       decodeUTF8(spec.Lead),
-		separator:  decodeUTF8(spec.Separator)[0],
+		separator:  b.unit(spec.Separator),
 		segment:    b.class(spec.SegmentClass),
 		word:       b.class(spec.WordClass),
 		minSegment: spec.MinSegment,

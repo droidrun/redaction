@@ -1,6 +1,7 @@
 package redaction
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -475,6 +476,81 @@ func TestFullTierResultsNameSpecIDsOnly(t *testing.T) {
 		if strings.Contains(entry.RuleID, "@") || strings.Contains(entry.RuleID, "secretlint") {
 			t.Fatalf("a rule id carries the legacy prefix: %q", entry.RuleID)
 		}
+	}
+}
+
+// mutatedSpec builds the engine from the embedded spec after `change` edited the decoded rules and
+// algorithms; it returns the error of the load.
+func mutatedSpec(t *testing.T, change func(rules map[string]any, algorithms map[string]any)) error {
+	t.Helper()
+	files := embeddedFiles(t)
+	var rules, algorithms map[string]any
+	if err := json.Unmarshal(files.rules, &rules); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(files.algorithms, &algorithms); err != nil {
+		t.Fatal(err)
+	}
+	change(rules, algorithms)
+	files.rules, _ = json.Marshal(rules)
+	files.algorithms, _ = json.Marshal(algorithms)
+	spec, err := decodeSpec(files)
+	if err != nil {
+		return err
+	}
+	_, err = newEngine(spec)
+	return err
+}
+
+// ruleOfKind is the first rule of the full list of that kind.
+func ruleOfKind(rules map[string]any, list string, kind string) map[string]any {
+	for _, entry := range rules[list].([]any) {
+		if rule := entry.(map[string]any); rule["kind"] == kind {
+			return rule
+		}
+	}
+	return nil
+}
+
+func TestMalformedSpecTextIsRefusedNotAPanic(t *testing.T) {
+	cases := map[string]func(rules map[string]any, algorithms map[string]any){
+		"an empty dash-chain separator": func(rules map[string]any, _ map[string]any) {
+			ruleOfKind(rules, "full", "dash-chain")["separator"] = ""
+		},
+		"a two-unit sendgrid dash": func(rules map[string]any, _ map[string]any) {
+			ruleOfKind(rules, "full", "sendgrid-key")["dash"] = "--"
+		},
+		"an empty sendgrid separator": func(rules map[string]any, _ map[string]any) {
+			ruleOfKind(rules, "full", "sendgrid-key")["separator"] = ""
+		},
+		"an empty pem-key newline": func(rules map[string]any, _ map[string]any) {
+			ruleOfKind(rules, "full", "pem-key")["newline"] = ""
+		},
+		"an empty jwt separator": func(rules map[string]any, _ map[string]any) {
+			ruleOfKind(rules, "pipeline", "dotted-token")["separator"] = ""
+		},
+		"an empty trivial mask character": func(_ map[string]any, algorithms map[string]any) {
+			algorithms["trivial"].(map[string]any)["maskChars"] = []any{""}
+		},
+		"a wrapper pair with one member": func(_ map[string]any, algorithms map[string]any) {
+			algorithms["trivial"].(map[string]any)["wrappers"] = []any{[]any{"<"}}
+		},
+		"a token without parts": func(rules map[string]any, _ map[string]any) {
+			ruleOfKind(rules, "full", "token")["parts"] = []any{}
+		},
+		"a token that starts with a run": func(rules map[string]any, _ map[string]any) {
+			ruleOfKind(rules, "full", "token")["parts"] = []any{
+				map[string]any{"runClass": "[a-z]", "min": 1, "max": 1},
+			}
+		},
+	}
+	for name, change := range cases {
+		if err := mutatedSpec(t, change); !errors.Is(err, errSpecRejected) {
+			t.Errorf("%s: got %v", name, err)
+		}
+	}
+	if err := mutatedSpec(t, func(map[string]any, map[string]any) {}); err != nil {
+		t.Errorf("the unchanged spec was refused: %v", err)
 	}
 }
 

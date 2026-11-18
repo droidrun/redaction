@@ -45,7 +45,7 @@ func (e *engine) newPemKey(b *builder, raw json.RawMessage) (scanner, error) {
 		body:         b.class(spec.BodyClass),
 		minBody:      spec.MinBody,
 		maxBody:      spec.MaxBody,
-		newline:      decodeUTF8(spec.Newline)[0],
+		newline:      b.unit(spec.Newline),
 		strip:        b.class(spec.StripClass),
 		stripLiteral: decodeUTF8(spec.StripLiteral),
 		content:      b.class(spec.ContentClass),

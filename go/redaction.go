@@ -281,8 +281,8 @@ func (e *engine) limits(opts Options) limits {
 // is scanned, a string under a secret-named key is replaced, and so is a number under a singular
 // secret key. Object keys come out in ECMAScript order (integer-like keys first); for a repeated
 // key the last value wins; keys that redact to the same key keep their values, the first under the
-// plain key and the others under `[REDACTED:rule#2]`, `#3`, ... (inside the brackets); numbers are written as ECMAScript writes the nearest double. The
-// output is compact JSON.
+// plain key and the others under `[REDACTED:rule#2]`, `#3`, ... (inside the brackets); numbers that
+// are not replaced are written back as they appeared. The output is compact JSON.
 //
 // Input that is not one JSON value gives ErrInvalidJSON together with the redaction of the raw
 // input as a text (the same as RedactText gives, with its Result): the output is never the input
