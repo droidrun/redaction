@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"slices"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -150,6 +150,37 @@ func sameCounts(a map[string]int, b map[string]int) bool {
 	return true
 }
 
+// numberedKey matches a key with a collision number inside a placeholder: `[REDACTED:rule#2]`.
+var numberedKey = regexp.MustCompile(`#[0-9]+\]`)
+
+// withoutNumberedKeys is a copy of the tree without the members whose key is numbered (L-P).
+func withoutNumberedKeys(n *node) *node {
+	copied := &node{kind: n.kind, raw: n.raw, str: n.str, flag: n.flag}
+	for _, item := range n.items {
+		copied.items = append(copied.items, withoutNumberedKeys(item))
+	}
+	for _, entry := range n.members {
+		if numberedKey.MatchString(unitsToString(entry.key)) {
+			continue
+		}
+		copied.members = append(copied.members, member{key: entry.key, val: withoutNumberedKeys(entry.val)})
+	}
+	return copied
+}
+
+// collisionCases is the number of cases of the family `key-collision` whose output differs from the
+// recorded 0.2.0 output on both sides, because keys that redact to the same key are now numbered and
+// no value is lost (decided 2026-11-18, L-P); the recorded output kept the later value only.
+const collisionCases = 120
+
+// isNumberingOnly: the output is the recorded one plus members with numbered keys, and the hits are
+// the recorded ones (the number costs no hit).
+func isNumberingOnly(t *testing.T, got []byte, result Result, recorded goldenOutcome) bool {
+	t.Helper()
+	withoutNumbers := marshal(withoutNumberedKeys(parseTree(t, got)))
+	return bytes.Equal(withoutNumbers, recorded.Out) && sameCounts(countsOf(result), recordedCounts(recorded))
+}
+
 func TestGoldenReplay(t *testing.T) {
 	golden := loadGolden(t)
 	if golden.Count != len(golden.Cases) || len(golden.Cases) != 15288 {
@@ -159,13 +190,17 @@ func TestGoldenReplay(t *testing.T) {
 	for _, c := range golden.Cases {
 		got, result := runWithResult(t, c.inputJSON(t), c.options())
 		same := matchesRecord(t, got, c.Sync.Out) && sameCounts(countsOf(result), recordedCounts(c.Sync))
-		if !same {
-			differing = append(differing, c.ID)
+		if same {
+			continue
+		}
+		differing = append(differing, c.ID)
+		if c.Family != "key-collision" || !isNumberingOnly(t, got, result, c.Sync) {
+			t.Errorf("%s differs in more than the numbering of colliding keys: %s", c.ID, got)
 		}
 	}
-	t.Logf("standard side: replayed %d cases, %d differ", len(golden.Cases), len(differing))
-	if len(differing) > 0 {
-		t.Fatalf("%d cases differ, first: %v", len(differing), differing[:min(len(differing), 20)])
+	t.Logf("standard side: replayed %d cases, %d differ (colliding keys)", len(golden.Cases), len(differing))
+	if len(differing) != collisionCases {
+		t.Fatalf("expected %d key-collision cases to differ, got %d", collisionCases, len(differing))
 	}
 }
 
@@ -186,14 +221,53 @@ var awsCorrection = struct {
 
 // keyCases are the cases whose full-tier result differs from the recorded 0.2.0 output because an
 // object key is scanned with the full rules (decided 2026-11-18, L-N): the key holds a full-tier-only
-// secret (a connection string, an npm, SendGrid, Slack webhook, Linear, Shopify or GitLab token) and is
-// now replaced by the placeholder of that rule; a connection string used to read `url-credentials`.
-// More redaction only: every other part of the output is the recorded one.
-var keyCases = []string{
-	"sample-68", "sample-119", "sample-122", "sample-125", "sample-128", "sample-131", "sample-137",
-	"sample-140", "fuzz-key-39", "fuzz-key-57", "fuzz-key-82", "fuzz-key-127", "fuzz-key-167",
-	"fuzz-key-189", "fuzz-key-193", "fuzz-key-198", "fuzz-key-201", "fuzz-key-211", "fuzz-key-214",
-	"fuzz-key-236", "fuzz-key-266", "fuzz-key-274", "fuzz-key-280", "fuzz-key-284",
+// secret and is now replaced by the placeholder of that rule (a connection string used to read
+// `url-credentials`, the others were kept). `placeholder` is the key the output must hold, `count`
+// how many times (and so how many hits of that rule). More redaction only: every other part of the
+// output is the recorded one.
+var keyCases = map[string]struct {
+	placeholder string
+	count       int
+}{
+	"sample-68":    {"[REDACTED:database-connection-string]", 1},
+	"sample-119":   {"[REDACTED:npm]", 1},
+	"sample-122":   {"[REDACTED:sendgrid]", 1},
+	"sample-125":   {"[REDACTED:slack]", 1},
+	"sample-128":   {"[REDACTED:linear]", 1},
+	"sample-131":   {"[REDACTED:shopify]", 1},
+	"sample-137":   {"[REDACTED:database-connection-string]", 1},
+	"sample-140":   {"[REDACTED:gitlab]", 1},
+	"fuzz-key-39":  {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-57":  {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-82":  {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-127": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-167": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-189": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-193": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-198": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-201": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-211": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-214": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-236": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-266": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-274": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-280": {"[REDACTED:database-connection-string]", 3},
+	"fuzz-key-284": {"[REDACTED:database-connection-string]", 3},
+}
+
+// keyOccurrences counts the object keys of a tree that equal `key`.
+func keyOccurrences(n *node, key string) int {
+	count := 0
+	for _, item := range n.items {
+		count += keyOccurrences(item, key)
+	}
+	for _, entry := range n.members {
+		if unitsToString(entry.key) == key {
+			count++
+		}
+		count += keyOccurrences(entry.val, key)
+	}
+	return count
 }
 
 // sameValuesIgnoringKeys: both trees have the same shape and the same leaves, the keys may differ.
@@ -214,9 +288,27 @@ func sameValuesIgnoringKeys(a *node, b *node) bool {
 	return a.kind != kindString || equalUnits(a.str, b.str)
 }
 
+// checkKeyCase pins what an L-N case changed: the placeholder key, how often it occurs, the hit
+// count of its rule, and nothing but the keys.
+func checkKeyCase(t *testing.T, id string, got []byte, result Result, recorded goldenOutcome) {
+	t.Helper()
+	want := keyCases[id]
+	tree := parseTree(t, got)
+	ruleID := strings.TrimSuffix(strings.TrimPrefix(want.placeholder, "[REDACTED:"), "]")
+	if keyOccurrences(tree, want.placeholder) != want.count || countsOf(result)[ruleID] != want.count {
+		t.Errorf("%s: %d keys %s and %d hits, want %d of each: %s", id,
+			keyOccurrences(tree, want.placeholder), want.placeholder, countsOf(result)[ruleID], want.count,
+			got)
+	}
+	if !sameValuesIgnoringKeys(tree, parseTree(t, recorded.Out)) {
+		t.Errorf("%s differs in more than its object keys: %s", id, got)
+	}
+}
+
 func TestGoldenReplayFullTier(t *testing.T) {
 	golden := loadGolden(t)
 	var differing []string
+	collisions := 0
 	for _, c := range golden.Cases {
 		got, result := runWithResult(t, c.inputJSON(t), c.fullOptions())
 		same := matchesRecord(t, got, c.Async.Out) && sameCounts(countsOf(result), recordedCounts(c.Async))
@@ -224,6 +316,7 @@ func TestGoldenReplayFullTier(t *testing.T) {
 			continue
 		}
 		differing = append(differing, c.ID)
+		_, isKeyCase := keyCases[c.ID]
 		switch {
 		case c.ID == awsCorrection.id:
 			if string(c.inputJSON(t)) != string(jsonString(decodeUTF8(awsCorrection.input))) ||
@@ -232,17 +325,18 @@ func TestGoldenReplayFullTier(t *testing.T) {
 				!sameCounts(countsOf(result), map[string]int{"aws": 1}) {
 				t.Errorf("%s differs in a way the AWS correction does not explain: %s", c.ID, got)
 			}
-		case slices.Contains(keyCases, c.ID):
-			if !sameValuesIgnoringKeys(parseTree(t, got), parseTree(t, c.Async.Out)) {
-				t.Errorf("%s differs in more than its object keys: %s", c.ID, got)
-			}
+		case isKeyCase:
+			checkKeyCase(t, c.ID, got, result, c.Async)
+		case c.Family == "key-collision" && isNumberingOnly(t, got, result, c.Async):
+			collisions++
+		default:
+			t.Errorf("%s differs in a way no decision explains: %s", c.ID, got)
 		}
 	}
-	t.Logf("full side: replayed %d cases, %d differ: %v", len(golden.Cases), len(differing), differing)
-	want := append([]string{awsCorrection.id}, keyCases...)
-	slices.Sort(want)
-	slices.Sort(differing)
-	if !slices.Equal(differing, want) {
-		t.Fatalf("expected exactly the AWS correction and the key cases to differ, got %v", differing)
+	t.Logf("full side: replayed %d cases, %d differ: the AWS case, %d key cases, %d colliding-key cases",
+		len(golden.Cases), len(differing), len(keyCases), collisions)
+	if len(differing) != 1+len(keyCases)+collisionCases || collisions != collisionCases {
+		t.Fatalf("expected the AWS case, %d key cases and %d collision cases; got %d differing, %d colliding",
+			len(keyCases), collisionCases, len(differing), collisions)
 	}
 }

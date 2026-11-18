@@ -3,6 +3,7 @@ package redaction
 import (
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -83,4 +84,24 @@ func (p *placeholders) literalSegments(t *text) [][]uint16 {
 		cursor = t.unitAt(loc[1])
 	}
 	return append(segments, t.units[cursor:])
+}
+
+// numbered is the key with `#n` inside the brackets of its last placeholder (`[REDACTED:npm]` becomes
+// `[REDACTED:npm#2]`; a bare `[REDACTED]` becomes `[REDACTED:#2]`, which is a placeholder too). It
+// reports false for a key without a placeholder.
+func (p *placeholders) numbered(key []uint16, n int) ([]uint16, bool) {
+	t := newText(key)
+	found := p.all.FindAllStringIndex(t.mapped, -1)
+	if len(found) == 0 {
+		return nil, false
+	}
+	start, end := t.unitAt(found[len(found)-1][0]), t.unitAt(found[len(found)-1][1])
+	suffix := "#" + strconv.Itoa(n)
+	if end-start == len(p.open) { // `[REDACTED]` has no rule id yet
+		suffix = ":" + suffix
+	}
+	numbered := make([]uint16, 0, len(key)+len(suffix))
+	numbered = append(numbered, key[:end-1]...)
+	numbered = append(numbered, decodeUTF8(suffix)...)
+	return append(numbered, key[end-1:]...), true
 }

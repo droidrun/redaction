@@ -280,7 +280,8 @@ func (e *engine) limits(opts Options) limits {
 // RedactJSON redacts a JSON value with the rules of the tier and the key-name rules: a string leaf
 // is scanned, a string under a secret-named key is replaced, and so is a number under a singular
 // secret key. Object keys come out in ECMAScript order (integer-like keys first); for a repeated
-// key the last value wins; numbers are written as ECMAScript writes the nearest double. The
+// key the last value wins; keys that redact to the same key keep their values, the first under the
+// plain key and the others under `[REDACTED:rule#2]`, `#3`, ... (inside the brackets); numbers are written as ECMAScript writes the nearest double. The
 // output is compact JSON.
 //
 // Input that is not one JSON value gives ErrInvalidJSON together with the redaction of the raw

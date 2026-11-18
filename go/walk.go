@@ -22,6 +22,8 @@ type frame struct {
 	outKey  []uint16
 	index   map[string]int
 	cutDone bool
+	// lastNumber is, per output key that was taken, the number of the last numbered key made of it.
+	lastNumber map[string]int
 }
 
 // indexAbove is the member count from which an output object keeps a key map.
@@ -35,20 +37,52 @@ func (f *frame) done() bool {
 	return f.idx >= entryCount(f.src)
 }
 
-// place stores a finished value under the current output key (or appends it to an array). A key
-// that is already there keeps its position and takes the later value.
-func (f *frame) place(value *node) {
+// addMember appends an entry to the output object.
+func (f *frame) addMember(key []uint16, value *node) {
+	f.out.members = append(f.out.members, member{key: key, val: value})
+	if f.index != nil {
+		f.index[unitsKey(key)] = len(f.out.members) - 1
+	}
+}
+
+// place stores a finished value under the current output key of the frame (or appends it to an
+// array). When an earlier entry already has that output key (two keys were redacted to the same
+// placeholder), no value is lost: the first keeps the key, each further one gets a number inside the
+// brackets of the placeholder, `[REDACTED:rule#2]`, `#3`, ... in contract order.
+func (w *walker) place(f *frame, value *node) {
 	if f.isArray() {
 		f.out.items = append(f.out.items, value)
 		return
 	}
-	if at := f.memberAt(f.outKey); at >= 0 {
-		f.out.members[at].val = value
+	at := f.memberAt(f.outKey)
+	if at < 0 {
+		f.addMember(f.outKey, value)
 		return
 	}
-	f.out.members = append(f.out.members, member{key: f.outKey, val: value})
-	if f.index != nil {
-		f.index[unitsKey(f.outKey)] = len(f.out.members) - 1
+	if key, numbered := w.numberedKey(f, f.outKey); numbered {
+		f.addMember(key, value)
+		return
+	}
+	f.out.members[at].val = value // a key without a placeholder cannot collide; kept as the old rule
+}
+
+// numberedKey is the next free numbered form of a taken output key.
+func (w *walker) numberedKey(f *frame, key []uint16) ([]uint16, bool) {
+	if f.lastNumber == nil {
+		f.lastNumber = make(map[string]int)
+	}
+	base := unitsKey(key)
+	last := max(f.lastNumber[base], 1)
+	for {
+		last++
+		candidate, ok := w.e.placeholders.numbered(key, last)
+		if !ok {
+			return nil, false
+		}
+		if f.memberAt(candidate) < 0 {
+			f.lastNumber[base] = last
+			return candidate, true
+		}
 	}
 }
 
@@ -200,7 +234,7 @@ func (w *walker) cut(top *frame, rawKey []uint16) {
 			top.outKey = marker.str
 		}
 	}
-	top.place(marker)
+	w.place(top, marker)
 	top.idx = entryCount(top.src)
 	top.cutDone = true
 }
@@ -219,7 +253,7 @@ func (w *walker) descend(top *frame, value *node, v Verdict) *frame {
 	if opened != nil {
 		return opened
 	}
-	top.place(finished)
+	w.place(top, finished)
 	return nil
 }
 
@@ -254,7 +288,7 @@ func (w *walker) skipValue(top *frame, value *node) *frame {
 		return w.descend(top, value, VerdictNone)
 	}
 	w.nodes--
-	top.place(value)
+	w.place(top, value)
 	return nil
 }
 
@@ -275,7 +309,7 @@ func (w *walker) walk(root *node) *node {
 			if len(stack) == 0 {
 				return top.out
 			}
-			stack[len(stack)-1].place(top.out)
+			w.place(stack[len(stack)-1], top.out)
 			continue
 		}
 		if w.nodes <= 0 {

@@ -362,18 +362,6 @@ func TestFullTierKeysThatAreTokensAreReplaced(t *testing.T) {
 	}
 }
 
-func TestFullTierKeysThatCollideAfterRedactionKeepTheFirstPosition(t *testing.T) {
-	other := "npm_" + strings.Repeat("B", 36)
-	input := `{"` + npmToken + `":1,"mid":2,"` + other + `":3}`
-	want := `{"[REDACTED:npm]":3,"mid":2}`
-	for _, mode := range []Mode{Compat, Strict} {
-		out, _, err := RedactJSON([]byte(input), Options{Tier: TierFull, Mode: mode})
-		if err != nil || string(out) != want {
-			t.Errorf("mode %d: got %s, %v", mode, out, err)
-		}
-	}
-}
-
 func TestFullTierKeyLimitsAreTheStandardOnes(t *testing.T) {
 	long := strings.Repeat("a", 4097)
 	compat, _, _ := RedactJSON([]byte(`{"`+long+`":1}`), Options{Tier: TierFull, Mode: Compat})

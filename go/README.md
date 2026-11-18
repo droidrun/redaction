@@ -37,7 +37,10 @@ text, result = redaction.RedactText(line, redaction.Options{Tier: redaction.Tier
 - `RedactJSON(data []byte, opts Options) ([]byte, Result, error)` redacts one JSON value. A string
   leaf is scanned; a string under a secret-named key (`password`, `apiKey`, `x-auth-token`, ...)
   is replaced whole; so is a number under a singular secret key (`pin`, not `max_tokens`).
-  Object keys that hold a secret are redacted too. Output is compact JSON, object keys in
+  Object keys that hold a secret are redacted too; when two different keys of one object redact to
+  the same key (two connection strings, two tokens), no value is lost: the first keeps the key, each
+  further one gets a number inside the brackets, `[REDACTED:npm]`, `[REDACTED:npm#2]`, `#3`, ... in
+  the order of the object (the number goes into the last placeholder of the key). Output is compact JSON, object keys in
   ECMAScript order (integer-like keys first), a repeated key keeps its last value, numbers that are
   not replaced are written back exactly as they appeared (`1.0` stays `1.0`; the spec compares
   numbers as doubles, so the other languages may write `1`). Input that is not one JSON value gives `ErrInvalidJSON` and, as the output,
