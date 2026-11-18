@@ -1,0 +1,113 @@
+# droidrun-redaction (Python)
+
+Secret redaction for text and JSON values. This is the Python implementation of the **standard tier**
+of the redaction spec in [`spec/`](../spec/SPEC.md). It redacts byte for byte like the TypeScript
+package `@droidrun/redaction`: the same rules, the same placeholders (`[REDACTED:<rule>]`), the same
+limits. It has no runtime dependencies and needs Python 3.11 or newer.
+
+## Install
+
+The repository is private. Add it as a git dependency over ssh, pinned to a full commit SHA, with
+`subdirectory = "python"`:
+
+```toml
+[project]
+dependencies = ["droidrun-redaction"]
+
+[tool.uv.sources]
+droidrun-redaction = { git = "ssh://git@github.com/droidrun/redaction.git", rev = "<40-character commit SHA>", subdirectory = "python" }
+```
+
+The build and CI environments need an ssh key that can read the repository.
+
+## API
+
+```python
+from droidrun_redaction import redact_json, redact_text, is_secret_key_name
+
+result = redact_text("password=hunter2hunter2 and more")
+result.value   # 'password=[REDACTED:generic-keyword] and more'
+result.hits    # (RuleCount(rule_id='generic-keyword', count=1),)
+result.error   # None
+
+result = redact_json({"user": "a", "api_key": "k", "note": "Bearer abcdefgh12345"})
+result.value   # {'user': 'a', 'api_key': '[REDACTED:key-context]', 'note': 'Bearer [REDACTED:auth-header]'}
+```
+
+- `redact_text(text, *, mode="strict", max_chars=None) -> RedactResult`
+- `redact_json(value, *, mode="strict", skip_keys=None, max_depth=None, max_nodes=None, max_chars=None) -> RedactResult`
+  - `value` is a parsed JSON value: `dict`, `list`, `str`, `int`, `float`, `bool`, `None`.
+  - Strings are scanned. A string under a secret key name (`password`, `x-auth-token`, `clientSecret`, ...)
+    is replaced whole, and so is a number under a singular secret key (`pin`; not `max_tokens`).
+  - Keys that themselves hold a secret are redacted.
+  - Output keys keep the ECMAScript order (integer-like keys ascending first), as the TypeScript
+    package returns them.
+  - `skip_keys` (default `type` and `id`): a scalar under such a key is not replaced because of a secret
+    parent key. In `strict` mode a string under a skip key is still scanned.
+- `is_secret_key_name(key: str) -> bool`
+- `key_verdict(key: str) -> Literal["none", "string", "any"]`: what the key makes of the value under it
+  (`none`: nothing; `string`: a string is replaced; `any`: a number is replaced too).
+- `RedactResult(value, hits, error)` is a frozen dataclass. `hits` is a tuple of
+  `RuleCount(rule_id, count)` in order of first hit: **rule id and count only, never a range or any text**
+  (ranges reveal lengths). `error` is `None`, or the class name of the failure that made `value` the
+  placeholder `[REDACTED:redaction-failed]` (never a message: it could echo the input).
+
+### Logging filter
+
+`redact_json` is a ready-made filter for structured log records: strings under secret key names are replaced,
+counts are kept, and every other string is scanned.
+
+```python
+record = {"user": "u1", "api_key": "k-123", "max_tokens": 100, "prompt_tokens": 12, "pin": 4321}
+redact_json(record).value
+# {'user': 'u1', 'api_key': '[REDACTED:key-context]', 'max_tokens': 100, 'prompt_tokens': 12,
+#  'pin': '[REDACTED:key-context]'}
+```
+
+`key_verdict("max_tokens")` is `"string"` (a number stays), `key_verdict("pin")` is `"any"` (a number is
+replaced). `skip_keys` must be a collection of strings (a single `str` raises `TypeError`).
+
+Every rule, word list, threshold and limit comes from the spec data embedded in the package.
+
+## Modes
+
+- `strict` (default): no path returns a value that was not scanned. A text or leaf over a limit, a depth or
+  node limit, an over-long key, a value outside the JSON model (`NaN`, infinities, bytes, sets, tuples,
+  class instances, non-string keys) and any internal failure give a placeholder
+  (`[REDACTED:size-limit]`, `[REDACTED:depth-limit]`, `[REDACTED:circular]`,
+  `[REDACTED:redaction-failed]`). The JSON walk is iterative: deep input cannot overflow the stack.
+- `compat`: reproduces the TypeScript v0.2.0 behaviour of its sync entry (a string under a skip key is
+  returned unscanned; keys do not count against `max_chars`; a node-exhausted object keeps its raw key at the
+  cut). Use it only to compare with TypeScript output.
+
+## Limits
+
+| limit | default | meaning |
+|---|---|---|
+| `max_chars` | 4,000,000 | UTF-16 units: per text, or in total across a JSON value (keys count in `strict`) |
+| `max_depth` | 64 | container nesting; a deeper container becomes `[REDACTED:depth-limit]` |
+| `max_nodes` | 500,000 | values visited; the rest of the container becomes `[REDACTED:size-limit]` |
+
+All lengths, offsets and windows count **UTF-16 code units** (an astral character is two units, a lone
+surrogate one), because the spec fixes that unit for every language. A number that is not replaced comes back
+exactly as given (an integer beyond 2^53 is not rounded; the TypeScript package rounds it to a double, so
+outputs agree at the double level). A float that is not finite becomes `[REDACTED:redaction-failed]`.
+
+## Not supported yet
+
+- The **full tier** (the secretlint port): a later slice adds it to the same interpreter. Until then only the
+  standard rules run, and there is no `tier` parameter.
+- `restoreRedacted` (restoring values behind placeholders): TypeScript only.
+
+## Development
+
+```sh
+cd python
+uv sync                     # installs the dev dependency (pytest)
+uv run pytest -q            # vectors, golden replay, unicode, strict mode, integrity, metadata, scaling
+scripts/wheel-test.sh       # builds the wheel and runs the vectors against the installed wheel
+```
+
+The embedded spec lives in `src/droidrun_redaction/spec/` and its hash in `_spec_hash.py`; both are generated
+by `tools/sync-spec` from `spec/` (run `tools/sync-spec` after a spec change, `tools/sync-spec --check` in CI).
+The scaling test needs [bun](https://bun.sh) to generate the attack strings from `tools/lib/attacks.ts`.

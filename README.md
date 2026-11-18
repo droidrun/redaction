@@ -7,7 +7,7 @@ implementation per language, identical output.
 |---|---|---|
 | [`spec/`](spec) | the rules, word lists, thresholds and algorithms as data (`rules.json`, `keys.json`, `algorithms.json`), the normative [`SPEC.md`](spec/SPEC.md), JSON Schemas, conformance vectors, the recorded golden corpus, and [`INVENTORY.md`](spec/INVENTORY.md) (which secretlint rules can be ported) | this slice |
 | [`ts/`](ts) | `@droidrun/redaction` for Node/Bun, reads its rules from a copy of `spec/` | this slice |
-| `python/` | `droidrun-redaction` (planned) | next slice |
+| [`python/`](python) | `droidrun-redaction`, the standard tier ([`python/README.md`](python/README.md)) | this slice |
 | `go/` | `github.com/droidrun/redaction/go` (planned) | next slice |
 | [`tools/`](tools) | `lint-spec`, `sync-spec`, the corpus generator, the pack check | this slice |
 
