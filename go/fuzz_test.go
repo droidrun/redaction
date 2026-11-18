@@ -159,6 +159,13 @@ func FuzzRedactJSON(f *testing.F) {
 				Tier: tier, Mode: mode,
 				MaxNodes: fuzzLimit(selector, limit), MaxChars: fuzzLimit(selector+1, limit),
 			}
+			if opts.hasInvalidLimits() {
+				out, _, err := RedactJSON(free, opts)
+				if err != ErrInvalidOptions || string(out) != `"[REDACTED:error]"` {
+					t.Fatalf("invalid options: got %q, %v", out, err)
+				}
+				continue
+			}
 			out, _, err := RedactJSON(free, opts)
 			if out == nil || (err == nil) != json.Valid(free) || (err == nil && !json.Valid(out)) {
 				t.Fatalf("%q: out %q, err %v", free, out, err)

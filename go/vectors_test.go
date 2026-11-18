@@ -59,6 +59,11 @@ func (c vectorCase) options(tier Tier) Options {
 		mode = Strict
 	}
 	limits := c.Opts
+	if tier == TierFull && mode == Compat {
+		// The full tier in compat mode has no limits (SPEC 9.4) and refuses an explicit one: the
+		// vectors that set a limit ask for the limit of the other side only.
+		return Options{Tier: tier, Mode: mode}
+	}
 	return Options{
 		Tier: tier, Mode: mode,
 		MaxChars: limits.MaxChars, MaxDepth: limits.MaxDepth, MaxNodes: limits.MaxNodes,

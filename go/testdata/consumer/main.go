@@ -31,6 +31,10 @@ func (v vector) options(tier redaction.Tier) redaction.Options {
 	if v.Mode == "strict" {
 		opts.Mode = redaction.Strict
 	}
+	if tier == redaction.TierFull && opts.Mode == redaction.Compat {
+		// no limits in the full tier in compat mode, and an explicit one is an error
+		opts.MaxChars, opts.MaxDepth, opts.MaxNodes = nil, nil, nil
+	}
 	return opts
 }
 

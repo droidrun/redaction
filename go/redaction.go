@@ -6,6 +6,7 @@
 package redaction
 
 import (
+	"errors"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -21,7 +22,8 @@ const (
 	Compat
 )
 
-// Tier selects the rule set.
+// Tier selects the rule set. A value other than TierStandard is read as TierFull: an out-of-range
+// tier fails toward more redaction.
 type Tier int
 
 const (
@@ -36,7 +38,10 @@ const (
 // used as given, so Limit(0) is a limit of zero (as in the TypeScript package).
 //
 // The full tier in Compat mode has no length, depth or node limit (SPEC 9.4, as in the TypeScript
-// package): MaxChars, MaxDepth and MaxNodes are not used there. Use Strict for limits.
+// package), so an explicit MaxChars, MaxDepth or MaxNodes together with TierFull and Compat is an
+// error and not silently ignored: RedactText returns `[REDACTED:error]` with Result.Err
+// `invalid-options`, RedactJSON returns the JSON string `"[REDACTED:error]"`, the same Result and
+// ErrInvalidOptions. Use Strict for limits.
 type Options struct {
 	Tier Tier
 	Mode Mode
@@ -49,6 +54,38 @@ type Options struct {
 	MaxNodes *int
 	// MaxChars is the number of UTF-16 units of a text, or in total of a JSON value.
 	MaxChars *int
+}
+
+// tier is the tier a call runs: TierStandard, or TierFull for every other value.
+func (o Options) tier() Tier {
+	if o.Tier == TierStandard {
+		return TierStandard
+	}
+	return TierFull
+}
+
+// hasInvalidLimits is true for the full tier in compat mode with an explicit limit: that tier has
+// no limits, so the option cannot be honoured.
+func (o Options) hasInvalidLimits() bool {
+	hasLimit := o.MaxChars != nil || o.MaxDepth != nil || o.MaxNodes != nil
+	return hasLimit && o.tier() == TierFull && o.Mode == Compat
+}
+
+// invalidOptionsClass is the Result.Err class of options that cannot be honoured.
+const invalidOptionsClass = "invalid-options"
+
+// ErrInvalidOptions is returned by RedactJSON for options that cannot be honoured (an explicit
+// limit in the full tier in compat mode). It never quotes the input.
+var ErrInvalidOptions = errors.New("redaction: invalid options")
+
+// invalidOptionsResult is what a call with invalid options reports: the `error` placeholder is the
+// whole output, and the class says why.
+func (e *engine) invalidOptionsResult() (placeholder string, result Result) {
+	rec := newRecorder(e)
+	rec.add(e.spec.algorithms.RuleIDs.Error)
+	result = rec.result()
+	result.Err = invalidOptionsClass
+	return e.placeholders.read(e.spec.algorithms.RuleIDs.Error), result
 }
 
 // Limit returns a pointer to n, for the limit fields of Options.
@@ -67,7 +104,8 @@ type Result struct {
 	// Hits counts the hits per rule id, in the order the ids first occurred.
 	Hits []RuleCount
 	// Err is the class of the first fail-closed event of the call (`size-limit`, `depth-limit`,
-	// `redaction-failed`), or empty. The output is safe either way: the placeholder is in it.
+	// `redaction-failed`, `error`, or `invalid-options` for options that cannot be honoured), or
+	// empty. The output is safe either way: the placeholder is in it.
 	Err string
 }
 
@@ -122,7 +160,7 @@ type scanMode struct {
 }
 
 func (e *engine) scanMode(opts Options, lim limits) scanMode {
-	return scanMode{tier: opts.Tier, strict: opts.Mode != Compat, maxChars: lim.maxChars}
+	return scanMode{tier: opts.tier(), strict: opts.Mode != Compat, maxChars: lim.maxChars}
 }
 
 // scan scans a text of units in the given mode and returns it with the hits spliced.
@@ -162,6 +200,9 @@ func orDefault(value *int, fallback int) int {
 // `[REDACTED:redaction-failed]` (standard tier) or `[REDACTED:error]` (full tier).
 func RedactText(s string, opts Options) (string, Result) {
 	e := theEngine
+	if opts.hasInvalidLimits() {
+		return e.invalidOptionsResult()
+	}
 	rec := newRecorder(e)
 	mode := e.scanMode(opts, e.limits(opts))
 	return e.redactTextSafely(s, mode, rec), rec.result()
@@ -217,7 +258,7 @@ type limits struct {
 // limits are the limits of a call: the options of the caller over the spec defaults of the mode.
 // The full tier in compat mode has none (SPEC 9.4).
 func (e *engine) limits(opts Options) limits {
-	if opts.Tier == TierFull && opts.Mode == Compat {
+	if opts.tier() == TierFull && opts.Mode == Compat {
 		return limits{maxChars: unbounded, maxDepth: unbounded, maxNodes: unbounded}
 	}
 	defaults := limits{
@@ -251,6 +292,10 @@ func (e *engine) limits(opts Options) limits {
 // size of the input.
 func RedactJSON(data []byte, opts Options) ([]byte, Result, error) {
 	e := theEngine
+	if opts.hasInvalidLimits() {
+		placeholder, result := e.invalidOptionsResult()
+		return appendString(nil, decodeUTF8(placeholder)), result, ErrInvalidOptions
+	}
 	lim := e.limits(opts)
 	parsing := parseLimits{
 		nodes:        lim.maxNodes,

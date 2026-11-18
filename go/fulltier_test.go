@@ -238,7 +238,7 @@ func TestFullTierStrictReportsTheCapWhenTheSizeLimitHitIsMerged(t *testing.T) {
 
 func TestFullTierCompatHasNoLimitsAndStrictDoes(t *testing.T) {
 	long := strings.Repeat("a", 50) + " " + npmToken
-	compat, _ := RedactText(long, Options{Tier: TierFull, Mode: Compat, MaxChars: Limit(10)})
+	compat, _ := RedactText(long, Options{Tier: TierFull, Mode: Compat})
 	if !strings.HasSuffix(compat, "[REDACTED:npm]") {
 		t.Fatalf("compat applied a limit: %q", compat)
 	}
@@ -247,13 +247,62 @@ func TestFullTierCompatHasNoLimitsAndStrictDoes(t *testing.T) {
 		t.Fatalf("got %q with %+v", strict, result)
 	}
 	nested := []byte(`{"a":{"b":"` + npmToken + `"}}`)
-	out, _, err := RedactJSON(nested, Options{Tier: TierFull, Mode: Compat, MaxDepth: Limit(0)})
+	out, _, err := RedactJSON(nested, Options{Tier: TierFull, Mode: Compat})
 	if err != nil || string(out) != `{"a":{"b":"[REDACTED:npm]"}}` {
-		t.Fatalf("compat applied the depth limit: %s, %v", out, err)
+		t.Fatalf("compat without limits: %s, %v", out, err)
 	}
 	out, _, _ = RedactJSON(nested, Options{Tier: TierFull, Mode: Strict, MaxDepth: Limit(1)})
 	if string(out) != `{"a":"[REDACTED:depth-limit]"}` {
 		t.Fatalf("strict ignored the depth limit: %s", out)
+	}
+}
+
+func TestFullTierCompatRefusesExplicitLimits(t *testing.T) {
+	const marker = "Zq9LEAKcheck77xQ4mN2vB8kR5tY1wE6"
+	limited := map[string]Options{
+		"MaxChars":      {Tier: TierFull, Mode: Compat, MaxChars: Limit(10)},
+		"MaxDepth":      {Tier: TierFull, Mode: Compat, MaxDepth: Limit(5)},
+		"MaxNodes":      {Tier: TierFull, Mode: Compat, MaxNodes: Limit(5)},
+		"a limit of 0":  {Tier: TierFull, Mode: Compat, MaxNodes: Limit(0)},
+		"an other tier": {Tier: Tier(7), Mode: Compat, MaxChars: Limit(10)},
+		"a negative":    {Tier: Tier(-1), Mode: Compat, MaxChars: Limit(10)},
+	}
+	for name, opts := range limited {
+		text, result := RedactText("password="+marker, opts)
+		if text != "[REDACTED:error]" || result.Err != "invalid-options" ||
+			len(result.Hits) != 1 || result.Hits[0] != (RuleCount{"error", 1}) {
+			t.Errorf("%s: RedactText got %q, %+v", name, text, result)
+		}
+		out, jsonResult, err := RedactJSON([]byte(`{"password":"`+marker+`"}`), opts)
+		isRefused := err == ErrInvalidOptions && string(out) == `"[REDACTED:error]"`
+		if !isRefused || jsonResult.Err != "invalid-options" {
+			t.Errorf("%s: RedactJSON got %q, %+v, %v", name, out, jsonResult, err)
+		}
+		if strings.Contains(string(out), marker) || strings.Contains(text, marker) {
+			t.Errorf("%s: the input is in the output", name)
+		}
+	}
+	for name, opts := range map[string]Options{
+		"strict full": {
+			Tier: TierFull, Mode: Strict, MaxChars: Limit(1000), MaxDepth: Limit(5), MaxNodes: Limit(5),
+		},
+		"standard compat":  {Mode: Compat, MaxChars: Limit(1000)},
+		"standard strict":  {MaxChars: Limit(1000)},
+		"compat full none": {Tier: TierFull, Mode: Compat},
+	} {
+		text, result := RedactText("password="+marker, opts)
+		if text != "password=[REDACTED:generic-keyword]" || result.Err != "" {
+			t.Errorf("%s: got %q, %+v", name, text, result)
+		}
+	}
+}
+
+func TestAnOutOfRangeTierIsTheFullTier(t *testing.T) {
+	for _, tier := range []Tier{2, 7, -1} {
+		out, _ := RedactText(npmToken, Options{Tier: tier})
+		if out != "[REDACTED:npm]" {
+			t.Errorf("tier %d: got %q", tier, out)
+		}
 	}
 }
 
