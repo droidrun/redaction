@@ -47,8 +47,8 @@ def trim_query_value(text: str, label: int, value: Range) -> Range:
     before = text[label - 1 : label] if label > 0 else ""
     if before not in ("?", "&"):
         return value
-    ampersand = text.find("&", value[0])
-    if ampersand != -1 and ampersand < value[1]:
+    ampersand = text.find("&", value[0], value[1])
+    if ampersand != -1:
         return (value[0], ampersand)
     return value
 

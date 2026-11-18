@@ -18,22 +18,30 @@ def scan_units(units: str) -> tuple[str, list[Hit]]:
     return splice(units, hits), hits
 
 
+def tally(counts: dict[str, int], hits: list[Hit]) -> None:
+    """Add one to the count of each hit's rule (ranges are dropped here: they reveal lengths)."""
+    for rule_id, _start, _end in hits:
+        counts[rule_id] = counts.get(rule_id, 0) + 1
+
+
+def oversize_text(length: int) -> tuple[str, list[Hit]]:
+    """What a text of `length` units over the cap becomes (SPEC 9.1): the size-limit placeholder."""
+    rule_id = RULE_IDS["sizeLimit"]
+    return build_read_placeholder(rule_id), [(rule_id, 0, length)]
+
+
 def scan_text(units: str, max_chars: int) -> tuple[str, list[Hit]]:
     """SPEC 9.1: a text over the cap is replaced whole, a short one is returned as it is."""
     if len(units) > max_chars:
-        rule_id = RULE_IDS["sizeLimit"]
-        return build_read_placeholder(rule_id), [(rule_id, 0, len(units))]
+        return oversize_text(len(units))
     return scan_units(units)
 
 
 def redact_key(key_units: str) -> tuple[str, list[Hit]]:
-    """The key as written, or its placeholder text when the key itself holds a secret."""
-    if len(key_units) < MIN_SCAN_LENGTH or len(key_units) > SYNC_LIMITS["maxKeyChars"]:
+    """The key with its secrets replaced (a key over `maxKeyChars` is left as it is), and the hits."""
+    if is_overlong_key(key_units):
         return key_units, []
-    hits = detect(key_units)
-    if not hits:
-        return key_units, []
-    return splice(key_units, hits), hits
+    return scan_units(key_units)
 
 
 def is_overlong_key(key_units: str) -> bool:

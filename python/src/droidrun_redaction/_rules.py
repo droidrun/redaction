@@ -5,7 +5,7 @@ scanner: a function from a unit string to the ranges the rule finds, in the orde
 """
 
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import Any
 
 from ._evidence import has_value_evidence, is_doc_placeholder, is_trivial_value
@@ -30,18 +30,6 @@ from ._runs import (
 )
 
 Scanner = Callable[[str], list[Range]]
-
-
-def _resume(match: re.Match[str]) -> int:
-    """Where a search continues after a match: its end, one unit later when the match is empty."""
-    return match.end() + 1 if match.end() == match.start() else match.end()
-
-
-def _all_matches(pattern: re.Pattern[str], text: str) -> Iterator[re.Match[str]]:
-    position = 0
-    while (match := search_from(pattern, text, position)) is not None:
-        yield match
-        position = _resume(match)
 
 
 def _group_span(match: re.Match[str], group: int) -> Range | None:
@@ -85,7 +73,7 @@ def _prepare_guarded(rule: dict[str, Any]) -> Scanner:
                 position = start + 1
                 continue
             ranges.append((start, end))
-            position = _resume(match)
+            position = match.end()
         return ranges
 
     return scan
@@ -96,7 +84,7 @@ def _prepare_group(rule: dict[str, Any]) -> Scanner:
     group = rule.get("group", 0)
 
     def scan(text: str) -> list[Range]:
-        spans = (_group_span(match, group) for match in _all_matches(pattern, text))
+        spans = (_group_span(match, group) for match in pattern.finditer(text))
         return [span for span in spans if span is not None]
 
     return scan
@@ -195,14 +183,16 @@ def prepare_pem_blocks(rule: dict[str, Any]) -> Scanner:
     def scan(text: str) -> list[Range]:
         ranges: list[Range] = []
         covered = 0
-        for match in _all_matches(header, text):
+        for match in header.finditer(text):
             start = match.start()
             if start < covered:
                 continue
             body_start = match.end()
             body_end = run_end(body, text, body_start, body_limit)
-            footer_at = text.find(marker, body_start)
-            found = footer.match(text, footer_at) if 0 <= footer_at < body_end else None
+            # Only a marker that starts before the end of the body counts, so the search stops where the
+            # last such marker would end: a header never scans the rest of the text.
+            footer_at = text.find(marker, body_start, body_end + len(marker) - 1)
+            found = footer.match(text, footer_at) if footer_at != -1 else None
             covered = found.end() if found is not None else body_end
             ranges.append((start, covered))
         return ranges
@@ -251,7 +241,7 @@ def prepare_auth_values(rule: dict[str, Any]) -> Scanner:
     plain_words = frozenset(rule["plainWords"])
 
     def scan(text: str) -> list[Range]:
-        bearer_spans = (_group_span(match, 1) for match in _all_matches(bearer, text))
+        bearer_spans = (_group_span(match, 1) for match in bearer.finditer(text))
         candidates = [span for span in bearer_spans if span is not None] + scheme(text)
         return [
             (start, end)
@@ -380,9 +370,7 @@ def prepare_query_values(rule: dict[str, Any]) -> Scanner:
         return is_secret_key_name(key) or fold_lower(key) in query_only
 
     def has_secret_param(units: str) -> bool:
-        return any(
-            is_secret_param(percent_decode(match.group(1))) for match in _all_matches(query_key, units)
-        )
+        return any(is_secret_param(percent_decode(match.group(1))) for match in query_key.finditer(units))
 
     def scan(text: str) -> list[Range]:
         ranges: list[Range] = []

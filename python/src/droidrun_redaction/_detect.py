@@ -5,7 +5,7 @@ from typing import Any
 from . import _rules
 from ._patterns import Range
 from ._placeholder import build_read_placeholder
-from ._spec import RULES
+from ._spec import RULES, SpecError
 
 Hit = tuple[str, int, int]
 
@@ -25,7 +25,7 @@ _PREPARE = {
 def _prepare(rule: dict[str, Any]) -> tuple[str, _rules.Scanner]:
     prepare = _PREPARE.get(rule["kind"])
     if prepare is None:
-        raise RuntimeError("redaction spec holds an unknown rule kind")
+        raise SpecError("redaction spec holds an unknown rule kind")
     return rule["id"], prepare(rule)
 
 
