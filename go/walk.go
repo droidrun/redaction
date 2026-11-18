@@ -22,6 +22,12 @@ type frame struct {
 	outKey  []uint16
 	index   map[string]int
 	cutDone bool
+	// keyChanged: redaction changed the key of the entry being placed (an unchanged key is its own).
+	keyChanged bool
+	// inputIndex is the index of each input key of the object (made when a changed key needs it), and
+	// unchanged says per input key index whether redaction leaves that key as it is.
+	inputIndex map[string]int
+	unchanged  map[int]bool
 	// lastNumber is, per output key that was taken, the number of the last numbered key made of it.
 	lastNumber map[string]int
 }
@@ -46,41 +52,89 @@ func (f *frame) addMember(key []uint16, value *node) {
 }
 
 // place stores a finished value under the current output key of the frame (or appends it to an
-// array). When an earlier entry already has that output key (SPEC 8, key collisions): if the key is
-// exactly a rule placeholder, no value is lost, the first keeps the key and each further one gets a
-// number inside the brackets, `[REDACTED:rule#2]`, `#3`, ... in contract order; any other key keeps the
-// old rule: the later value replaces the earlier one and the key keeps the earlier position.
+// array). SPEC 8, key collisions (L-P, L-Q): a key that redaction leaves unchanged keeps its own key, and
+// that name is reserved for it before any numbering, wherever the entry stands in the object. A changed
+// key whose name is taken (by an earlier entry, or reserved) gets a number inside its last placeholder,
+// `[REDACTED:rule#2]`, `#3`, ... in contract order, skipping taken names: no value is lost.
 func (w *walker) place(f *frame, value *node) {
 	if f.isArray() {
 		f.out.items = append(f.out.items, value)
 		return
 	}
-	at := f.memberAt(f.outKey)
-	if at < 0 {
+	if !f.keyChanged || !w.isTaken(f, f.outKey) {
 		f.addMember(f.outKey, value)
 		return
 	}
-	rule, isRulePlaceholder := w.e.placeholders.ruleOfKey(f.outKey)
-	if !isRulePlaceholder {
-		f.out.members[at].val = value
+	key, numbered := w.numberedKey(f, f.outKey)
+	if !numbered { // a changed key holds a placeholder, so this cannot happen; the old rule
+		f.out.members[f.memberAt(f.outKey)].val = value
 		return
 	}
-	f.addMember(w.numberedKey(f, rule), value)
+	f.addMember(key, value)
 }
 
-// numberedKey is the next free numbered key of a rule placeholder key: the number starts at 2 and
-// counts up per object and per placeholder key; a number whose key exists is skipped.
-func (w *walker) numberedKey(f *frame, rule string) []uint16 {
+// isTaken: an earlier entry has that output key, or an input key that redaction leaves unchanged has it.
+func (w *walker) isTaken(f *frame, key []uint16) bool {
+	return f.memberAt(key) >= 0 || w.isReserved(f, key)
+}
+
+// isReserved: the object has an input key of that name that redaction leaves unchanged.
+func (w *walker) isReserved(f *frame, key []uint16) bool {
+	if f.inputIndex == nil {
+		f.inputIndex = make(map[string]int, len(f.src.members))
+		for at, entry := range f.src.members {
+			f.inputIndex[unitsKey(entry.key)] = at
+		}
+		f.unchanged = make(map[int]bool)
+	}
+	at, found := f.inputIndex[unitsKey(key)]
+	if !found {
+		return false
+	}
+	unchanged, known := f.unchanged[at]
+	if !known {
+		unchanged = !w.wouldChange(f.src.members[at].key)
+		f.unchanged[at] = unchanged
+	}
+	return unchanged
+}
+
+// wouldChange: key redaction changes this key (it holds a secret, or it is over the limit in strict
+// mode). It scans without recording anything.
+func (w *walker) wouldChange(key []uint16) bool {
+	limits := w.e.spec.algorithms
+	if len(key) < limits.Text.MinScanLength {
+		return false
+	}
+	if len(key) > limits.Sync.MaxKeyChars {
+		return w.strict
+	}
+	t := newText(key)
+	detect := func() []hit { return w.e.detect(t) }
+	if w.mode.tier == TierFull {
+		detect = func() []hit { return w.e.detectFull(t) }
+	}
+	hits, finished := w.e.tryDetect(detect)
+	return !finished || len(hits) > 0
+}
+
+// numberedKey is the next free numbered form of a taken output key: the number starts at 2 and counts
+// up per object and per key; a number whose key is taken is skipped.
+func (w *walker) numberedKey(f *frame, key []uint16) ([]uint16, bool) {
 	if f.lastNumber == nil {
 		f.lastNumber = make(map[string]int)
 	}
-	last := max(f.lastNumber[rule], 1)
+	base := unitsKey(key)
+	last := max(f.lastNumber[base], 1)
 	for {
 		last++
-		candidate := w.e.placeholders.numbered(rule, last)
-		if f.memberAt(candidate) < 0 {
-			f.lastNumber[rule] = last
-			return candidate
+		candidate, ok := w.e.placeholders.numbered(key, last)
+		if !ok {
+			return nil, false
+		}
+		if !w.isTaken(f, candidate) {
+			f.lastNumber[base] = last
+			return candidate, true
 		}
 	}
 }
@@ -229,6 +283,7 @@ func (w *walker) cut(top *frame, rawKey []uint16) {
 	marker := w.limit(w.e.spec.algorithms.RuleIDs.SizeLimit)
 	if !top.isArray() {
 		top.outKey = rawKey
+		top.keyChanged = w.strict
 		if w.strict {
 			top.outKey = marker.str
 		}
@@ -266,6 +321,7 @@ func (w *walker) step(top *frame) *frame {
 	}
 	entry := top.src.members[at]
 	top.outKey = w.outputKey(entry.key)
+	top.keyChanged = !equalUnits(top.outKey, entry.key)
 	if w.isSkipKey(entry.key) && entry.val.isPrimitive() {
 		return w.skipValue(top, entry.val)
 	}

@@ -28,18 +28,27 @@ func TestCollidingKeysAreNumbered(t *testing.T) {
 			collisionCase("a numbered key that is already taken", TierFull,
 				`{"`+npm("A")+`":1,"[REDACTED:npm#2]":9,"`+npm("B")+`":2}`,
 				`{"[REDACTED:npm]":1,"[REDACTED:npm#2]":9,"[REDACTED:npm#3]":2}`),
-			collisionCase("a key that only holds placeholders: the later value wins", TierFull,
+			collisionCase("a key that only holds placeholders: the number goes into the last one", TierFull,
 				`{"x `+npm("A")+` y `+npm("B")+` z":1,"x `+npm("C")+` y `+npm("D")+` z":2}`,
-				`{"x [REDACTED:npm] y [REDACTED:npm] z":2}`),
-			collisionCase("partly replaced keys of the standard tier keep the old rule", TierStandard,
+				`{"x [REDACTED:npm] y [REDACTED:npm] z":1,"x [REDACTED:npm] y [REDACTED:npm#2] z":2}`),
+			collisionCase("partly replaced keys of the standard tier are numbered", TierStandard,
 				`{"password=Zq9AAAAAAAAAAAAAA_x":1,"password=Zq9BBBBBBBBBBBBBB_x":"s","note":"n"}`,
-				`{"password=[REDACTED:generic-keyword]":"[REDACTED:key-context]","note":"n"}`),
+				`{"password=[REDACTED:generic-keyword]":"[REDACTED:key-context]",`+
+					`"password=[REDACTED:generic-keyword#2]":"[REDACTED:key-context]","note":"n"}`),
 			collisionCase("whole keys of the standard tier are numbered", TierStandard,
 				`{"first":1,"ghp_`+strings.Repeat("a", 36)+`":"a","ghp_`+strings.Repeat("b", 36)+
 					`":"b","ghp_`+strings.Repeat("c", 36)+`":"c"}`,
 				`{"first":1,"[REDACTED:github]":"a","[REDACTED:github#2]":"b","[REDACTED:github#3]":"c"}`),
 			collisionCase("a key that already is the placeholder takes the plain key", TierFull,
 				`{"[REDACTED:npm]":1,"`+npm("A")+`":2}`, `{"[REDACTED:npm]":1,"[REDACTED:npm#2]":2}`),
+			collisionCase("an unchanged key keeps its name wherever it stands in the object", TierFull,
+				`{"`+npm("A")+`":1,"[REDACTED:npm]":2}`, `{"[REDACTED:npm#2]":1,"[REDACTED:npm]":2}`),
+			collisionCase("a numbered name that an unchanged key reserves later is skipped", TierFull,
+				`{"`+npm("A")+`":1,"`+npm("B")+`":2,"[REDACTED:npm#2]":9}`,
+				`{"[REDACTED:npm]":1,"[REDACTED:npm#3]":2,"[REDACTED:npm#2]":9}`),
+			collisionCase("an unchanged key is never numbered", TierFull,
+				`{"[REDACTED:npm#2]":9,"`+npm("A")+`":1,"`+npm("B")+`":2}`,
+				`{"[REDACTED:npm#2]":9,"[REDACTED:npm]":1,"[REDACTED:npm#3]":2}`),
 			collisionCase("keys that do not collide are untouched", TierFull,
 				`{"`+npm("A")+`":1,"mid":2,"other":3}`, `{"[REDACTED:npm]":1,"mid":2,"other":3}`),
 			collisionCase("collisions in nested objects count apart", TierFull,
@@ -78,27 +87,16 @@ func TestNumberedKeysAreFixedPointsAndPlaceholders(t *testing.T) {
 			t.Errorf("%q is not a whole placeholder", key)
 		}
 	}
-	rules := map[string]struct {
-		rule string
-		ok   bool
-	}{
-		"[REDACTED:npm]":                      {"npm", true},
-		"[REDACTED:npm#2]":                    {"npm#2", true},
-		"[REDACTED]":                          {"", false},
-		"[REDACTED:npm:tail]":                 {"", false},
-		"x [REDACTED:npm]":                    {"", false},
-		"[REDACTED:npm] ":                     {"", false},
-		"[REDACTED:npm]\n":                    {"", false},
-		"password=[REDACTED:generic-keyword]": {"", false},
+	bare, ok := theEngine.placeholders.numbered(decodeUTF8("a [REDACTED] b"), 2)
+	if !ok || unitsToString(bare) != "a [REDACTED:#2] b" {
+		t.Errorf("a bare placeholder: got %q, %v", unitsToString(bare), ok)
 	}
-	for key, want := range rules {
-		rule, ok := theEngine.placeholders.ruleOfKey(decodeUTF8(key))
-		if ok != want.ok || (ok && rule != want.rule) {
-			t.Errorf("%q: got %q, %v; want %q, %v", key, rule, ok, want.rule, want.ok)
-		}
+	last, ok := theEngine.placeholders.numbered(decodeUTF8("x [REDACTED:npm] y [REDACTED:npm]"), 3)
+	if !ok || unitsToString(last) != "x [REDACTED:npm] y [REDACTED:npm#3]" {
+		t.Errorf("the last placeholder: got %q, %v", unitsToString(last), ok)
 	}
-	if got := unitsToString(theEngine.placeholders.numbered("npm", 3)); got != "[REDACTED:npm#3]" {
-		t.Errorf("got %q", got)
+	if _, ok := theEngine.placeholders.numbered(decodeUTF8("no placeholder here"), 2); ok {
+		t.Error("a key without a placeholder was numbered")
 	}
 }
 
