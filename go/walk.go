@@ -46,9 +46,10 @@ func (f *frame) addMember(key []uint16, value *node) {
 }
 
 // place stores a finished value under the current output key of the frame (or appends it to an
-// array). When an earlier entry already has that output key (two keys were redacted to the same
-// placeholder), no value is lost: the first keeps the key, each further one gets a number inside the
-// brackets of the placeholder, `[REDACTED:rule#2]`, `#3`, ... in contract order.
+// array). When an earlier entry already has that output key (SPEC 8, key collisions): if the key is
+// exactly a rule placeholder, no value is lost, the first keeps the key and each further one gets a
+// number inside the brackets, `[REDACTED:rule#2]`, `#3`, ... in contract order; any other key keeps the
+// old rule: the later value replaces the earlier one and the key keeps the earlier position.
 func (w *walker) place(f *frame, value *node) {
 	if f.isArray() {
 		f.out.items = append(f.out.items, value)
@@ -59,29 +60,27 @@ func (w *walker) place(f *frame, value *node) {
 		f.addMember(f.outKey, value)
 		return
 	}
-	if key, numbered := w.numberedKey(f, f.outKey); numbered {
-		f.addMember(key, value)
+	rule, isRulePlaceholder := w.e.placeholders.ruleOfKey(f.outKey)
+	if !isRulePlaceholder {
+		f.out.members[at].val = value
 		return
 	}
-	f.out.members[at].val = value // a key without a placeholder cannot collide; kept as the old rule
+	f.addMember(w.numberedKey(f, rule), value)
 }
 
-// numberedKey is the next free numbered form of a taken output key.
-func (w *walker) numberedKey(f *frame, key []uint16) ([]uint16, bool) {
+// numberedKey is the next free numbered key of a rule placeholder key: the number starts at 2 and
+// counts up per object and per placeholder key; a number whose key exists is skipped.
+func (w *walker) numberedKey(f *frame, rule string) []uint16 {
 	if f.lastNumber == nil {
 		f.lastNumber = make(map[string]int)
 	}
-	base := unitsKey(key)
-	last := max(f.lastNumber[base], 1)
+	last := max(f.lastNumber[rule], 1)
 	for {
 		last++
-		candidate, ok := w.e.placeholders.numbered(key, last)
-		if !ok {
-			return nil, false
-		}
+		candidate := w.e.placeholders.numbered(rule, last)
 		if f.memberAt(candidate) < 0 {
-			f.lastNumber[base] = last
-			return candidate, true
+			f.lastNumber[rule] = last
+			return candidate
 		}
 	}
 }

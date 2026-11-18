@@ -86,22 +86,22 @@ func (p *placeholders) literalSegments(t *text) [][]uint16 {
 	return append(segments, t.units[cursor:])
 }
 
-// numbered is the key with `#n` inside the brackets of its last placeholder (`[REDACTED:npm]` becomes
-// `[REDACTED:npm#2]`; a bare `[REDACTED]` becomes `[REDACTED:#2]`, which is a placeholder too). It
-// reports false for a key without a placeholder.
-func (p *placeholders) numbered(key []uint16, n int) ([]uint16, bool) {
-	t := newText(key)
-	found := p.all.FindAllStringIndex(t.mapped, -1)
-	if len(found) == 0 {
-		return nil, false
+// ruleOfKey is the rule of a key that is exactly `[REDACTED:<rule>]`: a whole placeholder with a rule
+// and no `:suffix`. A key that only holds a placeholder (`password=[REDACTED:generic-keyword]`), a
+// bare `[REDACTED]` and a placeholder with a suffix have none.
+func (p *placeholders) ruleOfKey(key []uint16) (string, bool) {
+	if !p.isWhole(key) {
+		return "", false
 	}
-	start, end := t.unitAt(found[len(found)-1][0]), t.unitAt(found[len(found)-1][1])
-	suffix := "#" + strconv.Itoa(n)
-	if end-start == len(p.open) { // `[REDACTED]` has no rule id yet
-		suffix = ":" + suffix
+	text := unitsToString(key)
+	if !strings.HasPrefix(text, p.open) || !strings.HasSuffix(text, p.close) {
+		return "", false
 	}
-	numbered := make([]uint16, 0, len(key)+len(suffix))
-	numbered = append(numbered, key[:end-1]...)
-	numbered = append(numbered, decodeUTF8(suffix)...)
-	return append(numbered, key[end-1:]...), true
+	rule := text[len(p.open) : len(text)-len(p.close)]
+	return rule, !strings.Contains(rule, ":")
+}
+
+// numbered is the placeholder key of `rule` with the number inside the brackets (`[REDACTED:npm#2]`).
+func (p *placeholders) numbered(rule string, n int) []uint16 {
+	return decodeUTF8(p.open + rule + "#" + strconv.Itoa(n) + p.close)
 }

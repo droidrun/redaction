@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -150,37 +150,6 @@ func sameCounts(a map[string]int, b map[string]int) bool {
 	return true
 }
 
-// numberedKey matches a key with a collision number inside a placeholder: `[REDACTED:rule#2]`.
-var numberedKey = regexp.MustCompile(`#[0-9]+\]`)
-
-// withoutNumberedKeys is a copy of the tree without the members whose key is numbered (L-P).
-func withoutNumberedKeys(n *node) *node {
-	copied := &node{kind: n.kind, raw: n.raw, str: n.str, flag: n.flag}
-	for _, item := range n.items {
-		copied.items = append(copied.items, withoutNumberedKeys(item))
-	}
-	for _, entry := range n.members {
-		if numberedKey.MatchString(unitsToString(entry.key)) {
-			continue
-		}
-		copied.members = append(copied.members, member{key: entry.key, val: withoutNumberedKeys(entry.val)})
-	}
-	return copied
-}
-
-// collisionCases is the number of cases of the family `key-collision` whose output differs from the
-// recorded 0.2.0 output on both sides, because keys that redact to the same key are now numbered and
-// no value is lost (decided 2026-11-18, L-P); the recorded output kept the later value only.
-const collisionCases = 120
-
-// isNumberingOnly: the output is the recorded one plus members with numbered keys, and the hits are
-// the recorded ones (the number costs no hit).
-func isNumberingOnly(t *testing.T, got []byte, result Result, recorded goldenOutcome) bool {
-	t.Helper()
-	withoutNumbers := marshal(withoutNumberedKeys(parseTree(t, got)))
-	return bytes.Equal(withoutNumbers, recorded.Out) && sameCounts(countsOf(result), recordedCounts(recorded))
-}
-
 func TestGoldenReplay(t *testing.T) {
 	golden := loadGolden(t)
 	if golden.Count != len(golden.Cases) || len(golden.Cases) != 15288 {
@@ -194,13 +163,10 @@ func TestGoldenReplay(t *testing.T) {
 			continue
 		}
 		differing = append(differing, c.ID)
-		if c.Family != "key-collision" || !isNumberingOnly(t, got, result, c.Sync) {
-			t.Errorf("%s differs in more than the numbering of colliding keys: %s", c.ID, got)
-		}
 	}
-	t.Logf("standard side: replayed %d cases, %d differ (colliding keys)", len(golden.Cases), len(differing))
-	if len(differing) != collisionCases {
-		t.Fatalf("expected %d key-collision cases to differ, got %d", collisionCases, len(differing))
+	t.Logf("standard side: replayed %d cases, %d differ", len(golden.Cases), len(differing))
+	if len(differing) > 0 {
+		t.Fatalf("%d cases differ, first: %v", len(differing), differing[:min(len(differing), 20)])
 	}
 }
 
@@ -288,6 +254,12 @@ func sameValuesIgnoringKeys(a *node, b *node) bool {
 	return a.kind != kindString || equalUnits(a.str, b.str)
 }
 
+// alreadyRedactedKeys are cases whose object key is a token that the standard rules (github, aws, slack,
+// stripe) already replaced in 0.2.0: the full tier finds it first, so the TypeScript package reports the
+// hit under the legacy id of the rule (`@secretlint/secretlint-rule-github`), while this package reports
+// the spec id (`github`, as before). Output and counts equal the recorded ones: they are not key cases.
+var alreadyRedactedKeys = []string{"sample-29", "sample-41", "sample-44", "sample-47", "sample-50"}
+
 // checkKeyCase pins what an L-N case changed: the placeholder key, how often it occurs, the hit
 // count of its rule, and nothing but the keys.
 func checkKeyCase(t *testing.T, id string, got []byte, result Result, recorded goldenOutcome) {
@@ -308,7 +280,6 @@ func checkKeyCase(t *testing.T, id string, got []byte, result Result, recorded g
 func TestGoldenReplayFullTier(t *testing.T) {
 	golden := loadGolden(t)
 	var differing []string
-	collisions := 0
 	for _, c := range golden.Cases {
 		got, result := runWithResult(t, c.inputJSON(t), c.fullOptions())
 		same := matchesRecord(t, got, c.Async.Out) && sameCounts(countsOf(result), recordedCounts(c.Async))
@@ -327,16 +298,19 @@ func TestGoldenReplayFullTier(t *testing.T) {
 			}
 		case isKeyCase:
 			checkKeyCase(t, c.ID, got, result, c.Async)
-		case c.Family == "key-collision" && isNumberingOnly(t, got, result, c.Async):
-			collisions++
 		default:
 			t.Errorf("%s differs in a way no decision explains: %s", c.ID, got)
 		}
 	}
-	t.Logf("full side: replayed %d cases, %d differ: the AWS case, %d key cases, %d colliding-key cases",
-		len(golden.Cases), len(differing), len(keyCases), collisions)
-	if len(differing) != 1+len(keyCases)+collisionCases || collisions != collisionCases {
-		t.Fatalf("expected the AWS case, %d key cases and %d collision cases; got %d differing, %d colliding",
-			len(keyCases), collisionCases, len(differing), collisions)
+	t.Logf("full side: replayed %d cases, %d differ: the AWS case and %d key cases",
+		len(golden.Cases), len(differing), len(keyCases))
+	if len(differing) != 1+len(keyCases) {
+		t.Fatalf("expected the AWS case and %d key cases to differ, got %d: %v", len(keyCases),
+			len(differing), differing)
+	}
+	for _, id := range alreadyRedactedKeys {
+		if slices.Contains(differing, id) {
+			t.Errorf("%s changed: the standard rules already replaced the key in 0.2.0", id)
+		}
 	}
 }

@@ -38,9 +38,11 @@ text, result = redaction.RedactText(line, redaction.Options{Tier: redaction.Tier
   leaf is scanned; a string under a secret-named key (`password`, `apiKey`, `x-auth-token`, ...)
   is replaced whole; so is a number under a singular secret key (`pin`, not `max_tokens`).
   Object keys that hold a secret are redacted too; when two different keys of one object redact to
-  the same key (two connection strings, two tokens), no value is lost: the first keeps the key, each
-  further one gets a number inside the brackets, `[REDACTED:npm]`, `[REDACTED:npm#2]`, `#3`, ... in
-  the order of the object (the number goes into the last placeholder of the key). Output is compact JSON, object keys in
+  the same key and that key is exactly a rule placeholder (two connection strings, two tokens, two keys
+  over the limit), no value is lost: the first keeps the key, each further one gets a number inside the
+  brackets, `[REDACTED:npm]`, `[REDACTED:npm#2]`, `#3`, ... in the order of the object. A key that
+  only holds a placeholder (`password=[REDACTED:generic-keyword]`) keeps the old rule: the later
+  value replaces the earlier one. Output is compact JSON, object keys in
   ECMAScript order (integer-like keys first), a repeated key keeps its last value, numbers that are
   not replaced are written back exactly as they appeared (`1.0` stays `1.0`; the spec compares
   numbers as doubles, so the other languages may write `1`). Input that is not one JSON value gives `ErrInvalidJSON` and, as the output,
@@ -175,8 +177,7 @@ go test -run XXX -bench . ./...          # a 2 KB log line and a 4 MB text, both
 `vectors_test.go` runs every case of `spec/vectors/*.json` on both tiers (the sync side is the
 standard tier, the async side the full tier); `golden_test.go` replays
 `spec/corpus/golden-b12879a.json.gz` against the recorded output of the TypeScript package, both
-sides, but for the cases of three decisions: the AWS secret access key (reported over the secret), object
-keys that are full-tier secrets (replaced by their placeholder in the full tier), and object keys that redact
-to the same key (numbered, so no value is lost: 120 recorded cases on each side). The tests name every such
+sides, but for the cases of two decisions: the AWS secret access key (reported over the secret) and object
+keys that are full-tier secrets (replaced by their placeholder in the full tier). The tests name every such
 case and check that nothing else differs. `testdata/attacks.json` is written by `bun go/testdata/gen-attacks.ts` from
 `tools/lib/attacks.ts` (plain and composite attacks).
