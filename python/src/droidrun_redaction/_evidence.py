@@ -17,6 +17,7 @@ _TRIVIAL_WORDS = frozenset(_TRIVIAL["words"])
 _INNER_UNITS = run_pattern(_TRIVIAL["wrapperInner"])
 _DOC_SEPARATOR = char_test(_DOC["separator"])
 _IS_SPACE = char_test("[{{WS}}]")
+_SURROGATE = re.compile("[\ud800-\udfff]")
 _SYMBOLS = re.compile("[\ud800-\udbff][\udc00-\udfff]|[\\s\\S]")
 
 # fdlibm `__ieee754_log2` (FreeBSD e_log2.c, with k_log1p), the function V8 uses for `Math.log2`.
@@ -80,7 +81,7 @@ def shannon_entropy(units: str) -> float:
     length = len(units)
     if length == 0:
         return 0.0
-    symbols = _SYMBOLS.findall(units)
+    symbols = units if _SURROGATE.search(units) is None else _SYMBOLS.findall(units)
     entropy = 0.0
     for count in Counter(symbols).values():
         probability = count / length

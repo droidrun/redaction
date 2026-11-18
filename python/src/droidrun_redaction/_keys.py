@@ -1,5 +1,7 @@
 """Key names (SPEC section 6): which object keys name a secret."""
 
+from functools import lru_cache
+
 from ._patterns import fold_lower
 from ._placeholder import PLACEHOLDER_MARK, literal_segments
 from ._spec import KEYS
@@ -91,7 +93,9 @@ def _starts_sequence(words: list[str], start: int, sequence: list[str], plural: 
     return True
 
 
+@lru_cache(maxsize=2048)
 def _match_key(key: str, plural: bool) -> bool:
+    """Pure in its arguments, and the same few keys come back again and again, so results are cached."""
     words = split_key_words(key)
     if _compact_key(key) in _EXACT_KEYS:
         return True
