@@ -59,11 +59,12 @@ def scan_capped(text: str, limit: int | None, scan: Scan) -> tuple[str, list[Hit
     return scan(units)
 
 
-def redact_key(key_units: str) -> tuple[str, list[Hit]]:
-    """The key with its secrets replaced (a key over `maxKeyChars` is left as it is), and the hits."""
+def redact_key(key_units: str, scan: Scan = scan_standard) -> tuple[str, list[Hit], str | None]:
+    """The key with its secrets replaced by `scan` (a key over `maxKeyChars` is left as it is), the hits, and
+    the class of the scan's failure."""
     if is_overlong_key(key_units):
-        return key_units, []
-    return scan_units(key_units)
+        return key_units, [], None
+    return scan(key_units)
 
 
 def is_overlong_key(key_units: str) -> bool:

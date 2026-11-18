@@ -86,6 +86,15 @@ def _check_limit(name: str, value: int | None, default: int) -> int:
     return value
 
 
+def _refuse_limits(**limits: int | None) -> None:
+    """The full tier's `compat` mode has no limits (it is TypeScript's behaviour): a limit is an error."""
+    given = [name for name, value in limits.items() if value is not None]
+    if given:
+        raise ValueError(
+            f"{', '.join(given)} cannot be used with tier='full', mode='compat' (it has no limits)"
+        )
+
+
 def _result(value: Any, counts: dict[str, int], error: str | None = None) -> RedactResult:
     return RedactResult(value, tuple(RuleCount(*item) for item in counts.items()), error)
 
@@ -115,8 +124,8 @@ def redact_text(
     """Redact the secrets in `text` with the rules of `tier` (`"standard"` or `"full"`).
 
     A text longer than `max_chars` (default 4,000,000 UTF-16 units) is replaced whole by
-    `[REDACTED:size-limit]`; in the full tier only `strict` applies the cap (`compat` is TypeScript's
-    behaviour, which has none). Never raises for the content of `text`.
+    `[REDACTED:size-limit]`. The full tier's `compat` mode is TypeScript's behaviour, which has no cap: giving
+    `max_chars` with it raises `ValueError`. Never raises for the content of `text`.
     """
     strict = _check_mode(mode)
     is_full = _check_tier(tier)
@@ -126,6 +135,7 @@ def redact_text(
         limit = _check_limit("max_chars", max_chars, SYNC_LIMITS["maxChars"])
         return _redact_text(text, limit, scan_standard)
     if not strict:
+        _refuse_limits(max_chars=max_chars)
         return _redact_text(text, None, scan_full_compat)
     limit = _check_limit("max_chars", max_chars, STRICT_LIMITS["maxChars"])
     return _redact_text(text, limit, scan_full_strict)
@@ -143,8 +153,9 @@ def redact_json(
 ) -> RedactResult:
     """Redact the secrets in a parsed JSON value (dict, list, str, int, float, bool, None).
 
-    Every string is scanned with the rules of `tier`; keys always with the standard rules. In the full tier
-    `compat` is TypeScript's behaviour, which has no depth, node or character limit (the limits are ignored).
+    Every string and every object key is scanned with the rules of `tier` (a key that is itself a token is
+    replaced by its placeholder). The full tier's `compat` mode is TypeScript's behaviour, which has no depth,
+    node or character limit: giving `max_depth`, `max_nodes` or `max_chars` with it raises `ValueError`.
 
     Every string is scanned, a string under a secret key name is replaced, and so is a number under a
     singular secret key (`pin`, not `max_tokens`). Output keys keep the ECMAScript order. A value outside
@@ -155,6 +166,8 @@ def redact_json(
     is_full = _check_tier(tier)
     limits = STRICT_LIMITS if strict else SYNC_LIMITS
     unlimited = is_full and not strict
+    if unlimited:
+        _refuse_limits(max_nodes=max_nodes, max_chars=max_chars, max_depth=max_depth)
     if isinstance(skip_keys, str | bytes):
         raise TypeError("skip_keys must be a collection of str, not a single string")
     skip = frozenset(KEYS["structuralSkipKeys"] if skip_keys is None else skip_keys)

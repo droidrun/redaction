@@ -19,6 +19,7 @@ from ._scan import (
     redact_key,
     scan_full_compat,
     scan_full_strict,
+    scan_standard,
     scan_units,
     tally,
 )
@@ -223,7 +224,9 @@ def _next_key(key: str, state: WalkState) -> str:
         if is_overlong_key(units) or len(units) > state.chars:
             return _over_budget(state)
         state.chars -= len(units)
-    redacted, hits = redact_key(units)
+    scan = (scan_full_strict if state.strict else scan_full_compat) if state.full else scan_standard
+    redacted, hits, error = redact_key(units, scan)
+    state.error = state.error or error
     state.count_hits(hits)
     return key if not hits else from_units(redacted)
 

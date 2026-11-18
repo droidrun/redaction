@@ -39,7 +39,13 @@ def canonical(value: Any) -> Any:
 
 
 def run(value: Any, *, mode: str, opts: dict[str, Any], tier: str = "standard") -> Any:
-    """A string goes through the text entry point, any other JSON value through the JSON one."""
+    """A string goes through the text entry point, any other JSON value through the JSON one.
+
+    The full tier's `compat` mode has no limits and refuses them; the recorded results of that side (the
+    TypeScript async entry) ignore the limits of a case, so they are not passed on.
+    """
+    if tier == "full" and mode == "compat":
+        opts = {key: item for key, item in opts.items() if key == "skipKeys"}
     if isinstance(value, str):
         return redaction.redact_text(value, tier=tier, mode=mode, max_chars=opts.get("maxChars"))
     return redaction.redact_json(

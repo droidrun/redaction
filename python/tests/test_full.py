@@ -346,26 +346,84 @@ def test_hits_name_the_rules_by_their_spec_id():
     assert result.hits == (("npm", 1), ("github", 1), ("aws", 1))
 
 
-def test_full_tier_strict_cap_and_compat_without_cap():
+def test_full_tier_strict_cap_applies_and_compat_has_none():
     text = NPM + " " * 20
     assert redact_text(text, tier="full", max_chars=10).value == "[REDACTED:size-limit]"
-    assert redact_text(text, tier="full", mode="compat", max_chars=10).value == "[REDACTED:npm]" + " " * 20
+    assert redact_text(text, tier="full", mode="compat").value == "[REDACTED:npm]" + " " * 20
 
 
-def test_full_tier_compat_json_ignores_the_limits():
+@pytest.mark.parametrize("limit", ["max_chars", "max_depth", "max_nodes"])
+def test_full_tier_compat_refuses_a_limit(limit):
+    with pytest.raises(ValueError, match=limit):
+        redact_json({"a": NPM}, tier="full", mode="compat", **{limit: 5})
+    with pytest.raises(ValueError, match=limit):
+        redact_json({"a": NPM}, tier="full", mode="compat", **{limit: 0})
+
+
+def test_full_tier_compat_text_refuses_max_chars():
+    with pytest.raises(ValueError, match="max_chars"):
+        redact_text(NPM, tier="full", mode="compat", max_chars=10)
+    with pytest.raises(ValueError, match="max_chars"):
+        redact_text(NPM, tier="full", mode="compat", max_chars=0)
+
+
+def test_limits_stay_valid_in_strict_and_in_the_standard_tier():
     value = {"a": {"b": {"c": [NPM, NPM]}}}
-    out = redact_json(value, tier="full", mode="compat", max_depth=1, max_nodes=2, max_chars=3).value
-    assert out == {"a": {"b": {"c": ["[REDACTED:npm]", "[REDACTED:npm]"]}}}
-    strict = redact_json(value, tier="full", max_depth=1)
-    assert strict.value == {"a": "[REDACTED:depth-limit]"}
-
-
-def test_full_tier_keys_use_the_standard_rules():
-    key = f"password={SECRET}"
-    assert redact_json({key: 1, NPM: 2}, tier="full").value == {
-        "password=[REDACTED:generic-keyword]": "[REDACTED:key-context]",
-        NPM: 2,
+    assert redact_json(value, tier="full", max_depth=1).value == {"a": "[REDACTED:depth-limit]"}
+    assert redact_json(value, mode="compat", max_depth=1).value == {"a": "[REDACTED:depth-limit]"}
+    assert redact_text(NPM, max_chars=10).value == "[REDACTED:size-limit]"
+    assert redact_text(NPM, mode="compat", max_chars=10).value == "[REDACTED:size-limit]"
+    assert redact_json(value, tier="full", mode="compat").value == {
+        "a": {"b": {"c": ["[REDACTED:npm]", "[REDACTED:npm]"]}}
     }
+
+
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_full_tier_keys_are_scanned_with_the_full_rules(mode):
+    secret_key = f"password={SECRET}"
+    value = {NPM: 2, f"label {NPM}": 3, secret_key: 1, "plain": NPM}
+    out = redact_json(value, tier="full", mode=mode)
+    assert out.value == {
+        "[REDACTED:npm]": 2,
+        "label [REDACTED:npm]": 3,
+        "password=[REDACTED:generic-keyword]": "[REDACTED:key-context]",
+        "plain": "[REDACTED:npm]",
+    }
+    assert out.hits == (("npm", 3), ("generic-keyword", 1), ("key-context", 1))
+    assert out.error is None
+
+
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_the_standard_tier_leaves_a_full_only_token_in_a_key(mode):
+    assert redact_json({NPM: 2}, mode=mode).value == {NPM: 2}
+
+
+def test_a_key_that_is_a_one_password_or_slack_token_is_replaced():
+    slack = "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx"
+    key = one_password(ONE_PASSWORD_BODY)
+    out = redact_json({slack: 1, key: 2}, tier="full").value
+    assert out == {"[REDACTED:slack]": 1, "[REDACTED:1password]": 2}
+
+
+def test_keys_colliding_after_a_full_scan_keep_the_later_value():
+    other = "npm_" + "B" * 36
+    assert redact_json({NPM: 1, other: 2}, tier="full").value == {"[REDACTED:npm]": 2}
+
+
+def test_a_failing_key_scan_is_reported(monkeypatch):
+    break_full_rules(monkeypatch)
+    strict = redact_json({TEXT: 1}, tier="full")
+    assert strict.value == {"[REDACTED:error]": "[REDACTED:key-context]"}
+    assert strict.error == "ScanBroken"
+    compat = redact_json({TEXT: 1}, tier="full", mode="compat")
+    assert compat.value == {FALLBACK: "[REDACTED:key-context]"}
+    assert compat.error == "ScanBroken"
+
+
+def test_an_over_long_full_tier_key_is_left_as_it_is_in_compat_and_replaced_in_strict():
+    key = NPM + "x" * 5000
+    assert redact_json({key: 1}, tier="full", mode="compat").value == {key: 1}
+    assert redact_json({key: 1}, tier="full").value == {"[REDACTED:size-limit]": 1}
 
 
 def test_module_exports_the_tier_type():
