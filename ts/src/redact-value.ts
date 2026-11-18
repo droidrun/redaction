@@ -119,10 +119,29 @@ async function visit(
     return keyed;
 }
 
+/** A key scanned with the full-tier rules; a failing scan falls back to the standard rules, like a leaf. */
+function fullTierKey(key: string, hits: Hit[]): string {
+    try {
+        return redactKey(key, hits, detectFullTierKeyHits);
+    } catch {
+        return standardKey(key, hits);
+    }
+}
+
+/** The standard rules over a key; if even they fail the key is replaced (a failing scan never passes it). */
+function standardKey(key: string, hits: Hit[]): string {
+    try {
+        return redactKey(key, hits);
+    } catch {
+        hits.push({ ruleId: ALGORITHMS_SPEC.ruleIds.error, range: [0, key.length] });
+        return buildReadPlaceholder(ALGORITHMS_SPEC.ruleIds.error);
+    }
+}
+
 /** A key after the key scan of the full tier (SPEC 9.4): `opts.detect`, when given, is the detector of keys
  *  as of leaves (SPEC 13), else the full-tier rules. */
 async function scanKey(key: string, hits: Hit[], opts: RedactValueOpts): Promise<string> {
-    if (opts.detect === undefined) return redactKey(key, hits, detectFullTierKeyHits);
+    if (opts.detect === undefined) return fullTierKey(key, hits);
     if (!isScannableKey(key)) return key;
     try {
         const found = await opts.detect(key);
@@ -131,7 +150,7 @@ async function scanKey(key: string, hits: Hit[], opts: RedactValueOpts): Promise
         return applyHits(key, found);
     } catch {
         // Like a leaf (`redactText`): a failing detector falls back to the standard rules, never the raw key.
-        return redactKey(key, hits);
+        return standardKey(key, hits);
     }
 }
 
