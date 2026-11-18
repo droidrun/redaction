@@ -3,7 +3,8 @@
 `github.com/droidrun/redaction/go` finds secrets in text and JSON values and replaces them with
 placeholders such as `[REDACTED:generic-keyword]`. It is the Go interpreter of the
 language-neutral [spec](../spec) and gives the same output as the TypeScript package
-(`@droidrun/redaction`). Standard library only, no cgo, no dependencies.
+(`@droidrun/redaction`), in both tiers (see [Tiers](#tiers)). Standard library only, no cgo, no
+dependencies.
 
 ## Install
 
@@ -27,6 +28,9 @@ text, result := redaction.RedactText(line, redaction.Options{})
 out, result, err := redaction.RedactJSON(body, redaction.Options{}) // compact JSON; err is ErrInvalidJSON
 
 redaction.IsSecretKeyName("x-auth-token") // true
+
+// the full tier: the standard rules plus key formats, connection strings, private keys, ...
+text, result = redaction.RedactText(line, redaction.Options{Tier: redaction.TierFull})
 ```
 
 - `RedactText(s string, opts Options) (string, Result)` redacts one text.
@@ -47,14 +51,15 @@ redaction.IsSecretKeyName("x-auth-token") // true
   span handlers: a string under a secret key becomes `[REDACTED:key-context]`, any other string is
   scanned, a number is replaced only under `VerdictAny` (counts such as `max_tokens` stay), every
   other type is returned as it is.
-- `Options{Mode, SkipKeys, MaxDepth, MaxNodes, MaxChars}`; a nil limit is the spec default and an
+- `Options{Tier, Mode, SkipKeys, MaxDepth, MaxNodes, MaxChars}`; `Tier` is `TierStandard` (the zero
+  value) or `TierFull`; a nil limit is the spec default and an
   explicit one is used as given, so `redaction.Limit(0)` is a limit of zero (as in the TypeScript
   package). `SkipKeys` replaces the default skip keys (`type`, `id`); nil keeps them, an empty
   slice skips nothing.
 - `Result{Hits []RuleCount; Err string}` with `RuleCount{RuleID string; Count int}`. It holds rule
   ids and counts only; ranges are not exposed because they reveal lengths. `Err` is the class of
-  the first fail-closed event of the call (`size-limit`, `depth-limit`, `redaction-failed`) or
-  empty; the output is safe either way.
+  the first fail-closed event of the call (`size-limit`, `depth-limit`, `redaction-failed`,
+  `error`) or empty; the output is safe either way.
 
 Redacted output keeps the text around the hits byte for byte. Input that is not valid UTF-8 is
 read with each invalid byte as one U+FFFD (never skipped), and the output holds that U+FFFD.
@@ -74,15 +79,39 @@ slog.New(handler).Info("login", "password", "hunter2xx", "max_tokens", 100)
 `ReplaceAttr` runs on every non-group attribute, so strings are scanned and secret keys are
 replaced; `example_test.go` runs this.
 
+## Tiers
+
+- `TierStandard` (the zero value): the rules of the standard tier (generic keyword pairs, auth
+  headers, cookies, URL credentials and query values, JWTs, PEM blocks, a few key formats).
+- `TierFull`: the standard rules plus the **full-tier rules**, the ported secretlint preset
+  (`@secretlint/secretlint-rule-preset-recommend` 13.0.4): AWS keys, private keys, npm, basic-auth
+  URLs, Slack, SendGrid, Shopify, Stripe, GitHub, GitLab, Grafana, OpenAI, Anthropic, Groq, Hugging
+  Face, Linear, Notion, 1Password, database connection strings (MongoDB, MySQL, PostgreSQL), HashiCorp
+  Vault, Vercel, Databricks, Docker, Figma, Cloudflare, Tailscale. The hit of a full-tier rule is named
+  by its rule id (`npm`, `privatekey`, ...). It is the same output as the TypeScript async entry points.
+  What is not ported (`gcp`, `filter-comments`, the two npm branches that need a file name) is listed in
+  [`spec/INVENTORY.md`](../spec/INVENTORY.md). The AWS secret access key is reported over the secret
+  itself (SPEC 4.17).
+- The full-tier rules see the first 2,000,000 units of a text, in windows of 100,000 units that overlap
+  by 10,240 (each window is a text of its own); the standard rules always see the whole text. Compat
+  scans a longer text with the standard rules beyond that cap; Strict replaces the units beyond the cap
+  by `[REDACTED:size-limit]`.
+- `RedactField` and the key rules (`IsSecretKeyName`, `KeyVerdict`) are the same in both tiers, and
+  object keys of a JSON value are scanned with the standard rules in both.
+
 ## Modes
 
 - `Strict` (the zero value, the default): no path returns text that was not scanned. A text over
   `MaxChars`, a value beyond `MaxDepth` or `MaxNodes`, an over-long key or an internal failure
   gives `[REDACTED:size-limit]`, `[REDACTED:depth-limit]` or `[REDACTED:redaction-failed]`. A
   string under a skip key is scanned like any other. The JSON walk is iterative: nesting costs no
-  stack.
-- `Compat` reproduces the TypeScript package v0.2.0 for the standard tier (a skip-key value is
-  kept as it is, an over-long key is left as it is). Use it only to match old output.
+  stack. In the full tier a failing scanner replaces the whole text (or the leaf) by
+  `[REDACTED:error]`.
+- `Compat` reproduces the TypeScript package v0.2.0 (a skip-key value is kept as it is, an
+  over-long key is left as it is). In the full tier it has **no length, depth or node limit**
+  (SPEC 9.4, as in the TypeScript package: `MaxChars`, `MaxDepth` and `MaxNodes` are not used), and a
+  failing scanner falls back to the standard rules, then to `[REDACTED:error]`. Use Compat only to
+  match old output.
 
 ## Limits
 
@@ -104,8 +133,6 @@ grammar that RE2 reads the same way as JavaScript and Python.
 
 ## Not supported yet
 
-- The `full` tier (the secretlint preset); `Options` has no tier and only the standard tier runs.
-  A full-tier port follows in a later slice and plugs into the same interpreter.
 - `restoreRedacted` (restoring values from a stored copy).
 
 ## Integrity
@@ -123,13 +150,16 @@ cd go
 go vet ./... && gofmt -l .
 go test -race ./...                      # vectors, golden replay, unicode, strict, integrity
 go test -run TestAttackStrings ./...     # scaling at 100 KB and 1 MB (not under -race)
+go test -run TestRunMemoIsPerPart ./...  # the run memory of the token rules is per part
 go test -run XXX -fuzz FuzzRedactText -fuzztime 60s
 go test -run XXX -fuzz FuzzRedactJSON -fuzztime 60s
-go test -run XXX -bench . ./...          # a 2 KB log line and a 4 MB text
+go test -run XXX -bench . ./...          # a 2 KB log line and a 4 MB text, both tiers
 (cd testdata/consumer && go run .)       # build from outside the module, public API only
 ```
 
-`vectors_test.go` runs every case of `spec/vectors/*.json` on the standard tier; `golden_test.go`
-replays `spec/corpus/golden-b12879a.json.gz` against the recorded output of the TypeScript
-package. `testdata/attacks.json` is written by `bun go/testdata/gen-attacks.ts` from
-`tools/lib/attacks.ts`.
+`vectors_test.go` runs every case of `spec/vectors/*.json` on both tiers (the sync side is the
+standard tier, the async side the full tier); `golden_test.go` replays
+`spec/corpus/golden-b12879a.json.gz` against the recorded output of the TypeScript package, both
+sides: the standard side exactly, the full side exactly but for the one AWS case of the decision
+above. `testdata/attacks.json` is written by `bun go/testdata/gen-attacks.ts` from
+`tools/lib/attacks.ts` (plain and composite attacks).
