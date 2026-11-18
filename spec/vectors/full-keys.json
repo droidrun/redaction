@@ -1,0 +1,376 @@
+{
+  "description": "Object keys in the full tier (SPEC 8, 9.4): a key that is itself a secret of the full tier is replaced by its placeholder, in compat and strict. `expectedSync` is the standard tier, which does not know the full-tier formats (npm, 1password, ...); `expectedAsync` the full tier. Keys that collide after replacement keep every value (SPEC 8, L-P and L-Q): the full-tier tokens collide like the standard ones. ",
+  "tier": "full",
+  "cases": [
+    {
+      "name": "a key that is an npm token",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1
+      }
+    },
+    {
+      "name": "a key that is a slack token",
+      "input": {
+        "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx": "v"
+      },
+      "expected": {
+        "[REDACTED:slack]": "v"
+      }
+    },
+    {
+      "name": "a key that is a 1password token",
+      "input": {
+        "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==": "v"
+      },
+      "expectedSync": {
+        "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==": "v"
+      },
+      "expectedAsync": {
+        "[REDACTED:1password]": "v"
+      }
+    },
+    {
+      "name": "a key that is a github token",
+      "input": {
+        "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "v"
+      },
+      "expected": {
+        "[REDACTED:github]": "v"
+      }
+    },
+    {
+      "name": "a key that is a database connection string",
+      "input": {
+        "postgres://admin:Zx9kQ7mPq@db.example.com:5432/app": "v"
+      },
+      "expectedSync": {
+        "postgres://admin:[REDACTED:url-credentials]@db.example.com:5432/app": "v"
+      },
+      "expectedAsync": {
+        "[REDACTED:database-connection-string]": "v"
+      }
+    },
+    {
+      "name": "a normal key is unchanged",
+      "input": {
+        "normal_key_name": "v",
+        "name_npm_AAAAAA": "v"
+      },
+      "expected": {
+        "normal_key_name": "v",
+        "name_npm_AAAAAA": "v"
+      }
+    },
+    {
+      "name": "a key with a token inside it",
+      "input": {
+        "prefix npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA suffix": "v"
+      },
+      "expectedSync": {
+        "prefix npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA suffix": "v"
+      },
+      "expectedAsync": {
+        "prefix [REDACTED:npm] suffix": "v"
+      }
+    },
+    {
+      "name": "a key behind a letter is not a token",
+      "input": {
+        "xnpm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "v"
+      },
+      "expected": {
+        "xnpm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "v"
+      }
+    },
+    {
+      "name": "nested keys and arrays",
+      "input": {
+        "list": [
+          {
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1
+          },
+          {
+            "ok": {
+              "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx": [
+                1,
+                2
+              ]
+            }
+          }
+        ]
+      },
+      "expectedSync": {
+        "list": [
+          {
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1
+          },
+          {
+            "ok": {
+              "[REDACTED:slack]": [
+                1,
+                2
+              ]
+            }
+          }
+        ]
+      },
+      "expectedAsync": {
+        "list": [
+          {
+            "[REDACTED:npm]": 1
+          },
+          {
+            "ok": {
+              "[REDACTED:slack]": [
+                1,
+                2
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a token key and a plain value under it",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": {
+          "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "v"
+        }
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": {
+          "[REDACTED:github]": "v"
+        }
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": {
+          "[REDACTED:github]": "v"
+        }
+      }
+    },
+    {
+      "name": "strict: a key that is an npm token",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "normal_key_name": "v"
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "normal_key_name": "v"
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1,
+        "normal_key_name": "v"
+      }
+    },
+    {
+      "name": "strict: a key that is a 1password token",
+      "input": {
+        "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==": "v"
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==": "v"
+      },
+      "expectedAsync": {
+        "[REDACTED:1password]": "v"
+      }
+    },
+    {
+      "name": "strict: nested keys",
+      "input": {
+        "list": [
+          {
+            "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx": 1
+          }
+        ]
+      },
+      "mode": "strict",
+      "expected": {
+        "list": [
+          {
+            "[REDACTED:slack]": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "two tokens collide after replacement: the first keeps the plain key, the second gets #2",
+      "input": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "middle": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "expectedSync": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "middle": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "expectedAsync": {
+        "first": 1,
+        "[REDACTED:npm]": "a",
+        "middle": 2,
+        "[REDACTED:npm#2]": "b"
+      }
+    },
+    {
+      "name": "three tokens collide: #2 and #3 in contract order",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 3
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 3
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1,
+        "[REDACTED:npm#2]": 2,
+        "[REDACTED:npm#3]": 3
+      }
+    },
+    {
+      "name": "collisions are counted per placeholder key and per object",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 3,
+        "ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": 4,
+        "nested": {
+          "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 5,
+          "npm_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD": 6
+        }
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "[REDACTED:github]": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 3,
+        "[REDACTED:github#2]": 4,
+        "nested": {
+          "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 5,
+          "npm_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD": 6
+        }
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1,
+        "[REDACTED:github]": 2,
+        "[REDACTED:npm#2]": 3,
+        "[REDACTED:github#2]": 4,
+        "nested": {
+          "[REDACTED:npm]": 5,
+          "[REDACTED:npm#2]": 6
+        }
+      }
+    },
+    {
+      "name": "a key written as a placeholder keeps its own name, also when a token key comes first",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "[REDACTED:npm]": 2
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "[REDACTED:npm]": 2
+      },
+      "expectedAsync": {
+        "[REDACTED:npm#2]": 1,
+        "[REDACTED:npm]": 2
+      }
+    },
+    {
+      "name": "a key written as a numbered placeholder is reserved: the generated numbers skip it",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "[REDACTED:npm#2]": 3
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "[REDACTED:npm#2]": 3
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1,
+        "[REDACTED:npm#3]": 2,
+        "[REDACTED:npm#2]": 3
+      }
+    },
+    {
+      "name": "a key that holds a token gets the number inside its last placeholder",
+      "input": {
+        "token npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "token npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+      },
+      "expectedSync": {
+        "token [REDACTED:auth-header]": "[REDACTED:key-context]",
+        "token [REDACTED:auth-header#2]": "[REDACTED:key-context]"
+      },
+      "expectedAsync": {
+        "token [REDACTED:npm]": "[REDACTED:key-context]",
+        "token [REDACTED:npm#2]": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "strict: two tokens collide after replacement",
+      "input": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "expectedAsync": {
+        "first": 1,
+        "[REDACTED:npm]": "a",
+        "[REDACTED:npm#2]": "b"
+      }
+    },
+    {
+      "name": "strict: a key written as a placeholder keeps its own name",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "[REDACTED:npm]": 2
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "[REDACTED:npm]": 2
+      },
+      "expectedAsync": {
+        "[REDACTED:npm#2]": 1,
+        "[REDACTED:npm]": 2
+      }
+    },
+    {
+      "name": "strict: a key that holds a token gets the number inside its last placeholder",
+      "input": {
+        "token npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "token npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "token [REDACTED:auth-header]": "[REDACTED:key-context]",
+        "token [REDACTED:auth-header#2]": "[REDACTED:key-context]"
+      },
+      "expectedAsync": {
+        "token [REDACTED:npm]": "[REDACTED:key-context]",
+        "token [REDACTED:npm#2]": "[REDACTED:key-context]"
+      }
+    }
+  ]
+}

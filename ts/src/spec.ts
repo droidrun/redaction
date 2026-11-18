@@ -41,7 +41,7 @@ export type AlgorithmsSpec = {
         error: string;
     };
     text: { minScanLength: number };
-    placeholder: { open: string; close: string; stripPrefixes: string[] };
+    placeholder: { open: string; close: string; numberMark: string; stripPrefixes: string[] };
     evidence: { quoteChars: string; classes: string[]; minClasses: number; entropyThreshold: number };
     trivial: { words: string[]; maskChars: string[]; wrappers: string[][]; wrapperInner: string };
     docPlaceholder: { prefixes: string[]; suffixes: string[]; separator: string };

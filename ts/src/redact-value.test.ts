@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { redactJsonValue, STRUCTURAL_SKIP_KEYS, type RedactValueStats } from './redact-value.js';
+import { redactJsonValueSync } from './redact-sync.js';
 
 // Explicit consumer keys from the original structural skip list.
 const LEGACY_SKIP_KEYS: ReadonlySet<string> = new Set([
@@ -180,5 +181,68 @@ describe('recursion', () => {
         const stats = newStats();
         const out = await redactJsonValue({ count: 42, active: true, missing: null }, stats);
         expect(out).toEqual({ count: 42, active: true, missing: null });
+    });
+});
+
+describe('object keys in the full tier (SPEC 9.4)', () => {
+    const NPM = `npm_${'A'.repeat(36)}`;
+
+    test('a key that is a full-tier token is replaced in compat and strict, with its hit', async () => {
+        for (const mode of ['compat', 'strict'] as const) {
+            const stats = { hits: [] as Array<{ ruleId: string }> };
+            const out = await redactJsonValue({ [NPM]: 1, normal_key_name: 2 }, stats as never, { mode });
+            expect(out).toEqual({ '[REDACTED:npm]': 1, normal_key_name: 2 });
+            expect(stats.hits.map((hit) => hit.ruleId)).toEqual(['@secretlint/secretlint-rule-npm']);
+        }
+    });
+
+    test('the sync entry still reads keys with the standard rules only', () => {
+        expect(redactJsonValueSync({ [NPM]: 1 })).toEqual({ [NPM]: 1 });
+    });
+});
+
+describe('key collisions in the walkers (SPEC 8)', () => {
+    const GH = `ghp_${'a'.repeat(36)}`;
+
+    test('the sync node limit does not overwrite an earlier entry', () => {
+        const out = redactJsonValueSync({ [GH]: 'keep-me', '[REDACTED:github]': 2 }, { maxNodes: 2 });
+        expect(out).toEqual({
+            '[REDACTED:github#2]': 'keep-me',
+            '[REDACTED:github]': '[REDACTED:size-limit]',
+        });
+    });
+
+    test('keys are scanned with opts.detect like leaves, in compat and in strict', async () => {
+        const detect = async (text: string) =>
+            text === 'custom-key-name' ? [{ ruleId: 'custom', range: [0, text.length] as const }] : [];
+        for (const mode of ['compat', 'strict'] as const) {
+            const input = { 'custom-key-name': 1, other: 2 };
+            const out = await redactJsonValue(input, { hits: [] }, { mode, detect });
+            expect(out).toEqual({ '[REDACTED:custom]': 1, other: 2 });
+        }
+    });
+
+    test('a failing opts.detect never leaves a secret key raw in compat', async () => {
+        const detect = async (): Promise<never> => {
+            throw new Error('detector down');
+        };
+        const out = await redactJsonValue({ [GH]: 1 }, { hits: [] }, { detect });
+        expect(out).toEqual({ '[REDACTED:github]': 1 });
+    });
+});
+
+describe('strict key reservation is bounded by the budget (SPEC 8)', () => {
+    test('only keys that fit the remaining budget are scanned for reservation', async () => {
+        const input = Object.fromEntries(
+            Array.from({ length: 2000 }, (_, at) => [`[REDACTED:rule${String(at).padStart(5, '0')}]`, at]),
+        );
+        let scans = 0;
+        const detect = async () => {
+            scans += 1;
+            return [];
+        };
+        await redactJsonValue(input, { hits: [] }, { mode: 'strict', maxChars: 200, detect });
+        // 200 units hold 8 keys of 24 units: the reservation scan stops there, the walk scans what it reads.
+        expect(scans).toBeLessThan(30);
     });
 });

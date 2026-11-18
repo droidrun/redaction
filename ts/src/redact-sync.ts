@@ -26,6 +26,7 @@ import {
     type KeyVerdict,
 } from './key-names.js';
 import { setOwnKey } from './own-key.js';
+import { keysHoldingPlaceholder, newPlacer, placeKey } from './place-key.js';
 import { isPrimitive } from './primitive.js';
 import { redactKey } from './redact-key.js';
 import { buildReadPlaceholder } from './placeholder.js';
@@ -73,10 +74,7 @@ function scanText(text: string, maxChars: number): { text: string; hits: Hit[] }
 
 /** Redact a string with the sync rules. Never throws (a non-string is turned
  *  into one); on an internal failure the whole text is replaced. */
-export function redactTextSync(
-    text: string,
-    opts: RedactTextSyncOpts = {},
-): { text: string; hits: Hit[] } {
+export function redactTextSync(text: string, opts: RedactTextSyncOpts = {}): { text: string; hits: Hit[] } {
     try {
         const source = typeof text === 'string' ? text : String(text);
         return scanText(source, opts.maxChars ?? SYNC_LIMITS.maxChars);
@@ -131,21 +129,23 @@ function walkEntries(
     state: Walk,
 ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
-    for (const key in value) {
-        if (!Object.hasOwn(value, key)) continue;
+    const keys = Object.keys(value);
+    const reserved = keysHoldingPlaceholder(keys).filter((key) => redactKey(key, []) === key);
+    const placer = newPlacer(new Set(reserved));
+    for (const key of keys) {
         if (state.nodes <= 0) {
-            setOwnKey(out, key, limit(SIZE_LIMIT, state));
+            placeKey(out, placer, key, false, limit(SIZE_LIMIT, state));
             break;
         }
         const child = (value as Record<string, unknown>)[key];
         const outKey = redactKey(key, state.hits);
         if (state.skip.has(key) && isPrimitive(child)) {
             state.nodes -= 1;
-            setOwnKey(out, outKey, child);
+            placeKey(out, placer, outKey, outKey !== key, child);
             continue;
         }
         const childVerdict = strongerVerdict(verdict, keyVerdict(key));
-        setOwnKey(out, outKey, walk(child, depth + 1, childVerdict, state));
+        placeKey(out, placer, outKey, outKey !== key, walk(child, depth + 1, childVerdict, state));
     }
     return out;
 }

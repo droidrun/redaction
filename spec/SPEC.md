@@ -692,6 +692,12 @@ implementation uses a full-string match (`fullmatch`, `\A...\Z`); Python `$` and
 `literalSegments(text)` is `text` split by every (non-overlapping, left to right) placeholder; it has
 one more element than there are placeholders; empty elements are kept.
 
+**Numbered form (L-P, decided by Lutz 2026-11-18).** The rule part of a placeholder may end with `#<n>`
+(`[REDACTED:npm#2]`): the grammar above already admits it (`#` is a unit of the rule class), and it is a
+placeholder like any other (whole-placeholder tests, `isPlaceholderValue`, idempotence, `literalSegments`,
+restore). Only object-key collisions write it (section 8, **key collisions**; it goes inside the last
+placeholder of a key, also of a key that merely contains placeholders).
+
 **Read form**: `[REDACTED:` + `shorten(ruleId)` + `]`, where `shorten` removes one leading prefix of
 `stripPrefixes` (`@secretlint/secretlint-rule-`, then `mobilerun-redaction/`, tried in that order, each
 at most once). Rule ids written by the standard tier have no prefix. No unit of the secret appears in
@@ -719,8 +725,33 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
 - **Duplicate keys.** The input has been parsed, so for duplicate keys the last value wins and the key
   keeps the position of its first occurrence (as in ECMAScript); only the surviving value is walked.
   Two different keys can also become the same key after redaction (two keys that each held a secret
-  give the same placeholder text): the later value replaces the earlier one and the key keeps the earlier
-  position.
+  give the same placeholder text). **Key collisions (L-P, L-Q, decided by Lutz 2026-11-18): no value is lost.**
+  Let the *output key* of an entry be its key after redaction (the key scan of section 9, size-limit
+  placeholders included), and call a key **changed** when its output key is not the key itself. The rules, for
+  one object, in contract order:
+  1. **Reserved names.** Before the first entry, scan every input key that contains the text `[REDACTED` (no
+     budget charge, no hits, the same key scan as the walk) and **reserve** each one the scan leaves as it is.
+     In `strict` the scan covers only the keys, in contract order, whose running total length (with the keys
+     before them in the object) stays within the remaining `chars` budget; a later key becomes the size-limit
+     placeholder anyway (9.3), so it cannot be left as it is. A key over `sync.maxKeyChars` is not scanned. A key that
+     redaction leaves unchanged always keeps its own name, whatever else collides; a changed key never takes a
+     reserved name.
+  2. A changed entry whose output key is neither reserved nor the name of an earlier entry of the object is
+     stored under its output key.
+  3. Otherwise (the name is reserved or taken), the entry gets a number. Take the **last placeholder** of the
+     output key (the last match of the placeholder grammar, section 7). If it is exactly `[REDACTED:<rule>]` (a
+     rule, no `:suffix`, and a rule that does not itself end with `#<digits>`), the entry is stored under the
+     output key with `#<n>` inserted before the `]` of that last placeholder: `[REDACTED:npm#2]`,
+     `token [REDACTED:npm#2] end`, `password=[REDACTED:generic-keyword#2]`. `n` starts at 2 and counts up per
+     object and per output key in contract order; a number whose name is reserved or already in the output
+     object is skipped. The `[REDACTED:size-limit]` key of a key over the limit or of a collapsed rest (9.3) is
+     a changed key like any other; an entry written under a node limit (9.2 step 6) is an unchanged key.
+  4. Any other output key (no placeholder, a last placeholder with a `:suffix`, the bare `[REDACTED]`, an
+     already numbered last placeholder) keeps the old rule: the later value replaces the earlier one and the
+     key keeps the earlier position.
+  The first entry therefore keeps the plain key unless that name is written in the input, in which case the entry
+  written there keeps it and the changed key is numbered. Idempotence: the next pass leaves a numbered key as it
+  is (a placeholder is not a secret), so redacting the output gives the output.
 - **Numbers.** A number under a key whose verdict is `any` is replaced as a unit by `[REDACTED:key-context]`.
   Every other number is untouched in value: its digits are never scanned. The data model is the IEEE 754
   double: a JSON number is parsed to the nearest double, and **equality of outputs is value equality** of
@@ -734,9 +765,10 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
   is the double. A differential run converts both sides to doubles before comparing.
 - `null` and booleans are untouched. The empty string is untouched.
 - **Strings** are scanned as texts (4) and a string under a secret key is replaced whole (section 6 and 9).
-- **Keys** are redacted: a key of length from 8 up to 4096 is scanned with the standard rules (`detect`)
-  and spliced when it holds a secret (it can hold one, e.g. `{"password=hunter2xx": 1}`); a shorter key
-  cannot match and a longer one is left as it is in `compat` (strict: section 9).
+- **Keys** are redacted: a key of length from 8 up to 4096 is scanned with the `detect` of the tier (the standard
+  rules in the standard tier; in the full tier the full-tier rules too, 9.4) and spliced when it holds a secret (it
+  can hold one, e.g. `{"password=hunter2xx": 1}`, or in the full tier a key that is itself an npm token); a shorter
+  key cannot match and a longer one is left as it is in `compat` (strict: section 9).
 - **Invalid JSON.** A JSON entry point that takes JSON **text** (Python and Go; the TypeScript entry points take
   values, not JSON text, so this does not apply to them) and receives text that is not valid JSON returns, as
   its value, the text-tier redaction of the raw input (section 9.1, so nothing unscanned is returned), together
@@ -797,8 +829,8 @@ State: `nodes = maxNodes` (default 500,000), `chars = maxChars` (4,000,000), `ma
    when its own depth is below the limit; a primitive is never depth-limited.)
 5. An array: for each element in order: if `nodes <= 0`: append `limit(size-limit)` as the next element and
    stop; else the element is `walk(element, depth + 1, verdict)`.
-6. An object: for each key in contract order: if `nodes <= 0`: set `out[key] = limit(size-limit)` (the key as
-   it was) and stop. Else `outKey` = the key redacted (section 8, with its hits appended to `hits`). If the
+6. An object: for each key in contract order: if `nodes <= 0`: store `limit(size-limit)` under the key as it was
+   (an unchanged key: it keeps its name, section 8 **key collisions**) and stop. Else `outKey` = the key redacted (section 8, with its hits appended to `hits`). If the
    key is a skip key and the value is a primitive: `nodes -= 1`, `out[outKey] = value` unchanged (`compat`; strict
    scans a string, 9.3). Else
    `out[outKey] = walk(value, depth + 1, strongerVerdict(verdict, keyVerdict(key)))`.
@@ -838,14 +870,16 @@ Everything else (order, verdicts, number handling, key redaction) is as in 9.2.
 - `compat`: text: `detect` is the full-tier rules over the first `scanCap` units (windowed) plus `detect`
   over the whole text, merged (4.17); splice. A detector failure emits the event `redaction.detect.failed` with the
   error class only, then returns the result of `detect` alone, or `[REDACTED:error]` with the hit `(error,
-  0, 0)` if that fails too. JSON: each string leaf is a text of this kind; keys use the sync key redaction;
-  no depth, node or character limit (a TypeScript behaviour kept for compatibility).
+  0, 0)` if that fails too. JSON: each string leaf is a text of this kind; **keys are scanned with the full tier's `detect`
+  (4.17, no windows: a key has at most `sync.maxKeyChars` units), not only the standard rules** (decided by Lutz,
+  2026-11-18, L-N), with the key rules of section 8 otherwise unchanged; no depth, node or character limit (a TypeScript behaviour kept for compatibility).
 - `strict`: text: **first** the total-character cap as in 9.1: a text longer than `strict.maxChars`
   (4,000,000) is replaced whole by `[REDACTED:size-limit]` with the hit `(size-limit, 0, length)`, before any scan
   (no scan work is spent on it). Then as `compat`, except that a detector failure returns `[REDACTED:error]`
   (no fallback), the units beyond `scanCap` are replaced by `[REDACTED:size-limit]` (the hit `(size-limit, cap,
   length)` is merged with any hit it touches), and `last4` is ignored (no hit of the strict mode carries a
-  character of the text: the placeholder is always the read form). JSON: the strict walk of 9.3 with each leaf scanned by this text rule.
+  character of the text: the placeholder is always the read form). JSON: the strict walk of 9.3 with each leaf scanned by this text rule and each key scanned with the
+  full tier's `detect` as in `compat` (the key size rules of 9.3 are unchanged).
 
 ## 10. ReDoS rules
 
@@ -902,7 +936,13 @@ of the package itself, so a package runs without reading any file at runtime:
 These exist for compatibility with v0.2.0 and never change what is detected:
 
 - Async signatures and `bigint` values (a `bigint` counts as a number).
-- `restoreRedacted(redacted, stored)` and its options (restores values behind placeholders from a stored copy).
+- `restoreRedacted(redacted, stored)` and its options (restores values behind placeholders from a stored copy). It
+  also maps **placeholder keys** back (L-R): an incoming key that is or contains a placeholder (plain or numbered)
+  is replaced by the one stored key of the same object whose redaction, named as in section 8 with the standard
+  rules or the full tier, is exactly that key, and its value is restored against the stored value. No such stored
+  key, more than one, or one that an earlier incoming key already took: the incoming key stays and the path is
+  reported as a conflict. Paths of conflicts below a restored key are built from the key the
+  client sent (the placeholder key), never from the stored key (a secret).
 - The 0.1.1 `last4` placeholder `[REDACTED:<rule>:<last4>]` for matches of at least 16 units (`opts.last4`);
   brackets in the last four units are replaced by `*`. `last4` has no effect in `strict`.
 - `CREDENTIAL_KEY_RE` (the 0.1.1 substring matcher; a TypeScript constant, not spec data), `STRUCTURAL_SKIP_KEYS`.

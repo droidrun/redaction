@@ -47,6 +47,12 @@ adds the full-tier rules (AWS, GitHub, Slack, npm, 1Password, database connectio
 A secret both find is reported once; the earlier hit's rule id wins (the scanner's), so
 `AWS_SECRET_ACCESS_KEY=…` is `[REDACTED:aws]` async and
 `AWS_SECRET_ACCESS_KEY=[REDACTED:generic-keyword]` sync. The conformance vectors record both.
+Object keys follow the tier too: the async path scans keys with the full rules, so a key that is itself an npm,
+Slack, 1Password, … token becomes `[REDACTED:<rule>]` (compat and strict); the sync path reads keys with the standard
+rules only. Keys of one object that redact to the same key keep every value: the first has the plain key, the next
+ones get `#2`, `#3`, … inside their last placeholder (`[REDACTED:npm#2]`, `password=[REDACTED:generic-keyword#2]`);
+a key written as a placeholder keeps its own name. `restoreRedacted` maps such keys back to the stored keys (a key
+without a match stays and is reported as a conflict).
 
 ```ts
 import {

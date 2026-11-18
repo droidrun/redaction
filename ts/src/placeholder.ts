@@ -75,3 +75,13 @@ export function placeholderEndAt(text: string, start: number): number {
 export function literalSegments(text: string): string[] {
     return text.split(PLACEHOLDER_GLOBAL_RE);
 }
+
+/** Range of the last placeholder in `text`, or undefined (SPEC 8: the one of a key that gets a number). */
+export function lastPlaceholder(text: string): { start: number; end: number } | undefined {
+    let found: { start: number; end: number } | undefined;
+    for (const match of text.matchAll(PLACEHOLDER_GLOBAL_RE)) {
+        const start = match.index as number;
+        found = { start, end: start + match[0].length };
+    }
+    return found;
+}

@@ -2,4 +2,4 @@
 
 package redaction
 
-const specHash = "9186c832327ac0639f04ee29a84176d035fa3ab603f5f8fc0469172a50a4949c"
+const specHash = "58b4a48ded4bf46e598eff2415df7728cca0ee945399b957af63a14503d51f87"

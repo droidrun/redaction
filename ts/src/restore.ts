@@ -30,10 +30,18 @@
  * Everything else takes `incoming` as sent: new keys and values win, removed
  * keys are gone, a placeholder with nothing restorable behind it (missing,
  * null, boolean, or itself a different placeholder) stays a placeholder and is a
- * conflict (a value is never invented). Pure; neither argument is mutated; a
+ * conflict (a value is never invented). The numbered form `[REDACTED:<rule>#<n>]` (key collisions, SPEC 8)
+ * is a placeholder like the plain one and is restored the same way.
+ * Keys. An incoming key that is or contains a placeholder (plain or numbered) is mapped back: the stored key
+ * of the same object whose redaction gives exactly that key (the standard rules, or the full tier once
+ * loaded; numbered as the walkers number collisions) is restored, and its value against the stored value.
+ * No such stored key, or more than one, or one that an earlier incoming key already took: the incoming key
+ * stays and the path is a conflict (a key is never renamed on a guess). Pure; neither argument is mutated; a
  * key named `__proto__` is an ordinary key.
  */
+import { loadedKeyDetectors } from './key-detectors.js';
 import { setOwnKey } from './own-key.js';
+import { redactedKeyNames } from './place-key.js';
 import { literalSegments, PLACEHOLDER_ANYWHERE_RE, PLACEHOLDER_RE } from './placeholder.js';
 
 export type RestoreOpts = {
@@ -94,17 +102,32 @@ function restoreString(incoming: string, stored: unknown, path: string, ctx: Ctx
     return incoming;
 }
 
-function restoreRecord(
-    incoming: Record<string, unknown>,
-    stored: unknown,
-    path: string,
-    ctx: Ctx,
-): unknown {
+/** The stored key a placeholder key of the incoming object stands for: the one stored key whose redaction
+ *  (standard rules or full tier, numbered like the walkers number them) is exactly that key. Undefined when
+ *  there is none or when more than one stored key would give it. */
+function storedKeyOf(key: string, names: Map<string, string>[]): string | undefined {
+    const found = new Set(names.flatMap((byOutKey) => byOutKey.get(key) ?? []));
+    return found.size === 1 ? [...found][0] : undefined;
+}
+
+function restoreRecord(incoming: Record<string, unknown>, stored: unknown, path: string, ctx: Ctx): unknown {
     const storedRecord = isRecord(stored) ? stored : undefined;
+    const needsNames = storedRecord !== undefined && Object.keys(incoming).some(hasPlaceholder);
+    const names = needsNames
+        ? loadedKeyDetectors().map((detect) => redactedKeyNames(Object.keys(storedRecord), detect))
+        : [];
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(incoming)) {
-        const counterpart = storedRecord && Object.hasOwn(storedRecord, key) ? storedRecord[key] : undefined;
-        setOwnKey(out, key, restore(value, counterpart, pathKey(path, key), ctx));
+        const wanted = hasPlaceholder(key) && storedRecord !== undefined ? storedKeyOf(key, names) : key;
+        const isTaken = wanted !== undefined && Object.hasOwn(out, wanted);
+        const outKey = wanted === undefined || isTaken ? key : wanted;
+        if (hasPlaceholder(key) && (wanted === undefined || isTaken)) conflict(pathKey(path, key), ctx);
+        const counterpart =
+            storedRecord && wanted === outKey && Object.hasOwn(storedRecord, outKey)
+                ? storedRecord[outKey]
+                : undefined;
+        // The path names the key the client sent: a restored stored key (a secret) never reaches a path.
+        setOwnKey(out, outKey, restore(value, counterpart, pathKey(path, key), ctx));
     }
     return out;
 }
@@ -165,9 +188,9 @@ export function restoreRedacted(incoming: unknown, stored: unknown, opts: Restor
     const ctx: Ctx = {
         identify: identify
             ? (item) => {
-                const identity = identify(item);
-                return identity === undefined ? undefined : String(identity);
-            }
+                  const identity = identify(item);
+                  return identity === undefined ? undefined : String(identity);
+              }
             : defaultIdentify,
         conflicts: [],
     };

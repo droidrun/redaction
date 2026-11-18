@@ -21,7 +21,8 @@ def load_vector_files() -> list[tuple[str, dict[str, Any]]]:
     names = sorted(entry.name for entry in root.iterdir() if entry.name.endswith(".json"))
     files = [(name, json.loads(root.joinpath(name).read_text(encoding="utf-8"))) for name in names]
     # A file marked `"tier": "full"` needs the full tier, which this package does not have yet.
-    return [(name, file) for name, file in files if file.get("tier") != "full"]
+    # A file marked `"pending"` is a spec change this package has not implemented yet.
+    return [(name, file) for name, file in files if file.get("tier") != "full" and "pending" not in file]
 
 
 def load_corpus() -> dict[str, Any]:

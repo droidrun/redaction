@@ -19,10 +19,10 @@ import {
     strongerVerdict,
     type KeyVerdict,
 } from './key-names.js';
-import { setOwnKey } from './own-key.js';
+import { keysHoldingPlaceholder, newPlacer, placeKey, type KeyPlacer } from './place-key.js';
 import { isPrimitive } from './primitive.js';
 import { buildReadPlaceholder } from './placeholder.js';
-import { isOverlongKey, redactKey } from './redact-key.js';
+import { isOverlongKey, isScannableKey } from './redact-key.js';
 import { ALGORITHMS_SPEC } from './spec.js';
 
 const { ruleIds } = ALGORITHMS_SPEC;
@@ -49,6 +49,9 @@ type Frame = {
     verdict: KeyVerdict;
     depth: number;
     outKey: string;
+    /** True when the scan or a limit changed the key (an unchanged key keeps its own name, SPEC 8). */
+    changed: boolean;
+    placer: KeyPlacer;
 };
 
 type Entered = { frame: Frame } | { value: unknown };
@@ -106,7 +109,18 @@ function openFrame(value: object, verdict: KeyVerdict, depth: number, state: Sta
     const isArray = Array.isArray(value);
     const keys = isArray ? null : Object.keys(value);
     const items = isArray ? value : (keys as string[]).map((key) => (value as Record<string, unknown>)[key]);
-    return { source: value, keys, items, index: 0, out: isArray ? [] : {}, verdict, depth, outKey: '' };
+    return {
+        source: value,
+        keys,
+        items,
+        index: 0,
+        out: isArray ? [] : {},
+        verdict,
+        depth,
+        outKey: '',
+        changed: false,
+        placer: newPlacer(),
+    };
 }
 
 function* enter(
@@ -129,17 +143,43 @@ function* enter(
     }
     if (depth >= state.limits.maxDepth) return { value: placeholderFor(ruleIds.depthLimit, state) };
     if (state.ancestors.has(value)) return { value: placeholderFor(ruleIds.circular, state) };
-    return { frame: openFrame(value, verdict, depth, state) };
+    const frame = openFrame(value, verdict, depth, state);
+    if (frame.keys !== null) frame.placer = newPlacer(yield* reservedKeys(frame.keys, state.chars));
+    return { frame };
 }
 
-/** The key of the next entry, scanned, or its size-limit placeholder. */
-function nextKey(key: string, state: State): string {
+/** The input keys that hold a placeholder and that the key scan leaves as they are (SPEC 8): scanned once,
+ *  through the leaf scanner, without a budget charge and without hits. Only a key that fits the budget can be
+ *  left as it is (a later one becomes the size-limit placeholder), so the scan stops where the running total
+ *  of the keys' lengths passes the remaining budget: the work is bounded by `maxChars`. */
+function* reservedKeys(keys: string[], budget: number): Generator<string, Set<string>, LeafResult> {
+    const reserved = new Set<string>();
+    const candidates = new Set(keysHoldingPlaceholder(keys));
+    let total = 0;
+    for (const key of keys) {
+        total += key.length;
+        if (total > budget) break;
+        if (!candidates.has(key) || isOverlongKey(key)) continue;
+        if ((yield key).text === key) reserved.add(key);
+    }
+    return reserved;
+}
+
+/** The key of the next entry, scanned by the leaf scanner (so the tier and `opts.detect` apply to keys as to
+ *  leaves), or its size-limit placeholder. */
+function* nextKey(
+    key: string,
+    state: State,
+): Generator<string, { outKey: string; changed: boolean }, LeafResult> {
     if (isOverlongKey(key) || key.length > state.chars) {
         state.chars = 0;
-        return placeholderFor(ruleIds.sizeLimit, state);
+        return { outKey: placeholderFor(ruleIds.sizeLimit, state), changed: true };
     }
     state.chars -= key.length;
-    return redactKey(key, state.hits);
+    if (!isScannableKey(key)) return { outKey: key, changed: false };
+    const scanned = yield key;
+    appendHits(state.hits, scanned.hits);
+    return { outKey: scanned.text, changed: scanned.text !== key };
 }
 
 function place(frame: Frame, value: unknown): void {
@@ -147,12 +187,13 @@ function place(frame: Frame, value: unknown): void {
         (frame.out as unknown[]).push(value);
         return;
     }
-    setOwnKey(frame.out as Record<string, unknown>, frame.outKey, value);
+    placeKey(frame.out as Record<string, unknown>, frame.placer, frame.outKey, frame.changed, value);
 }
 
 /** Close a frame early: what is left of it collapses into one size-limit marker. */
 function collapse(frame: Frame, state: State): void {
     frame.outKey = buildReadPlaceholder(ruleIds.sizeLimit);
+    frame.changed = true;
     place(frame, placeholderFor(ruleIds.sizeLimit, state));
     frame.index = frame.items.length;
 }
@@ -209,7 +250,9 @@ export function* strictWalk(
             continue;
         }
         const key = top.keys[index] as string;
-        top.outKey = nextKey(key, state);
+        const next = yield* nextKey(key, state);
+        top.outKey = next.outKey;
+        top.changed = next.changed;
         if (state.skip.has(key) && isPrimitive(child)) {
             // A skip key only exempts a value from the key-context replacement: a string is still scanned.
             if (typeof child === 'string') {
