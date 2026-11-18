@@ -64,8 +64,18 @@ function checkGroupOpen(source: string, at: number, out: string[]): void {
     }
 }
 
+/** A UTF-16 surrogate unit: an astral character is one character in Python and Go, two units in JavaScript. */
+function hasSurrogate(source: string): boolean {
+    for (let i = 0; i < source.length; i++) {
+        const unit = source.charCodeAt(i);
+        if (unit >= 0xd800 && unit <= 0xdfff) return true;
+    }
+    return false;
+}
+
 export function grammarViolations(source: string): string[] {
     const out: string[] = [];
+    if (hasSurrogate(source)) out.push('surrogate unit in pattern text (astral character or lone surrogate)');
     const groups: Group[] = [{ repeats: false }];
     let inClass = false;
     let classStart = -1;
@@ -89,6 +99,11 @@ export function grammarViolations(source: string): string[] {
             continue;
         }
         if (char === '[') {
+            if (source[i + 1] === ']' || (source[i + 1] === '^' && source[i + 2] === ']')) {
+                out.push(
+                    'class that starts with "]" (JavaScript reads it as empty, Python and Go as a member)',
+                );
+            }
             inClass = true;
             classStart = i;
             afterQuantifier = false;
@@ -144,4 +159,33 @@ const RULE_ID = /^[a-z0-9-]+$/;
 
 export function ruleIdViolation(id: string): string | undefined {
     return RULE_ID.test(id) ? undefined : `rule id "${id}" does not match ^[a-z0-9-]+$`;
+}
+
+/** End index (exclusive) of the class that starts at `start`, or -1 when it does not close. */
+function classEnd(source: string, start: number): number {
+    for (let i = start + 1; i < source.length; i++) {
+        if (source[i] === '\\') i += 1;
+        else if (source[i] === ']' && i > start + 1 + (source[start + 1] === '^' ? 1 : 0)) return i + 1;
+    }
+    return -1;
+}
+
+/** A class field must be exactly one character class (`[...]` or `[^...]`) and nothing else. */
+export function classShapeViolation(source: string): string | undefined {
+    if (source[0] !== '[') return 'not a single character class (does not start with "[")';
+    return classEnd(source, 0) === source.length ? undefined : 'not a single character class';
+}
+
+const EMPTY_PROBES = ['', 'a', ' '];
+
+/** A pattern that matches the empty string loops or differs between engines; the probes are '', 'a', ' '. */
+export function emptyMatchViolation(source: string): string | undefined {
+    let pattern: RegExp;
+    try {
+        pattern = new RegExp(source);
+    } catch {
+        return undefined; // reported by the JavaScript compile check
+    }
+    const matchesEmpty = EMPTY_PROBES.some((probe) => pattern.exec(probe)?.[0].length === 0);
+    return matchesEmpty ? 'can match the empty string' : undefined;
 }

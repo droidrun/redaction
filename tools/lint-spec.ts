@@ -18,14 +18,20 @@ import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { attacksFor } from './lib/attacks.ts';
-import { grammarViolations, ruleIdViolation } from './lib/grammar.ts';
-import { collectPatterns, readSpecDir, type NamedPattern } from './lib/spec-patterns.ts';
+import {
+    classShapeViolation,
+    emptyMatchViolation,
+    grammarViolations,
+    ruleIdViolation,
+} from './lib/grammar.ts';
+import { collectPatterns, readSpecDir, unclassifiedFields, type NamedPattern } from './lib/spec-patterns.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
 const SIZES = [100_000, 1_000_000];
 const MAX_RATIO = 30;
 const NOISE_FLOOR_MS = 10;
 const MAX_MS_AT_LARGE = 3000;
+const MAX_INTERPRETER_MS_AT_LARGE = 10_000;
 const SCALING_DEADLINE_MS = 900_000;
 
 type Problem = string;
@@ -67,7 +73,12 @@ function ruleIdProblems(dir: string): Problem[] {
 
 function grammarProblems(patterns: NamedPattern[]): Problem[] {
     return patterns.flatMap((pattern) => {
-        return grammarViolations(pattern.source).map((violation) => `${pattern.where}: ${violation}`);
+        const found = grammarViolations(pattern.source);
+        const shape = pattern.role === 'class' ? classShapeViolation(pattern.source) : undefined;
+        const empty = pattern.role === 'pattern' ? emptyMatchViolation(pattern.source) : undefined;
+        return [...found, ...(shape ? [shape] : []), ...(empty ? [empty] : [])].map(
+            (violation) => `${pattern.where}: ${violation}`,
+        );
     });
 }
 
@@ -152,6 +163,33 @@ function scalingProblems(patterns: NamedPattern[], dir: string): Problem[] {
     return problems;
 }
 
+/** Scaling through `detectSyncHits` of the TypeScript package: the restart loops of every rule kind. */
+function interpreterScalingProblems(dir: string): Problem[] {
+    const payload = JSON.stringify({ attacks: attacksFor(readSpecDir(dir)), sizes: SIZES });
+    const result = spawnSync('bun', [join(ROOT, 'tools/lint/scaling-interpreter.ts')], {
+        input: payload,
+        encoding: 'utf8',
+        timeout: SCALING_DEADLINE_MS,
+        maxBuffer: 256 * 1024 * 1024,
+    });
+    if (result.status !== 0) return ['interpreter scaling run did not finish (deadline or crash)'];
+    const byAttack = new Map<string, Record<number, number>>();
+    for (const timing of JSON.parse(result.stdout) as Timing[]) {
+        byAttack.set(timing.attack, { ...(byAttack.get(timing.attack) ?? {}), [timing.size]: timing.ms });
+    }
+    const problems: Problem[] = [];
+    for (const [attack, times] of byAttack) {
+        const small = Math.max(times[SIZES[0] as number] ?? 0, NOISE_FLOOR_MS);
+        const large = times[SIZES[1] as number] ?? 0;
+        if (large > small * MAX_RATIO || large > MAX_INTERPRETER_MS_AT_LARGE) {
+            problems.push(
+                `interpreter scaling: ${attack}: ${Math.round(small)} ms at 100 KB, ${Math.round(large)} ms at 1 MB`,
+            );
+        }
+    }
+    return problems;
+}
+
 function patternsFor(dir: string): NamedPattern[] {
     return collectPatterns(readSpecDir(dir));
 }
@@ -165,32 +203,122 @@ export async function lintDir(
     const problems = [
         ...validateSchemas(dir, schemaDir),
         ...ruleIdProblems(dir),
+        ...unclassifiedFields(readSpecDir(dir)),
         ...grammarProblems(patterns),
         ...jsCompileProblems(patterns),
         ...runChecker('python3', ['-I', join(ROOT, 'tools/lint/compile.py')], ROOT, patterns, 'Python'),
         ...runChecker('go', ['run', '.'], join(ROOT, 'tools/lint/gocheck'), patterns, 'Go'),
     ];
     if (options.recheck) problems.push(...(await recheckProblems(patterns)));
-    if (options.scaling) problems.push(...scalingProblems(patterns, dir));
+    if (options.scaling) problems.push(...scalingProblems(patterns, dir), ...interpreterScalingProblems(dir));
     return problems;
 }
 
-/** Patterns a portable spec must reject; each must be reported by the grammar or by recheck. */
-const PLANTED: Array<[name: string, source: string]> = [
-    ['lookbehind', '(?<!a)b[a-z]{3}'],
-    ['\\s shorthand', 'a\\s+b'],
-    ['bound {0,1024}', 'a[b-c]{0,1024}'],
-    ['nested quantifier', '(a+)+b'],
+type Plant = { name: string; rule: string; field: string; value: string; expect: string };
+
+/** Each plant is written into a rule of a copy of the spec; the lint must report it. */
+const PLANTS: Plant[] = [
+    {
+        name: 'lookbehind',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: '(?<![a-z])xai-[0-9a-zA-Z_]{80}',
+        expect: 'lookaround',
+    },
+    {
+        name: '\\s shorthand',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: 'xai-\\s[0-9a-zA-Z_]{80}',
+        expect: 'shorthand class',
+    },
+    {
+        name: 'bound {0,1024}',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: 'xai-[0-9a-zA-Z_]{0,1024}',
+        expect: 'above 1000',
+    },
+    {
+        name: 'nested quantifier',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: '(?:a+)+xai-[0-9]{80}',
+        expect: 'nested quantifier',
+    },
+    {
+        name: '\\w in segmentClass',
+        rule: 'jwt',
+        field: 'segmentClass',
+        value: '\\w',
+        expect: 'shorthand class',
+    },
+    {
+        name: '\\w in segmentClass (shape)',
+        rule: 'jwt',
+        field: 'segmentClass',
+        value: '\\w',
+        expect: 'single character class',
+    },
+    {
+        name: 'alternation in a class field',
+        rule: 'openai',
+        field: 'requireClass',
+        value: '(?:a|aa)+b',
+        expect: 'single character class',
+    },
+    {
+        name: 'class followed by text',
+        rule: 'openai',
+        field: 'requireClass',
+        value: '[0-9]x',
+        expect: 'single character class',
+    },
+    {
+        name: 'class starting with ]',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: 'xai-[]a]{80}',
+        expect: 'starts with "]"',
+    },
+    {
+        name: 'negated class starting with ]',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: 'xai-[^]a]{80}',
+        expect: 'starts with "]"',
+    },
+    {
+        name: 'astral literal',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: 'xai-[\u{1F600}a]{80}',
+        expect: 'surrogate unit',
+    },
+    {
+        name: 'lone surrogate',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: 'xai-[\ud83d]{80}',
+        expect: 'surrogate unit',
+    },
+    {
+        name: 'empty match',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: '(?:xai-[0-9]{80})?',
+        expect: 'empty string',
+    },
+    {
+        name: 'unknown string field',
+        rule: 'xai-api-key',
+        field: 'mystery',
+        value: '(?<!a)b',
+        expect: 'cannot classify',
+    },
 ];
 
-async function selfTest(): Promise<Problem[]> {
-    const problems: Problem[] = [];
-    for (const [name, source] of PLANTED) {
-        const found = grammarViolations(source);
-        const vulnerable = name === 'nested quantifier' && (await check(source, '')).status === 'vulnerable';
-        if (found.length === 0 && !vulnerable)
-            problems.push(`self-test: the planted ${name} was not reported`);
-    }
+function lintPlanted(plant: Plant): Promise<Problem[]> {
     const copy = mkdtempSync(join(tmpdir(), 'lint-spec-'));
     try {
         cpSync(join(ROOT, 'spec'), copy, { recursive: true });
@@ -198,16 +326,27 @@ async function selfTest(): Promise<Problem[]> {
         const rules = JSON.parse(readFileSync(rulesPath, 'utf8')) as {
             pipeline: Array<Record<string, unknown>>;
         };
-        const target = rules.pipeline.find((rule) => rule.id === 'xai-api-key') as Record<string, unknown>;
-        target.pattern = '(?<![a-z])xai-[0-9a-zA-Z_]{80}\\b';
+        const target = rules.pipeline.find((rule) => rule.id === plant.rule) as Record<string, unknown>;
+        target[plant.field] = plant.value;
         writeFileSync(rulesPath, JSON.stringify(rules, null, 2));
-        const planted = await lintDir(copy, { scaling: false, recheck: false });
-        if (!planted.some((problem) => problem.includes('lookaround'))) {
-            problems.push('self-test: a lookbehind planted in rules.json did not fail the lint');
-        }
+        return lintDir(copy, { scaling: false, recheck: false });
     } finally {
         rmSync(copy, { recursive: true, force: true });
     }
+}
+
+async function selfTest(): Promise<Problem[]> {
+    const problems: Problem[] = [];
+    for (const plant of PLANTS) {
+        const found = await lintPlanted(plant);
+        if (!found.some((problem) => problem.includes(plant.expect))) {
+            problems.push(`self-test: the planted ${plant.name} was not reported as "${plant.expect}"`);
+        }
+    }
+    const unplanted = await lintDir(join(ROOT, 'spec'), { scaling: false, recheck: false });
+    if (unplanted.length > 0) problems.push('self-test: the unmodified spec does not lint clean');
+    const vulnerable = (await check('(a+)+b', '')).status === 'vulnerable';
+    if (!vulnerable) problems.push('self-test: recheck did not flag (a+)+b');
     return problems;
 }
 

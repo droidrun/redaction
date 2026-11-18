@@ -45,38 +45,49 @@ export function expand(template: string, spec: SpecDir, depth = 0): string {
     return out === template ? out : expand(out, spec, depth + 1);
 }
 
-/** Fields of a pipeline entry that hold a regular expression, and whether it is one character class. */
-const PATTERN_FIELDS: Record<string, 'pattern' | 'class'> = {
-    pattern: 'pattern',
-    notBefore: 'class',
-    notAfter: 'class',
-    requireClass: 'class',
-    header: 'pattern',
-    footer: 'pattern',
-    bodyChar: 'class',
-    prefix: 'pattern',
-    plainChar: 'class',
-    escapeStop: 'class',
-    bearer: 'pattern',
-    scheme: 'pattern',
-    valueClass: 'class',
-    lowerClass: 'class',
-    upperClass: 'class',
-    wordClass: 'class',
-    identChar: 'class',
-    label: 'pattern',
-    queryKey: 'pattern',
-    valueEnd: 'class',
-    nestedEnd: 'class',
-};
+/** String fields of a pipeline entry that hold literal text, not a regular expression. */
+const LITERAL_FIELDS = new Set(['id', 'kind', 'lead', 'separator', 'footerMarker', 'requireLiteral']);
+/** Fields that hold a pattern (the other regex-bearing fields hold one character class). */
+const PATTERN_FIELDS = new Set([
+    'pattern',
+    'header',
+    'footer',
+    'prefix',
+    'bearer',
+    'scheme',
+    'label',
+    'queryKey',
+]);
+const CLASS_FIELD = /(?:Class|Char|Stop|End)$|^notBefore$|^notAfter$/;
+
+export type FieldRole = 'literal' | 'pattern' | 'class' | 'unknown';
+
+/** What a string field of a pipeline entry holds, decided by its name. */
+export function fieldRole(name: string): FieldRole {
+    if (LITERAL_FIELDS.has(name)) return 'literal';
+    if (PATTERN_FIELDS.has(name)) return 'pattern';
+    return CLASS_FIELD.test(name) ? 'class' : 'unknown';
+}
+
+/** String fields no rule of the linter knows: they would escape every check, so they are a problem. */
+export function unclassifiedFields(spec: SpecDir): string[] {
+    return spec.rules.pipeline.flatMap((rule, index) => {
+        return Object.entries(rule)
+            .filter(([name, value]) => typeof value === 'string' && fieldRole(name) === 'unknown')
+            .map(
+                ([name]) =>
+                    `pipeline[${index}] ${String(rule.id)}.${name}: a string field the linter cannot classify`,
+            );
+    });
+}
 
 /** Every expanded pattern of the spec with a label saying where it came from. */
 export function collectPatterns(spec: SpecDir): NamedPattern[] {
     const found: NamedPattern[] = [];
     spec.rules.pipeline.forEach((rule, index) => {
-        for (const [field, role] of Object.entries(PATTERN_FIELDS)) {
-            const value = rule[field];
-            if (typeof value !== 'string') continue;
+        for (const [field, value] of Object.entries(rule)) {
+            const role = fieldRole(field);
+            if (typeof value !== 'string' || role === 'literal' || role === 'unknown') continue;
             found.push({
                 where: `pipeline[${index}] ${String(rule.id)} (${String(rule.kind)}).${field}`,
                 role,
