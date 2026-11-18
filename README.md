@@ -17,8 +17,9 @@ implementation per language, identical output.
   JavaScript, Python and Go read the same way; what a pattern cannot say is a named algorithm,
   specified step by step in SPEC.md and implemented in every language. No rule regex or word list
   is written in `ts/`, `python/` or `go/`.
-- Each package embeds a copy of the spec plus a generated hash and refuses to start when they
-  differ. `tools/sync-spec` writes the copies, `tools/sync-spec --check` fails CI when one is stale.
+- Each package embeds the spec (TypeScript: a generated module) and refuses to start on an empty rule
+  set. `tools/sync-spec` generates the embedded form and its hash from `spec/`; `tools/sync-spec --check`
+  fails CI and the release when one is stale.
 - `tools/lint-spec` checks the spec: JSON Schemas, the grammar ban list, static ReDoS analysis
   (recheck), compilation in JavaScript, Python and Go, and a scaling test at 100 KB and 1 MB.
 - `spec/vectors/*.json` are the conformance cases for both tiers and both modes. The golden corpus
@@ -32,7 +33,7 @@ cd ts && pnpm install --frozen-lockfile && pnpm run typecheck && pnpm test && pn
 cd tools && pnpm install --frozen-lockfile    # recheck, ajv for lint-spec
 bun tools/lint-spec.ts                         # needs python3 and go on the PATH
 bun tools/lint-spec.ts --self-test             # plants non-portable patterns, expects failures
-tools/sync-spec --check                        # copies and hash up to date
+tools/sync-spec --check                        # generated spec files up to date
 bun tools/check-pack.ts                        # npm pack and import from the tarball
 ```
 

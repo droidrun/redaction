@@ -6,7 +6,7 @@
  * (no network). Run from anywhere; exits 1 on any failure.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -62,9 +62,13 @@ try {
     mkdirSync(installed, { recursive: true });
     run('tar', ['-xzf', join(work, filename), '-C', installed, '--strip-components=1'], work);
     symlinkSync(join(TS, 'node_modules', '@secretlint'), join(consumer, 'node_modules', '@secretlint'));
-    const vectorFiles = readdirSync(join(installed, 'spec', 'vectors'));
+    const vectorFiles = readdirSync(join(installed, 'vectors'));
     if (!vectorFiles.includes('auth-headers.json')) {
-        console.error('the tarball holds no spec/vectors');
+        console.error('the tarball holds no vectors');
+        process.exit(1);
+    }
+    if (existsSync(join(installed, 'spec'))) {
+        console.error('the tarball holds a spec/ directory: the package must run from its generated module');
         process.exit(1);
     }
     run('node', ['--input-type=module', '--eval', CONSUMER], consumer);

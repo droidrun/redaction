@@ -1,12 +1,12 @@
 /**
- * spec.ts — loads the language-neutral rule spec (`ts/spec/*.json`, a copy of the
- * repo's `spec/` written by `tools/sync-spec`), refuses to start when it does not
- * match the generated hash or holds no rules, and expands the pattern macros.
- * Nothing in `src/` restates a rule, word list or threshold: it all comes from here.
+ * spec.ts — the language-neutral rule spec as the generated module `spec-data.generated.ts`
+ * (written by `tools/sync-spec`, which also checks it against `spec/` in CI and on release).
+ * Nothing here touches the file system, the clock or a Node built-in, so every entry runs in
+ * any JavaScript runtime. Refuses to start on an unsupported version or an empty rule set, and
+ * expands the pattern macros. Nothing in `src/` restates a rule, word list or threshold of the
+ * spec: it all comes from here.
  */
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { SPEC_HASH } from './spec-hash.generated.js';
+import { ALGORITHMS_DATA, KEYS_DATA, RULES_DATA } from './spec-data.generated.js';
 
 export type WordMacro = { join: string; words?: string[][]; fromKeys?: string };
 export type Macro = string | WordMacro;
@@ -50,38 +50,19 @@ export type AlgorithmsSpec = {
 };
 
 const SPEC_SUPPORTED_VERSION = 1;
-const HASHED_FILES = ['rules.json', 'keys.json', 'algorithms.json'] as const;
 const MACRO_REFERENCE = /\{\{([A-Z_]+)\}\}/g;
 const MAX_MACRO_DEPTH = 8;
 
-function readSpecFile(name: string): Buffer {
-    return readFileSync(new URL(`../spec/${name}`, import.meta.url));
-}
-
-/** SHA-256 over `name NUL bytes NUL` of the three data files, in a fixed order. */
-export function hashSpecFiles(read: (name: string) => Uint8Array): string {
-    const hash = createHash('sha256');
-    for (const name of HASHED_FILES) {
-        hash.update(`${name}\0`);
-        hash.update(read(name));
-        hash.update('\0');
-    }
-    return hash.digest('hex');
-}
-
-function parse<T extends { specVersion: number }>(bytes: Buffer): T {
-    const parsed = JSON.parse(bytes.toString('utf8')) as T;
-    if (parsed.specVersion !== SPEC_SUPPORTED_VERSION) throw new Error('unsupported redaction spec version');
-    return parsed;
+function checked<T extends { specVersion: number }>(data: unknown): T {
+    const spec = data as T;
+    if (spec.specVersion !== SPEC_SUPPORTED_VERSION) throw new Error('unsupported redaction spec version');
+    return spec;
 }
 
 function loadSpec(): { rules: RulesSpec; keys: KeysSpec; algorithms: AlgorithmsSpec } {
-    const files = new Map(HASHED_FILES.map((name) => [name, readSpecFile(name)]));
-    const read = (name: string): Uint8Array => files.get(name as (typeof HASHED_FILES)[number]) as Buffer;
-    if (hashSpecFiles(read) !== SPEC_HASH) throw new Error('redaction spec does not match its hash');
-    const rules = parse<RulesSpec>(read('rules.json') as Buffer);
-    const keys = parse<KeysSpec>(read('keys.json') as Buffer);
-    const algorithms = parse<AlgorithmsSpec>(read('algorithms.json') as Buffer);
+    const rules = checked<RulesSpec>(RULES_DATA);
+    const keys = checked<KeysSpec>(KEYS_DATA);
+    const algorithms = checked<AlgorithmsSpec>(ALGORITHMS_DATA);
     if (rules.pipeline.length === 0 || keys.secretWords.length === 0) {
         throw new Error('redaction spec holds no rules');
     }

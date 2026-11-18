@@ -658,17 +658,22 @@ Everything else (order, verdicts, number handling, key redaction) is as in 9.2.
 
 ## 12. Spec integrity
 
-Each language package embeds a copy of `rules.json`, `keys.json`, `algorithms.json` and a generated hash
-constant:
+Each language package **embeds** the spec: the data of `rules.json`, `keys.json` and `algorithms.json` is part
+of the package itself, so a package runs without reading any file at runtime:
 
+- TypeScript: a generated module (`ts/src/spec-data.generated.ts`) that holds the three files as constants and
+  their hash. It uses no file system, no Node built-in and no `import.meta`, so every entry (including
+  `./sync`) runs in any JavaScript runtime.
+- Python: package data, or a generated module, as the implementation chooses. Go: a `go:embed` copy.
 - `hash = SHA-256( for name in [rules.json, keys.json, algorithms.json]: name + NUL + bytes + NUL )`, hex,
   lower case, where NUL is the byte 0.
-- At import/initialisation the package computes the hash of its embedded copy and compares it to the
-  constant. A difference, an unsupported `specVersion`, or an empty rule set (no pipeline entries or no
-  `secretWords`) is a fatal error and the package MUST NOT process any input.
-- `tools/sync-spec` copies the data files and `vectors/` into each package and writes the constants;
-  `tools/sync-spec --check` fails when a copy or a constant is out of date. It runs in CI and, on the tagged
-  commit, in the release workflow.
+- **The hash is checked in CI, not at runtime.** `tools/sync-spec` generates the embedded form of every language
+  from `spec/`; `tools/sync-spec --check` fails when any generated file differs from what it would generate
+  (this covers the data and the hash). It runs in the CI jobs of the spec and of each language and, on the tagged
+  commit, in the release workflow; each language also has a unit test that its embedded data equals the files of
+  `spec/` and carries their hash. A language MAY additionally check the hash at import.
+- At import/initialisation every package refuses to start (and MUST NOT process any input) on an unsupported
+  `specVersion` or an empty rule set (no pipeline entries or no `secretWords`).
 - Error messages for these failures name the failure, never the data.
 
 ## 13. TypeScript extensions

@@ -226,7 +226,7 @@ if (conflicts.length > 0) throw badRequest('re-enter these values', conflicts);
 
 ## Conformance vectors
 
-`spec/vectors/*.json` (in the repo root; `ts/spec/vectors/` is the copy this package reads and ships)
+`spec/vectors/*.json` (in the repo root; `prepack` copies them into the package)
 hold the cases every implementation must agree on, so the Go and Python ports (and each consumer's
 tests) can run the same file:
 
@@ -288,10 +288,12 @@ pnpm test
 pnpm run build
 ```
 
-The rules are data: this package reads `ts/spec/*.json`, a copy of `../spec/` written by
-`../tools/sync-spec`, and refuses to import when the copy does not match the generated hash in
-`src/spec-hash.generated.ts` or holds no rules. Change a rule in `../spec/`, then run
-`../tools/sync-spec`. `src/golden.test.ts` replays a seeded corpus of 12,000+ inputs and requires the
+The rules are data: this package runs on `src/spec-data.generated.ts`, a module generated from `../spec/`
+by `../tools/sync-spec` (no file access or Node built-in at runtime, so every entry also runs in edge
+runtimes), and refuses to import on an unsupported version or an empty rule set. CI and the release run
+`../tools/sync-spec --check`, and `src/spec-integrity.test.ts` proves the module equals `../spec/`. Change a
+rule in `../spec/`, then run `../tools/sync-spec`. The conformance vectors are copied into the package by
+`prepack`. `src/golden.test.ts` replays a seeded corpus of 12,000+ inputs and requires the
 output recorded from the unchanged package at commit b12879a, byte for byte.
 
 The exact `13.0.4` pins of `@secretlint/secretlint-rule-preset-recommend` and

@@ -26,4 +26,3 @@ function buildRules(): SecretLintCoreConfigRule[] {
 }
 
 export const RULES = buildRules();
-

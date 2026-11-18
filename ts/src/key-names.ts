@@ -64,7 +64,9 @@ function isSecretWord(word: string, plural: boolean): boolean {
 
 /** The key lower-cased with everything but `a-z0-9` dropped (U+0130 lower-cases to `i` + a mark). */
 function compactKey(key: string): string {
-    return foldLower(key).replace(/\u0130/g, 'i').replace(/[^a-z0-9]/g, '');
+    return foldLower(key)
+        .replace(/\u0130/g, 'i')
+        .replace(/[^a-z0-9]/g, '');
 }
 
 function matchKey(key: string, plural: boolean): boolean {
