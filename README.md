@@ -187,34 +187,35 @@ characters are masked as `*`). The bare `[REDACTED]` that triggers-api wrote is 
 ## Restore
 
 `restoreRedacted(incoming, stored, opts?)` is the write-side partner: a client that read redacted
-values and sends the document back carries placeholders; this puts the stored values back where
-that is safe. It returns `{ value, conflicts }`: `conflicts` lists the JSON path (`$.steps[1].with.token`)
-of every placeholder that could **not** be restored; it stays in `value`. A caller rejects the
-write or tells the client; nothing is dropped silently.
+values and sends the document back carries placeholders; this puts the stored values back.
+**Editors are trusted with secrets** (whoever may edit and run a resource holds its secrets
+anyway; redaction protects read-only roles, logs, spans and responses); restore only prevents
+accidental loss or misplacement of a secret on a read-modify-write, so it does not bind a secret
+to the fields around it: a changed `url` next to a placeholder still restores.
 
-A placeholder keeps the stored value only when all hold:
+It returns `{ value, conflicts }`: `conflicts` lists the JSON path (`$.steps[1].with.token`) of
+every placeholder that could **not** be restored; it stays in `value`. A caller rejects the write
+or tells the client; nothing is dropped silently.
+
+A placeholder keeps the stored value at the **same path** when that is a non-placeholder string,
+number, object or array, and:
 
 - **Matching.** Objects match by key. Array items match by **identity**: the `id` property by
-  default, or `opts.identify(item)`; the n-th item with an identity matches the n-th stored item
-  with it, so deleting, inserting or reordering items cannot move a secret to another item.
-  Items with no identity on either side match by **index only when both arrays have the same length**.
-- **Ancestor chain unchanged.** Along the path from the placeholder's object up to and
-  including the nearest array item (or the root, when there is none), every non-secret-named
-  primitive value (`url`, `host`, `method`, …) must equal the stored one; a value that itself
-  holds a placeholder must match its stored string as below. Keys added or removed count as a
-  change. Without this a client could keep a placeholder and change the destination the stored
-  secret is sent to, also from a level above it (`{ url, headers: { Authorization } }`).
-  Display-only keys (`name`, `title`, `label`, `description`, `comment`, `notes`, `position`,
-  `order`, `index`, `updatedAt`, `createdAt`) are ignored, so renaming a step does not block it.
-  An array item starts a new chain: a change in another item, or above the array, does not block.
-- **Strings.** An incoming string that contains placeholders keeps the **stored string** only if
-  its literal segments appear in the stored string in order, the first at the start and the last at
-  the end. Edited text around a placeholder is a conflict. A whole placeholder also restores a stored
-  number, object or array (`[REDACTED]` replaced those in triggers-api; limit markers stand for subtrees).
+  default, or `opts.identify(item)`; so deleting, inserting or reordering items cannot move a
+  secret to another item. An identity that occurs more than once on either side is ambiguous
+  and matches nothing (conflict). Items with no identity on either side match by **index only
+  when both arrays have the same length**; otherwise the placeholder stays (conflict).
+- **Strings.** An incoming string that contains placeholders keeps the **stored string** only
+  if its literal segments appear in the stored string in order, the first at the start and the
+  last at the end. Edited text around a placeholder is a conflict. A whole placeholder also
+  restores a stored number, object or array (`[REDACTED]` replaced those in triggers-api; limit
+  markers stand for subtrees).
 
 Everything else takes `incoming` as sent: new keys and values win, removed keys are gone, and a
-placeholder with nothing stored behind it stays a placeholder and is a conflict (a value is never
-invented). Pure; neither argument is mutated. A key named `__proto__` is an ordinary key.
+placeholder with nothing restorable behind it (missing, `null`, boolean, or a different
+placeholder) stays a placeholder and is a conflict (a value is never invented). Legacy
+`[REDACTED]` and `:last4` placeholders are recognised. Pure; neither argument is mutated. A key
+named `__proto__` is an ordinary key.
 
 ```ts
 const stored = await loadActionParams(id);                   // real values
