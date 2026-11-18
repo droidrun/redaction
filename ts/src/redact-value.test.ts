@@ -200,3 +200,33 @@ describe('object keys in the full tier (SPEC 9.4)', () => {
         expect(redactJsonValueSync({ [NPM]: 1 })).toEqual({ [NPM]: 1 });
     });
 });
+
+describe('key collisions in the walkers (SPEC 8)', () => {
+    const GH = `ghp_${'a'.repeat(36)}`;
+
+    test('the sync node limit does not overwrite an earlier entry', () => {
+        const out = redactJsonValueSync({ [GH]: 'keep-me', '[REDACTED:github]': 2 }, { maxNodes: 2 });
+        expect(out).toEqual({
+            '[REDACTED:github#2]': 'keep-me',
+            '[REDACTED:github]': '[REDACTED:size-limit]',
+        });
+    });
+
+    test('keys are scanned with opts.detect like leaves, in compat and in strict', async () => {
+        const detect = async (text: string) =>
+            text === 'custom-key-name' ? [{ ruleId: 'custom', range: [0, text.length] as const }] : [];
+        for (const mode of ['compat', 'strict'] as const) {
+            const input = { 'custom-key-name': 1, other: 2 };
+            const out = await redactJsonValue(input, { hits: [] }, { mode, detect });
+            expect(out).toEqual({ '[REDACTED:custom]': 1, other: 2 });
+        }
+    });
+
+    test('a failing opts.detect never leaves a secret key raw in compat', async () => {
+        const detect = async (): Promise<never> => {
+            throw new Error('detector down');
+        };
+        const out = await redactJsonValue({ [GH]: 1 }, { hits: [] }, { detect });
+        expect(out).toEqual({ '[REDACTED:github]': 1 });
+    });
+});
