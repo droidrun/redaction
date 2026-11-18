@@ -78,3 +78,18 @@ describe('the 0.1.1 export list', () => {
         expect(api.redactTextSync(stored).text).toBe(stored);
     });
 });
+
+describe('additive exports', () => {
+    test('isSecretKeyName is unchanged and keyVerdict is exported next to it, on both entries', async () => {
+        const sync = await import('./sync.js');
+        for (const entry of [api, sync] as Array<Record<string, unknown>>) {
+            const verdict = entry.keyVerdict as (key: string) => string;
+            const isSecret = entry.isSecretKeyName as (key: string) => boolean;
+            expect(typeof verdict).toBe('function');
+            expect([isSecret('pin'), isSecret('max_tokens'), isSecret('secretary')]).toEqual([true, true, false]);
+            const keys = ['pin', 'password', 'max_tokens', 'tokens', 'secretary', 'name'];
+            expect(keys.map(verdict)).toEqual(['any', 'any', 'string', 'string', 'none', 'none']);
+        }
+    });
+});
+

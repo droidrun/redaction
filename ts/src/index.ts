@@ -13,6 +13,6 @@ export {
     type RedactTextSyncOpts,
 } from './redact-sync.js';
 export { restoreRedacted, type RestoreOpts, type RestoreResult } from './restore.js';
-export { isSecretKeyName } from './key-names.js';
+export { isSecretKeyName, keyVerdict, type KeyVerdict } from './key-names.js';
 export { buildPlaceholder, buildReadPlaceholder, shortenRuleId, PLACEHOLDER_RE } from './placeholder.js';
 export type { RedactMode } from './mode.js';

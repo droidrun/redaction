@@ -71,7 +71,7 @@ const safe = await redactJsonValue(stored, stats);
 `import { redactTextSync, redactJsonValueSync, restoreRedacted } from '@droidrun/redaction/sync'`
 loads **no secretlint module** (a test enforces it): use it in loggers, spans and edge workers
 where start-up and bundle size matter. It exports the sync redactors, `restoreRedacted`,
-`isSecretKeyName`, `STRUCTURAL_SKIP_KEYS`, `PLACEHOLDER_RE`, `buildPlaceholder`,
+`isSecretKeyName`, `keyVerdict`, `STRUCTURAL_SKIP_KEYS`, `PLACEHOLDER_RE`, `buildPlaceholder`,
 `buildReadPlaceholder` and `shortenRuleId`; the main entry re-exports all of them.
 
 ### Sync rules
@@ -111,7 +111,7 @@ Everything the sync path (and, inside it, the async path) detects:
   (`MYSQL_PWD`, `dbPass`), is a lower-case compound ending in or starting with one
   (`userpassword`, `secretkey`, `accesskeyid`), or is exactly `pwd`, `otp`, `totp`, `pin`, `cvv`,
   `cvc`, `sig`, `jwt`, `pass`, `auth`. Words match as such or as a plural, so `secretary`,
-  `passwordless`, `tokenizer`, `passThrough` and the Twilio `sid` stay. `isSecretKeyName(key)` is exported.
+  `passwordless`, `tokenizer`, `passThrough` and the Twilio `sid` stay. `isSecretKeyName(key)` is exported, and so is `keyVerdict(key)`: `'none'`, `'string'` (strings are replaced, numbers stay: `max_tokens`, `tokens`) or `'any'` (numbers too: `pin`, `password`).
 
 What a secret-named key does to the value below it:
 
