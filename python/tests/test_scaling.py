@@ -1,10 +1,13 @@
-"""Scaling (SPEC section 10.5): attack strings through `redact_text` at 100 KB and 1 MB, and long JSON keys.
+"""Scaling (SPEC section 10.5): attack strings through the full tier at 100 KB and 1 MB, and long JSON keys.
 
-The attack units come from tools/lib/attacks.ts (run by bun), among them a PEM header whose body stops at
-once and a query value followed by a space. Each worker is a subprocess
-under an external deadline. The time at 1 MB must not exceed 15 times the time at 100 KB (floor 10 ms; linear
-growth is 10 times). A first pass runs the attacks in parallel; every attack that fails the ratio there is
-measured again alone, one at a time, best of three, because a loaded machine skews a single run.
+The attack units come from tools/lib/attacks.ts (run by bun): the standard and the full tier's prefixes,
+separators and near misses, and composite attacks (a short cluster, then a long run: `ghs_1_` x 170, `.`,
+`a` x N). Each worker is a subprocess under an external deadline. The time at 1 MB must not exceed 15 times
+the time at 100 KB (floor 10 ms; linear growth is 10 times), and a composite attack at most 20 times the plain
+text `aaa...` of its size (floor 20 ms). A first pass runs the attacks in parallel; every attack that fails
+there is measured again with the plain text, one at a time, best of three, because a loaded machine skews a
+single run. (Python measures a run with the C regex engine, so the cost of a run memory per class, which
+SPEC 4.11 forbids, does not show in the time here; `test_full.py` counts the units the runs walk instead.)
 """
 
 import json
@@ -26,6 +29,9 @@ DEADLINE_SECONDS = 900
 RATIO_LIMIT = 15
 FLOOR_MS = 10
 REPEATS = 3
+COMPOSITE_FACTOR = 20
+COMPOSITE_FLOOR_MS = 20
+PLAIN = {"name": "__plain", "unit": "a"}
 LONG_KEY_LIMIT_SECONDS = 2.0
 
 
@@ -53,27 +59,34 @@ def run_worker(attacks, runs):
     return json.loads(completed.stdout)
 
 
-def too_slow(rows):
-    """The attack names whose time at the large size is above the ratio limit."""
+def too_slow(rows, composites):
+    """The attacks whose time at the large size is above the ratio limit, or (a composite attack: a short
+    cluster, then a long run) above `COMPOSITE_FACTOR` times the plain text of that size."""
     times = {(row["attack"], row["size"]): row["ms"] for row in rows}
-    return [
-        name
-        for name in {row["attack"] for row in rows}
-        if times[(name, SIZES[1])] > RATIO_LIMIT * max(times[(name, SIZES[0])], FLOOR_MS)
-    ]
+    plain = max(times.get((PLAIN["name"], SIZES[1]), 0), COMPOSITE_FLOOR_MS)
+    slow = []
+    for name in {row["attack"] for row in rows} - {PLAIN["name"]}:
+        small, large = max(times[(name, SIZES[0])], FLOOR_MS), times[(name, SIZES[1])]
+        is_composite_slow = name in composites and large > COMPOSITE_FACTOR * plain
+        if large > RATIO_LIMIT * small or is_composite_slow:
+            slow.append(name)
+    return slow
 
 
 def test_time_grows_linearly_with_the_input():
     attacks = load_attacks()
-    slices = [attacks[index::WORKERS] for index in range(WORKERS)]
+    composites = {attack["name"] for attack in attacks if "head" in attack}
+    assert len(composites) >= 1
+    work = [PLAIN, *attacks]
+    slices = [work[index::WORKERS] for index in range(WORKERS)]
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         first_pass = [row for rows in pool.map(lambda part: run_worker(part, 1), slices) for row in rows]
-    assert len(first_pass) == len(attacks) * len(SIZES)
-    suspects = set(too_slow(first_pass))
+    assert len(first_pass) == len(work) * len(SIZES)
+    suspects = set(too_slow(first_pass, composites))
     slow = []
     for attack in attacks:
         if attack["name"] in suspects:
-            slow.extend(too_slow(run_worker([attack], REPEATS)))
+            slow.extend(too_slow(run_worker([PLAIN, attack], REPEATS), composites))
     assert slow == []
 
 

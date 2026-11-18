@@ -1,4 +1,5 @@
-"""Every case of spec/vectors/*.json, standard-tier side, in the mode the case names."""
+"""Every case of spec/vectors/*.json: the standard tier against `expectedSync`, the full tier against
+`expectedAsync` (or `expected`), in the mode the case names."""
 
 import pytest
 from helpers import canonical, expand_gen, load_vector_files, run
@@ -8,14 +9,15 @@ CASES = [
     for name, file in load_vector_files()
     for case in file["cases"]
 ]
+TIERS = ["standard", "full"]
 
 
-def standard_expected(case):
+def expected_for(case, tier):
     if "expected" in case:
         return case["expected"]
-    if "expectedGenSync" in case:
-        return expand_gen(case["expectedGenSync"])
-    return case["expectedSync"]
+    if tier == "standard":
+        return expand_gen(case["expectedGenSync"]) if "expectedGenSync" in case else case["expectedSync"]
+    return expand_gen(case["expectedGenAsync"]) if "expectedGenAsync" in case else case["expectedAsync"]
 
 
 def case_input(case):
@@ -29,6 +31,7 @@ def test_every_category_is_present():
         "base64.json",
         "entropy.json",
         "false-positives.json",
+        "full.json",
         "key-formats.json",
         "key-names.json",
         "keywords.json",
@@ -38,17 +41,19 @@ def test_every_category_is_present():
     ]
 
 
+@pytest.mark.parametrize("tier", TIERS)
 @pytest.mark.parametrize("case", CASES)
-def test_case(case):
+def test_case(case, tier):
     mode = case.get("mode", "compat")
-    result = run(case_input(case), mode=mode, opts=case.get("opts", {}))
+    result = run(case_input(case), mode=mode, opts=case.get("opts", {}), tier=tier)
     assert result.error is None
-    assert canonical(result.value) == canonical(standard_expected(case))
+    assert canonical(result.value) == canonical(expected_for(case, tier))
 
 
+@pytest.mark.parametrize("tier", TIERS)
 @pytest.mark.parametrize("case", CASES)
-def test_expected_output_is_idempotent(case):
+def test_expected_output_is_idempotent(case, tier):
     mode = case.get("mode", "compat")
-    expected = standard_expected(case)
-    result = run(expected, mode=mode, opts={})
+    expected = expected_for(case, tier)
+    result = run(expected, mode=mode, opts={}, tier=tier)
     assert canonical(result.value) == canonical(expected)

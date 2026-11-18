@@ -1,6 +1,6 @@
 # droidrun-redaction (Python)
 
-Secret redaction for text and JSON values. This is the Python implementation of the **standard tier**
+Secret redaction for text and JSON values. This is the Python implementation of the **standard and the full tier**
 of the redaction spec in [`spec/`](../spec/SPEC.md). It redacts byte for byte like the TypeScript
 package `@droidrun/redaction`: the same rules, the same placeholders (`[REDACTED:<rule>]`), the same
 limits. It has no runtime dependencies and needs Python 3.11 or newer.
@@ -34,8 +34,8 @@ result = redact_json({"user": "a", "api_key": "k", "note": "Bearer abcdefgh12345
 result.value   # {'user': 'a', 'api_key': '[REDACTED:key-context]', 'note': 'Bearer [REDACTED:auth-header]'}
 ```
 
-- `redact_text(text, *, mode="strict", max_chars=None) -> RedactResult`
-- `redact_json(value, *, mode="strict", skip_keys=None, max_depth=None, max_nodes=None, max_chars=None) -> RedactResult`
+- `redact_text(text, *, tier="standard", mode="strict", max_chars=None) -> RedactResult`
+- `redact_json(value, *, tier="standard", mode="strict", skip_keys=None, max_depth=None, max_nodes=None, max_chars=None) -> RedactResult`
   - `value` is a parsed JSON value: `dict`, `list`, `str`, `int`, `float`, `bool`, `None`.
   - Strings are scanned. A string under a secret key name (`password`, `x-auth-token`, `clientSecret`, ...)
     is replaced whole, and so is a number under a singular secret key (`pin`; not `max_tokens`).
@@ -69,16 +69,36 @@ replaced). `skip_keys` must be a collection of strings (a single `str` raises `T
 
 Every rule, word list, threshold and limit comes from the spec data embedded in the package.
 
+## Tiers
+
+- `standard` (default, for compatibility): the key formats, key-name context, URL credentials, PEM blocks and
+  keyword pairs of SPEC section 4.
+- `full`: the standard rules plus the ported secretlint preset (SPEC 4.11 to 4.17): AWS, PEM private keys,
+  npm, basic-auth URLs, Slack, SendGrid, Shopify, Stripe, GitHub, GitLab, Grafana, OpenAI, Anthropic, Groq,
+  Hugging Face, Linear, Notion, 1Password, database connection strings, Vault, Vercel, Databricks, Docker,
+  Figma, Cloudflare, Tailscale. Use `tier="full"` for content that leaves your system. The full-tier rules
+  scan the first 2,000,000 units of a text (in windows of 100,000 that overlap by 10,240); the standard rules
+  always scan the whole text. In `strict` mode what lies beyond the scan cap becomes
+  `[REDACTED:size-limit]`. Object keys are always scanned with the standard rules.
+
+The letter guard in front of a key format uses the Unicode 15.0.0 letter table of the spec, never the
+interpreter's own `unicodedata`.
+
 ## Modes
 
 - `strict` (default): no path returns a value that was not scanned. A text or leaf over a limit, a depth or
   node limit, an over-long key, a value outside the JSON model (`NaN`, infinities, bytes, sets, tuples,
   class instances, non-string keys) and any internal failure give a placeholder
   (`[REDACTED:size-limit]`, `[REDACTED:depth-limit]`, `[REDACTED:circular]`,
-  `[REDACTED:redaction-failed]`). The JSON walk is iterative: deep input cannot overflow the stack.
+  `[REDACTED:redaction-failed]`). The JSON walk is iterative: deep input cannot overflow the stack. In the
+  full tier a failing scan of a text gives `[REDACTED:error]` (no fallback), and `RedactResult.error` names
+  the exception class.
 - `compat`: reproduces the TypeScript v0.2.0 behaviour of its sync entry (a string under a skip key is
   returned unscanned; keys do not count against `max_chars`; a node-exhausted object keeps its raw key at the
-  cut). Use it only to compare with TypeScript output.
+  cut). Use it only to compare with TypeScript output. In the full tier `compat` is TypeScript's async
+  behaviour: it has no length, depth or node limit (`max_chars`, `max_depth` and `max_nodes` are ignored), and
+  a failure of the full-tier rules falls back to the standard rules (and to `[REDACTED:error]` if those fail
+  too).
 
 ## Limits
 
@@ -93,10 +113,8 @@ surrogate one), because the spec fixes that unit for every language. A number th
 exactly as given (an integer beyond 2^53 is not rounded; the TypeScript package rounds it to a double, so
 outputs agree at the double level). A float that is not finite becomes `[REDACTED:redaction-failed]`.
 
-## Not supported yet
+## Not supported
 
-- The **full tier** (the secretlint port): a later slice adds it to the same interpreter. Until then only the
-  standard rules run, and there is no `tier` parameter.
 - `restoreRedacted` (restoring values behind placeholders): TypeScript only.
 
 ## Development
