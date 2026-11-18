@@ -1,75 +1,23 @@
 /**
- * golden.test.ts — the rules moved from code into the spec without changing a byte
- * of output: the seeded corpus (`tools/corpus`, 7,800+ inputs: fuzz families, every
- * vector input, NBSP/BOM/U+202F/U+2028 separators, astral characters, lone surrogates,
- * adversarial prefixes before every rule, integer-like keys, key collisions, cases
- * crossing every cap) gives the outputs and hits that commit b12879a recorded in
- * `spec/corpus/golden-b12879a.json`, on all four entry points.
+ * golden.test.ts — the rules moved from code into the spec without changing a byte of
+ * output. `spec/corpus/golden-b12879a.json.gz` holds what the unchanged package (commit
+ * b12879a) returned for the seeded corpus (`tools/corpus`: fuzz families, every vector input,
+ * the JS whitespace set, case-fold and astral characters, lone surrogates, adversarial prefixes
+ * before every rule, integer-like keys, key collisions, cases crossing every cap) on all four
+ * entry points, and for the behaviour probes (`last4`, `detect`, `onEvent`, failures, values
+ * that are not JSON, exported constants and helpers). Current output and hits must equal it.
  */
 import { expect, test } from 'bun:test';
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { redactJsonValue, redactJsonValueSync, redactText, redactTextSync } from './index.js';
+import { gunzipSync } from 'node:zlib';
+import { runBehaviors } from '../../tools/corpus/behaviors.ts';
+import { replayCase } from '../../tools/corpus/replay.ts';
+import type { GoldenFile } from '../../tools/corpus/types.ts';
+import * as api from './index.js';
 
-type Outcome = { out: unknown; hits: Array<[string, number, number]> };
-type GoldenCase = {
-    id: string;
-    input?: unknown;
-    gen?: { parts: Array<[string, number]> };
-    opts?: { maxChars?: number; maxDepth?: number; maxNodes?: number; skipKeys?: string[] };
-    sync: Outcome;
-    async: Outcome;
-};
-
-const GOLDEN = JSON.parse(
-    readFileSync(join(import.meta.dir, '..', '..', 'spec', 'corpus', 'golden-b12879a.json'), 'utf8'),
-) as { count: number; cases: GoldenCase[] };
-const DIGEST_ABOVE = 20_000;
-
-function inputOf(item: GoldenCase): unknown {
-    return item.gen === undefined
-        ? item.input
-        : item.gen.parts.map(([unit, times]) => unit.repeat(times)).join('');
-}
-
-function summarize(out: unknown): unknown {
-    const serialized = JSON.stringify(out) ?? 'undefined';
-    if (serialized.length <= DIGEST_ABOVE) return out;
-    return { digest: createHash('sha256').update(serialized).digest('hex'), length: serialized.length };
-}
-
-const toHits = (hits: Array<{ ruleId: string; range: readonly [number, number] }>): Outcome['hits'] => {
-    return hits.map((hit) => [hit.ruleId, hit.range[0], hit.range[1]]);
-};
-
-async function replay(item: GoldenCase): Promise<{ sync: Outcome; async: Outcome }> {
-    const input = inputOf(item);
-    const opts = item.opts ?? {};
-    if (typeof input === 'string') {
-        const sync = redactTextSync(input, { maxChars: opts.maxChars });
-        const full = await redactText(input);
-        return {
-            sync: { out: summarize(sync.text), hits: toHits(sync.hits) },
-            async: { out: summarize(full.text), hits: toHits(full.hits) },
-        };
-    }
-    const skip = opts.skipKeys === undefined ? {} : { skipKeys: new Set(opts.skipKeys) };
-    const syncStats = { hits: [] as Array<{ ruleId: string; range: readonly [number, number] }> };
-    const syncOut = redactJsonValueSync(input, {
-        maxChars: opts.maxChars,
-        maxDepth: opts.maxDepth,
-        maxNodes: opts.maxNodes,
-        ...skip,
-        stats: syncStats as { hits: never[] },
-    });
-    const asyncStats = { hits: [] as Array<{ ruleId: string; range: readonly [number, number] }> };
-    const asyncOut = await redactJsonValue(input, asyncStats as { hits: never[] }, skip);
-    return {
-        sync: { out: summarize(syncOut), hits: toHits(syncStats.hits) },
-        async: { out: summarize(asyncOut), hits: toHits(asyncStats.hits) },
-    };
-}
+const GOLDEN_PATH = join(import.meta.dir, '..', '..', 'spec', 'corpus', 'golden-b12879a.json.gz');
+const GOLDEN = JSON.parse(gunzipSync(readFileSync(GOLDEN_PATH)).toString('utf8')) as GoldenFile;
 
 test('the corpus holds at least 5000 cases', () => {
     expect(GOLDEN.cases.length).toBe(GOLDEN.count);
@@ -79,7 +27,7 @@ test('the corpus holds at least 5000 cases', () => {
 test('every corpus case gives the recorded output and hits, sync and async', async () => {
     const differing: string[] = [];
     for (const item of GOLDEN.cases) {
-        const now = await replay(item);
+        const now = await replayCase(api as never, item);
         const same =
             JSON.stringify(now.sync) === JSON.stringify(item.sync) &&
             JSON.stringify(now.async) === JSON.stringify(item.async);
@@ -87,3 +35,12 @@ test('every corpus case gives the recorded output and hits, sync and async', asy
     }
     expect(differing).toEqual([]);
 }, 120_000);
+
+test('every behaviour probe gives the recorded result', async () => {
+    const now = (await runBehaviors(api as never)) as Record<string, unknown>;
+    const differing = Object.keys(GOLDEN.behaviors).filter((name) => {
+        return JSON.stringify(now[name]) !== JSON.stringify(GOLDEN.behaviors[name]);
+    });
+    expect(differing).toEqual([]);
+    expect(Object.keys(now).sort()).toEqual(Object.keys(GOLDEN.behaviors).sort());
+}, 60_000);

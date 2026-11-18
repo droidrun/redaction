@@ -3,11 +3,15 @@ import {
     astralFamilies,
     boundaryFamilies,
     capFamilies,
+    cookieEscapeFamilies,
+    foldFamilies,
     fuzzFamilies,
+    guardFamilies,
     jsonShapeFamilies,
     keyListFamilies,
     keywordMatrixFamilies,
     largeFamilies,
+    placeholderEndFamilies,
     prefixFamilies,
     queryFamilies,
     schemeFamilies,
@@ -15,6 +19,7 @@ import {
     subsequenceKeyFamilies,
     thresholdFamilies,
     wordFamilies,
+    wrapperFamilies,
 } from './families.ts';
 import { mulberry32 } from './rng.ts';
 import type { CaseOpts, CorpusCase, GenSpec } from './types.ts';
@@ -53,5 +58,10 @@ export function generateCorpus(vectorInputs: readonly unknown[]): CorpusCase[] {
     subsequenceKeyFamilies(sinks);
     fuzzFamilies(sinks, rng);
     largeFamilies(sinks);
+    foldFamilies(sinks);
+    wrapperFamilies(sinks);
+    cookieEscapeFamilies(sinks);
+    placeholderEndFamilies(sinks);
+    guardFamilies(sinks);
     return cases;
 }

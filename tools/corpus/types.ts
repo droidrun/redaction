@@ -28,6 +28,8 @@ export type GoldenFile = {
     seed: number;
     count: number;
     cases: RecordedCase[];
+    /** Results of the option, error and export probes (`behaviors.ts`), by probe name. */
+    behaviors: Record<string, unknown>;
 };
 
 export function expandGen(gen: GenSpec): string {

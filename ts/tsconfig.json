@@ -7,10 +7,14 @@
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "declaration": true,
-    "types": ["bun"],
-    "rootDir": "src",
-    "outDir": "dist"
+    "types": [
+      "bun"
+    ],
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "../tools/corpus/**/*.ts"
+  ]
 }

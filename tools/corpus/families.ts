@@ -1163,3 +1163,125 @@ export function subsequenceKeyFamilies({ add }: Sinks): void {
         }
     }
 }
+
+const FIXED_MARKER = 'Zq9abcDEF123ghi_x';
+const FOLDS: Array<[from: string, to: string]> = [
+    ['k', 'K'],
+    ['K', 'K'],
+    ['s', 'ſ'],
+    ['S', 'ſ'],
+    ['i', 'İ'],
+    ['I', 'İ'],
+    ['i', 'ı'],
+    ['l', 'ℓ'],
+];
+
+/** Case-fold characters (Kelvin sign, long s, dotted capital I, dotless i) inside every context and key. */
+export function foldFamilies({ add }: Sinks): void {
+    for (const context of CONTEXTS) {
+        const text = context(FIXED_MARKER);
+        for (const [from, to] of FOLDS) {
+            add('fold', text.replace(from, to));
+            add('fold', text.split(from).join(to));
+        }
+        add('fold', text.toUpperCase());
+        add('fold', text.toLowerCase());
+    }
+    for (const key of [...SECRET_KEYS, 'Cookie', 'Set-Cookie', 'BASIC', 'Basic', 'TOKEN', 'Token']) {
+        for (const [from, to] of FOLDS) {
+            const folded = key.replace(from, to);
+            if (folded === key) continue;
+            add('fold-key', { [folded]: FIXED_MARKER, nested: { [folded]: [FIXED_MARKER] } });
+            add('fold-key', `${folded}: ${FIXED_MARKER}`);
+        }
+    }
+    for (const word of ['Basic', 'BASIC', 'Token', 'TOKEN', 'Bearer', 'bearer']) {
+        for (const [from, to] of FOLDS) {
+            add('fold-scheme', `Authorization: ${word.replace(from, to)} ${FIXED_MARKER}`);
+        }
+    }
+}
+
+const WRAPPER_INNERS = [
+    '\u{1f511}',
+    '\u{1f600}',
+    '\ud83d',
+    '\ude00',
+    '\ud83d\ud83d',
+    'ab\u{1f600}cd',
+    '\u{1f600}'.repeat(4),
+    'abcdefg\u{1f600}',
+    '\u{1f600}abcdefg',
+    ' ',
+    ' ',
+    'a\nb',
+    'a\rb',
+    '',
+    ' ',
+    'é',
+    'x'.repeat(10),
+];
+
+/** Astral characters and lone surrogates inside the stand-in wrappers `<...>` and `{...}`. */
+export function wrapperFamilies({ add }: Sinks): void {
+    for (const inner of WRAPPER_INNERS) {
+        for (const [open, close] of [
+            ['<', '>'],
+            ['{', '}'],
+            ['{{', '}}'],
+            ['<', '}'],
+            ['(', ')'],
+        ] as const) {
+            const value = `${open}${inner}${close}`;
+            add('wrapper', `password=${value}`);
+            add('wrapper', `password="${value}"`);
+            add('wrapper', `secret: ${value} tail`);
+            add('wrapper', `api_key='${value}'`);
+            add('wrapper', { token: value, password: [value], note: `token=${value}` });
+            add('wrapper', `Authorization: Bearer ${value}`);
+        }
+    }
+}
+
+/** What stops a cookie value: escapes `\n \r \" \'` in both cases, and every other escape. */
+export function cookieEscapeFamilies({ add }: Sinks): void {
+    const escapes = ['n', 'N', 'r', 'R', '"', "'", '\\', 'x', 'X', 't', 'u', 'K', ' '];
+    for (const prefix of ['Cookie: ', 'Set-Cookie: ', 'COOKIE: ', 'cookie:\t', 'Set_Cookie: ']) {
+        for (const escape of escapes) {
+            add('cookie-escape', `${prefix}a=b\\${escape}xyz tail`);
+            add('cookie-escape', `${prefix}a=b\\${escape}`);
+            add('cookie-escape', `${prefix}\\${escape}a=b`);
+            add('cookie-escape', `{"h":"${prefix}a=b\\\\${escape}xyz"}`);
+        }
+    }
+}
+
+/** Final line terminators after a placeholder value, the JS `$` exception of the whole-placeholder test. */
+export function placeholderEndFamilies({ add }: Sinks): void {
+    for (const end of ['', '\n', '\r', ' ', ' ', '\n\n', '\r\n', ' ', ' ', '\u0085']) {
+        for (const placeholder of [
+            '[REDACTED]',
+            '[REDACTED:key-context]',
+            '[REDACTED:generic-keyword:4dor]',
+        ]) {
+            const value = `${placeholder}${end}`;
+            add('placeholder-end', { token: value, password: [value, { secret: value }], note: value });
+            add('placeholder-end', `password=${value}`);
+            add('placeholder-end', `password: "${value}"`);
+            add('placeholder-end', `Authorization: Bearer ${value}`);
+            add('placeholder-end', { [`${placeholder}${end}`]: 1, token: 'x' });
+        }
+    }
+}
+
+/** Astral characters and lone surrogates directly beside every sample: every lookaround and class edge. */
+export function guardFamilies({ add }: Sinks): void {
+    const around = ['\u{1f600}', '\ud83d', '\ude00', '\u{10ffff}', 'é', '́', 'K', '_', '-'];
+    for (const sample of [...FORMAT_SAMPLES, ...SCANNER_SAMPLES]) {
+        for (const unit of around) {
+            add('guard', `${unit}${sample}`);
+            add('guard', `${sample}${unit}`);
+            add('guard', `${unit}${sample}${unit}`);
+        }
+    }
+}
