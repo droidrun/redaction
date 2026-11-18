@@ -58,7 +58,8 @@ function prepareScheme(rule: AuthRule): Scanner {
             const capitalizedEnd = isUpper(text[start] ?? '') ? runEnd(text, start + 1, isLower) : start;
             const isPlainWord = lowerEnd > start && endsWord(lowerEnd);
             const isCapitalized = capitalizedEnd > start + 1 && endsWord(capitalizedEnd);
-            if (end - start < rule.minValueLength || isPlainWord || isCapitalized) {
+            const isTooShort = end - start < rule.minValueLength;
+            if (isTooShort || isPlainWord || isCapitalized) {
                 pattern.lastIndex = match.index + 1;
                 continue;
             }

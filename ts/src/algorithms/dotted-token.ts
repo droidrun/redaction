@@ -62,7 +62,8 @@ export function prepareDottedToken(rule: DottedRule): Scanner {
         let skipUntil = 0;
         for (let start = text.indexOf(rule.lead, from); start !== -1; start = text.indexOf(rule.lead, from)) {
             from = start + 1;
-            if (start < skipUntil || !isBoundary(text, start)) continue;
+            const isSkipped = start < skipUntil || !isBoundary(text, start);
+            if (isSkipped) continue;
             const match = matchAt(text, start);
             if ('failedRunEnd' in match) {
                 skipUntil = match.failedRunEnd;

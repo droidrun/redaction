@@ -69,6 +69,17 @@ function isPrimitive(value: unknown): boolean {
     return value === null || (typeof value !== 'object' && typeof value !== 'function');
 }
 
+/** A string, number, boolean, null, bigint or undefined: a leaf the walker can place as it is. */
+function isScalar(value: unknown): boolean {
+    return isPrimitive(value) && typeof value !== 'symbol';
+}
+
+/** An object the JSON model has: a plain object or an array (not a class instance, Date or function). */
+function isWalkable(value: unknown): value is object {
+    if (typeof value !== 'object' || value === null) return false;
+    return isPlainContainer(value);
+}
+
 function isPlainContainer(value: object): boolean {
     if (Array.isArray(value)) return true;
     const prototype = Object.getPrototypeOf(value);
@@ -109,13 +120,13 @@ function* enter(
     if (state.nodes <= 0) return { value: placeholderFor(ruleIds.sizeLimit, state) };
     state.nodes -= 1;
     if (typeof value === 'string') return { value: yield* scanLeaf(value, verdict, state) };
-    if (isPrimitive(value) && typeof value !== 'symbol') {
+    if (isScalar(value)) {
         const keyed = leafPlaceholder(verdict, value);
         if (keyed === undefined) return { value };
         state.hits.push({ ruleId: KEY_CONTEXT_RULE_ID, range: [0, 0] });
         return { value: keyed };
     }
-    if (typeof value !== 'object' || value === null || !isPlainContainer(value)) {
+    if (!isWalkable(value)) {
         return { value: placeholderFor(ruleIds.failed, state) };
     }
     if (depth >= state.limits.maxDepth) return { value: placeholderFor(ruleIds.depthLimit, state) };
