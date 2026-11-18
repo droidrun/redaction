@@ -68,25 +68,17 @@ type tokenCompiler struct {
 	memos int
 }
 
-func (c *tokenCompiler) literals(words []string) [][]uint16 {
-	units := make([][]uint16, len(words))
-	for i, word := range words {
-		units[i] = decodeUTF8(word)
-	}
-	return units
-}
-
 func (c *tokenCompiler) part(spec partSpec) tokenPart {
 	switch {
 	case spec.Lit != nil:
-		return tokenPart{kind: partLiteral, lits: c.literals([]string{*spec.Lit})}
+		return tokenPart{kind: partLiteral, lits: asUnitLists([]string{*spec.Lit})}
 	case spec.Alt != nil:
-		return tokenPart{kind: partAlternatives, lits: c.literals(spec.Alt)}
+		return tokenPart{kind: partAlternatives, lits: asUnitLists(spec.Alt)}
 	case spec.Opt != nil:
 		return tokenPart{kind: partOptional, inner: c.parts(spec.Opt)}
 	}
 	run := tokenPart{
-		set: c.b.class(spec.RunClass), min: spec.Min, max: spec.Max, tails: c.literals(spec.Tails),
+		set: c.b.class(spec.RunClass), min: spec.Min, max: spec.Max, tails: asUnitLists(spec.Tails),
 	}
 	if spec.Min == spec.Max && len(spec.Tails) == 0 {
 		run.kind = partFixedRun
@@ -128,6 +120,9 @@ func (e *engine) newTokenRule(b *builder, raw json.RawMessage) (scanner, error) 
 			return nil, errUnknownCheck
 		}
 	}
+	if len(spec.Parts) == 0 {
+		return nil, errSpecRejected
+	}
 	first := spec.Parts[0]
 	switch {
 	case first.Lit != nil:
@@ -135,7 +130,7 @@ func (e *engine) newTokenRule(b *builder, raw json.RawMessage) (scanner, error) 
 	case first.Alt != nil:
 		rule.starts = first.Alt
 	default:
-		return nil, errors.New("redaction: a token shape starts with a literal")
+		return nil, errSpecRejected // a token shape starts with a literal
 	}
 	return rule, b.err
 }
@@ -157,9 +152,11 @@ type tokenScan struct {
 	memos []runMemo
 }
 
-func (s *tokenScan) literalAt(lits [][]uint16, position int) int {
+// afterLiteral is the position after the first literal (list order) that starts at `position`, or
+// matchFailed.
+func afterLiteral(units []uint16, lits [][]uint16, position int) int {
 	for _, literal := range lits {
-		if hasUnitsAt(s.t.units, literal, position) {
+		if hasUnitsAt(units, literal, position) {
 			return position + len(literal)
 		}
 	}
@@ -213,7 +210,7 @@ func (s *tokenScan) match(parts []tokenPart, index int, position int, next *cont
 		part := &parts[index]
 		switch part.kind {
 		case partLiteral, partAlternatives:
-			position = s.literalAt(part.lits, position)
+			position = afterLiteral(s.t.units, part.lits, position)
 		case partFixedRun:
 			position = s.fixedRun(part, position)
 		case partVariableRun:
@@ -295,7 +292,7 @@ func (e *engine) newDashChain(b *builder, raw json.RawMessage) (scanner, error) 
 	}
 	rule := &dashChain{
 		leads:       spec.Leads,
-		separator:   decodeUTF8(spec.Separator)[0],
+		separator:   b.unit(spec.Separator),
 		segment:     b.class(spec.SegmentClass),
 		word:        b.class(spec.WordClass),
 		maxSegment:  spec.MaxSegment,
@@ -343,8 +340,8 @@ func (d *dashChain) scan(t *text) []span {
 		if d.word.hasAt(t.units, start-1) {
 			continue
 		}
-		afterLead := start + d.leadLength(t.units, start)
-		if afterLead >= len(t.units) || t.units[afterLead] != d.separator {
+		afterLead := afterLiteral(t.units, d.leadUnits, start)
+		if afterLead == matchFailed || afterLead >= len(t.units) || t.units[afterLead] != d.separator {
 			continue
 		}
 		end := d.chainEnd(t.units, &memo, afterLead+1)
@@ -355,16 +352,6 @@ func (d *dashChain) scan(t *text) []span {
 		from = end
 	}
 	return found
-}
-
-// leadLength is the length of the first lead (list order) that starts at `start`.
-func (d *dashChain) leadLength(units []uint16, start int) int {
-	for _, lead := range d.leadUnits {
-		if hasUnitsAt(units, lead, start) {
-			return len(lead)
-		}
-	}
-	return 0
 }
 
 type sendgridSpec struct {
@@ -397,9 +384,9 @@ func (e *engine) newSendgridKey(b *builder, raw json.RawMessage) (scanner, error
 		letters:    e.letters,
 		lead:       spec.Lead,
 		leadLength: len(decodeUTF8(spec.Lead)),
-		separator:  decodeUTF8(spec.Separator)[0],
+		separator:  b.unit(spec.Separator),
 		word:       b.class(spec.WordClass),
-		dash:       decodeUTF8(spec.Dash)[0],
+		dash:       b.unit(spec.Dash),
 		maxSegment: spec.MaxSegment,
 		length:     spec.Length,
 	}, b.err

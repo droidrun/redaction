@@ -31,19 +31,10 @@ type credentialURI struct {
 	repeatRun        int
 }
 
-// foldedUnits is a lower-cased copy (the spec's `lower`).
-func foldedUnits(units []uint16) []uint16 {
-	folded := make([]uint16, len(units))
-	for i, unit := range units {
-		folded[i] = lowerUnit(unit)
-	}
-	return folded
-}
-
 func foldedLists(words []string) [][]uint16 {
 	lists := make([][]uint16, len(words))
 	for i, word := range words {
-		lists[i] = foldedUnits(decodeUTF8(word))
+		lists[i] = lowerUnits(decodeUTF8(word))
 	}
 	return lists
 }
@@ -92,21 +83,8 @@ func equalsAny(folded []uint16, items [][]uint16) bool {
 	return false
 }
 
-// isRepeated: at least `runLength` units, all the same unit.
-func isRepeated(value []uint16, runLength int) bool {
-	if len(value) < runLength {
-		return false
-	}
-	for _, unit := range value {
-		if unit != value[0] {
-			return false
-		}
-	}
-	return true
-}
-
 func (c *credentialURI) isRealUser(user []uint16) bool {
-	return len(user) >= c.userMin && !containsAny(foldedUnits(user), c.userContains)
+	return len(user) >= c.userMin && !containsAny(lowerUnits(user), c.userContains)
 }
 
 // hasVariable is true when a template pattern (`${PASSWORD}`, `%NAME%`) matches anywhere in the password.
@@ -133,14 +111,15 @@ func (c *credentialURI) isRealPassword(user []uint16, password []uint16) bool {
 	if c.hasVariable(password) {
 		return false
 	}
-	folded := foldedUnits(password)
+	folded := lowerUnits(password)
 	if containsAny(folded, c.passwordContains) {
 		return false
 	}
 	if equalsAny(folded, c.passwordEquals) {
 		return false
 	}
-	return !isRepeated(password, c.repeatRun)
+	// at least `repeatRun` units, all the same unit (the password is not empty: hasBothGroups)
+	return len(password) < c.repeatRun || !isRepeatOf(password, password[0])
 }
 
 // hasBothGroups: the user (group 1) and the password (group 2) took part in the match and are not empty.
