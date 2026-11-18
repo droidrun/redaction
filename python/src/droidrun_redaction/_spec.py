@@ -55,7 +55,8 @@ def _load() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         rules, keys, algorithms = (_checked(json.loads(files[name])) for name in _HASHED_FILES)
     except ValueError:
         raise SpecError("redaction spec data is not valid") from None
-    if len(rules.get("pipeline", [])) == 0 or len(keys.get("secretWords", [])) == 0:
+    has_no_rules = len(rules.get("pipeline", [])) == 0 or len(rules.get("full", [])) == 0
+    if has_no_rules or len(keys.get("secretWords", [])) == 0:
         raise SpecError("redaction spec holds no rules")
     return rules, keys, algorithms
 

@@ -41,6 +41,7 @@ def _group_span(match: re.Match[str], group: int) -> Range | None:
 def _prepare_filter(rule: dict[str, Any]) -> Callable[[str, Range], bool]:
     has_class = contains_test(rule["requireClass"]) if "requireClass" in rule else None
     literal = rule.get("requireLiteral")
+    ignored = frozenset(rule.get("ignoreEquals", ()))
     drops_placeholder = rule.get("dropPlaceholder") is True
 
     def passes(text: str, span: Range) -> bool:
@@ -49,6 +50,8 @@ def _prepare_filter(rule: dict[str, Any]) -> Callable[[str, Range], bool]:
         if has_class is not None and not has_class(value):
             return False
         if literal is not None and literal not in value:
+            return False
+        if value in ignored:
             return False
         return not (drops_placeholder and is_placeholder_value(text, start, end))
 

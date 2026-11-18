@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from . import _rules
+from . import _full_rules, _rules
 from ._patterns import Range
 from ._placeholder import build_read_placeholder
 from ._spec import RULES, SpecError
@@ -31,6 +31,25 @@ def _prepare(rule: dict[str, Any]) -> tuple[str, _rules.Scanner]:
 
 _PIPELINE = [_prepare(rule) for rule in RULES["pipeline"]]
 
+_FULL_PREPARE = {
+    "regex": _rules.prepare_regex,
+    "token": _full_rules.prepare_token,
+    "dash-chain": _full_rules.prepare_dash_chain,
+    "sendgrid-key": _full_rules.prepare_sendgrid_key,
+    "pem-key": _full_rules.prepare_pem_key,
+    "credential-uri": _full_rules.prepare_credential_uri,
+}
+
+
+def _prepare_full(rule: dict[str, Any]) -> tuple[str, _rules.Scanner]:
+    prepare = _FULL_PREPARE.get(rule["kind"])
+    if prepare is None:
+        raise SpecError("redaction spec holds an unknown rule kind")
+    return rule["id"], prepare(rule)
+
+
+_FULL_PIPELINE = [_prepare_full(rule) for rule in RULES["full"]]
+
 
 def merge_hits(hits: list[Hit]) -> list[Hit]:
     """Sort by start (equal starts keep their order), then fold overlapping or touching ranges (SPEC 7)."""
@@ -51,6 +70,14 @@ def detect(units: str) -> list[Hit]:
         ranges: list[Range] = scan(units)
         hits.extend((rule_id, start, end) for start, end in ranges)
     return merge_hits(hits)
+
+
+def detect_full_rules(units: str) -> list[Hit]:
+    """The hits of the full-tier rules over one unit string (no windows), by start, then end (SPEC 4.17)."""
+    hits: list[Hit] = []
+    for rule_id, scan in _FULL_PIPELINE:
+        hits.extend((rule_id, start, end) for start, end in scan(units))
+    return sorted(hits, key=lambda hit: (hit[1], hit[2]))
 
 
 def splice(units: str, hits: list[Hit]) -> str:
