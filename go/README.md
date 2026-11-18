@@ -136,6 +136,17 @@ package does.
 Matching uses Go's `regexp` (RE2, linear time). The spec patterns are written in a portable
 grammar that RE2 reads the same way as JavaScript and Python.
 
+## Differences from the TypeScript package
+
+- **Lone surrogates in text.** A Go string cannot hold a lone surrogate. When a hit boundary falls between the
+  two units of a valid surrogate pair (a bounded run of a rule cuts an astral character in half, for example the
+  query part of a connection string at its 500th unit), the TypeScript package keeps the lone half in the
+  output; `RedactText` gives U+FFFD for it. `RedactJSON` writes a lone surrogate as an escape (`\ude00`) and so
+  keeps it, as TypeScript does. Input that is not valid UTF-8 is read with each invalid byte as U+FFFD.
+- **Numbers.** Numbers that are not replaced are written as they appeared; TypeScript writes the double.
+- **An out-of-range `Options.Tier`** is read as `TierFull`.
+- The strict character limit is charged while the JSON is read (see Limits).
+
 ## Not supported yet
 
 - `restoreRedacted` (restoring values from a stored copy).
@@ -164,6 +175,8 @@ go test -run XXX -bench . ./...          # a 2 KB log line and a 4 MB text, both
 `vectors_test.go` runs every case of `spec/vectors/*.json` on both tiers (the sync side is the
 standard tier, the async side the full tier); `golden_test.go` replays
 `spec/corpus/golden-b12879a.json.gz` against the recorded output of the TypeScript package, both
-sides: the standard side exactly, the full side exactly but for the one AWS case of the decision
-above. `testdata/attacks.json` is written by `bun go/testdata/gen-attacks.ts` from
+sides, but for the cases of three decisions: the AWS secret access key (reported over the secret), object
+keys that are full-tier secrets (replaced by their placeholder in the full tier), and object keys that redact
+to the same key (numbered, so no value is lost: 120 recorded cases on each side). The tests name every such
+case and check that nothing else differs. `testdata/attacks.json` is written by `bun go/testdata/gen-attacks.ts` from
 `tools/lib/attacks.ts` (plain and composite attacks).
