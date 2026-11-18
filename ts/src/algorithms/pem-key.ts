@@ -6,7 +6,7 @@
  * The body class holds no `-`, so the body ends at the first unit outside it and the footer must start
  * exactly there; the optional line feeds around the body only move the body bounds by one unit.
  */
-import { charTest, compile, type CharTest, type Range } from '../portable.js';
+import { charTest, compile, runEnd, type CharTest, type Range } from '../portable.js';
 import type { Rule } from '../spec.js';
 import type { Scanner } from './regex-rule.js';
 import { cachedRunEnd } from './scan-support.js';
@@ -55,12 +55,9 @@ function stripped(rule: PemKeyRule, body: string, isStrip: CharTest): string {
 
 /** `[contentClass]+` then `padChar*`, at least `minContent` units, starting with one of `magic`. */
 function isKeyContent(rule: PemKeyRule, content: string, isContent: CharTest, isPad: CharTest): boolean {
-    let end = 0;
-    while (end < content.length && isContent(content[end] as string)) end += 1;
-    if (end === 0) return false;
-    for (let at = end; at < content.length; at++) {
-        if (!isPad(content[at] as string)) return false;
-    }
+    const contentEnd = runEnd(content, 0, isContent);
+    if (contentEnd === 0) return false;
+    if (runEnd(content, contentEnd, isPad) !== content.length) return false;
     const hasMagic = rule.magic.some((prefix) => content.startsWith(prefix));
     return content.length >= rule.minContent && hasMagic;
 }
@@ -73,14 +70,14 @@ export function preparePemKey(rule: PemKeyRule): Scanner {
     const isContent = charTest(rule.contentClass);
     const isPad = charTest(rule.padChar);
     return (text) => {
-        const runEnd = cachedRunEnd(text, isBody);
+        const bodyRunEnd = cachedRunEnd(text, isBody);
         const ranges: Range[] = [];
         header.lastIndex = 0;
         for (let found = header.exec(text); found !== null; found = header.exec(text)) {
             const start = found.index;
             const bodyStart = start + found[0].length;
             header.lastIndex = start + 1;
-            const bodyEnd = runEnd(bodyStart);
+            const bodyEnd = bodyRunEnd(bodyStart);
             const length = bodyEnd - bodyStart;
             const leading = text.startsWith(rule.newline, bodyStart);
             const trailing = length > 0 && text.startsWith(rule.newline, bodyEnd - 1);
