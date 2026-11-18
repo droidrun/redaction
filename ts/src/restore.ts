@@ -126,7 +126,8 @@ function restoreRecord(incoming: Record<string, unknown>, stored: unknown, path:
             storedRecord && wanted === outKey && Object.hasOwn(storedRecord, outKey)
                 ? storedRecord[outKey]
                 : undefined;
-        setOwnKey(out, outKey, restore(value, counterpart, pathKey(path, outKey), ctx));
+        // The path names the key the client sent: a restored stored key (a secret) never reaches a path.
+        setOwnKey(out, outKey, restore(value, counterpart, pathKey(path, key), ctx));
     }
     return out;
 }
