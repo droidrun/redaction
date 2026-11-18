@@ -30,6 +30,7 @@ type vectorOpts struct {
 type vectorFile struct {
 	Description string       `json:"description"`
 	Tier        string       `json:"tier"`
+	Pending     string       `json:"pending"`
 	Cases       []vectorCase `json:"cases"`
 }
 
@@ -48,6 +49,9 @@ func loadVectors(t *testing.T) map[string]vectorFile {
 		}
 		if file.Tier == "full" {
 			continue // needs the full tier, which this package does not have yet
+		}
+		if file.Pending != "" {
+			continue // a spec change this package has not implemented yet
 		}
 		loaded[strings.TrimSuffix(filepath.Base(path), ".json")] = file
 	}

@@ -154,6 +154,10 @@
       "enum": [
         "full"
       ]
+    },
+    "pending": {
+      "type": "string",
+      "minLength": 1
     }
   }
 }

@@ -19,7 +19,7 @@ import {
     strongerVerdict,
     type KeyVerdict,
 } from './key-names.js';
-import { setOwnKey } from './own-key.js';
+import { placeKey, type KeySlots } from './place-key.js';
 import { isPrimitive } from './primitive.js';
 import { buildReadPlaceholder } from './placeholder.js';
 import { isOverlongKey, redactKey, type KeyDetector } from './redact-key.js';
@@ -49,6 +49,7 @@ type Frame = {
     verdict: KeyVerdict;
     depth: number;
     outKey: string;
+    slots: KeySlots;
 };
 
 type Entered = { frame: Frame } | { value: unknown };
@@ -107,7 +108,17 @@ function openFrame(value: object, verdict: KeyVerdict, depth: number, state: Sta
     const isArray = Array.isArray(value);
     const keys = isArray ? null : Object.keys(value);
     const items = isArray ? value : (keys as string[]).map((key) => (value as Record<string, unknown>)[key]);
-    return { source: value, keys, items, index: 0, out: isArray ? [] : {}, verdict, depth, outKey: '' };
+    return {
+        source: value,
+        keys,
+        items,
+        index: 0,
+        out: isArray ? [] : {},
+        verdict,
+        depth,
+        outKey: '',
+        slots: new Map(),
+    };
 }
 
 function* enter(
@@ -148,7 +159,7 @@ function place(frame: Frame, value: unknown): void {
         (frame.out as unknown[]).push(value);
         return;
     }
-    setOwnKey(frame.out as Record<string, unknown>, frame.outKey, value);
+    placeKey(frame.out as Record<string, unknown>, frame.slots, frame.outKey, value);
 }
 
 /** Close a frame early: what is left of it collapses into one size-limit marker. */

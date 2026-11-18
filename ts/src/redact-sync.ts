@@ -26,6 +26,7 @@ import {
     type KeyVerdict,
 } from './key-names.js';
 import { setOwnKey } from './own-key.js';
+import { placeKey, type KeySlots } from './place-key.js';
 import { isPrimitive } from './primitive.js';
 import { redactKey } from './redact-key.js';
 import { buildReadPlaceholder } from './placeholder.js';
@@ -131,6 +132,7 @@ function walkEntries(
     state: Walk,
 ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
+    const slots: KeySlots = new Map();
     for (const key in value) {
         if (!Object.hasOwn(value, key)) continue;
         if (state.nodes <= 0) {
@@ -141,11 +143,11 @@ function walkEntries(
         const outKey = redactKey(key, state.hits);
         if (state.skip.has(key) && isPrimitive(child)) {
             state.nodes -= 1;
-            setOwnKey(out, outKey, child);
+            placeKey(out, slots, outKey, child);
             continue;
         }
         const childVerdict = strongerVerdict(verdict, keyVerdict(key));
-        setOwnKey(out, outKey, walk(child, depth + 1, childVerdict, state));
+        placeKey(out, slots, outKey, walk(child, depth + 1, childVerdict, state));
     }
     return out;
 }

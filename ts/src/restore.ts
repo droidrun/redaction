@@ -30,7 +30,8 @@
  * Everything else takes `incoming` as sent: new keys and values win, removed
  * keys are gone, a placeholder with nothing restorable behind it (missing,
  * null, boolean, or itself a different placeholder) stays a placeholder and is a
- * conflict (a value is never invented). Pure; neither argument is mutated; a
+ * conflict (a value is never invented). The numbered form `[REDACTED:<rule>#<n>]` (key collisions, SPEC 8)
+ * is a placeholder like the plain one and is restored the same way. Pure; neither argument is mutated; a
  * key named `__proto__` is an ordinary key.
  */
 import { setOwnKey } from './own-key.js';

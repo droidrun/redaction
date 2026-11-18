@@ -692,6 +692,11 @@ implementation uses a full-string match (`fullmatch`, `\A...\Z`); Python `$` and
 `literalSegments(text)` is `text` split by every (non-overlapping, left to right) placeholder; it has
 one more element than there are placeholders; empty elements are kept.
 
+**Numbered form (L-P, decided by Lutz 2026-11-18).** The rule part of a placeholder may end with `#<n>`
+(`[REDACTED:npm#2]`): the grammar above already admits it (`#` is a unit of the rule class), and it is a
+placeholder like any other (whole-placeholder tests, `isPlaceholderValue`, idempotence, `literalSegments`,
+restore). Only object-key collisions write it (section 8, **key collisions**).
+
 **Read form**: `[REDACTED:` + `shorten(ruleId)` + `]`, where `shorten` removes one leading prefix of
 `stripPrefixes` (`@secretlint/secretlint-rule-`, then `mobilerun-redaction/`, tried in that order, each
 at most once). Rule ids written by the standard tier have no prefix. No unit of the secret appears in
@@ -719,8 +724,17 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
 - **Duplicate keys.** The input has been parsed, so for duplicate keys the last value wins and the key
   keeps the position of its first occurrence (as in ECMAScript); only the surviving value is walked.
   Two different keys can also become the same key after redaction (two keys that each held a secret
-  give the same placeholder text): the later value replaces the earlier one and the key keeps the earlier
-  position.
+  give the same placeholder text). **Key collisions (L-P, decided by Lutz 2026-11-18): no value is lost.** Let
+  the *output key* of an entry be its key after redaction. When an output key is a **rule placeholder** (exactly
+  `[REDACTED:<rule>]`: a whole placeholder with a rule and no `:suffix`) and an earlier entry of the same object
+  already has that output key, the entry is stored under `[REDACTED:<rule>#<n>]` instead. `n` starts at 2 for the
+  second entry and counts up in contract order, per object and per placeholder key; a number whose key already
+  exists in the output object (a literal `[REDACTED:npm#2]` key, or one given earlier) is skipped. The first
+  entry keeps the plain placeholder key (also when that key was written in the input). Every key replaced in
+  the walk takes part alike: a secret key of the standard or the full tier (`ghp_...`, `npm_...`), the
+  `[REDACTED:size-limit]` key of a key over the limit or of a collapsed rest (section 9.3). A key that is not a
+  rule placeholder (`password=[REDACTED:generic-keyword]`: only a part of the key was replaced) keeps the old
+  rule: the later value replaces the earlier one and the key keeps the earlier position.
 - **Numbers.** A number under a key whose verdict is `any` is replaced as a unit by `[REDACTED:key-context]`.
   Every other number is untouched in value: its digits are never scanned. The data model is the IEEE 754
   double: a JSON number is parsed to the nearest double, and **equality of outputs is value equality** of

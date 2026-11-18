@@ -35,7 +35,7 @@ import {
     strongerVerdict,
     type KeyVerdict,
 } from './key-names.js';
-import { setOwnKey } from './own-key.js';
+import { placeKey, type KeySlots } from './place-key.js';
 import { isPrimitive } from './primitive.js';
 import { detectFullTierKeyHits } from './full-rules.js';
 import { redactKey } from './redact-key.js';
@@ -132,15 +132,16 @@ async function visitEntries(
     verdict: KeyVerdict,
 ): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
+    const slots: KeySlots = new Map();
     const skipKeys = opts.skipKeys ?? STRUCTURAL_SKIP_KEYS;
     for (const [key, child] of Object.entries(value)) {
         const outKey = redactKey(key, stats.hits, detectFullTierKeyHits);
         if (skipKeys.has(key) && isPrimitive(child)) {
-            setOwnKey(out, outKey, child);
+            placeKey(out, slots, outKey, child);
             continue;
         }
         const childVerdict = strongerVerdict(verdict, keyVerdict(key));
-        setOwnKey(out, outKey, await visit(child, stats, opts, childVerdict));
+        placeKey(out, slots, outKey, await visit(child, stats, opts, childVerdict));
     }
     return out;
 }

@@ -59,13 +59,14 @@ func main() {
 			panic(err)
 		}
 		var file struct {
-			Tier  string
-			Cases []vector
+			Tier    string
+			Pending string
+			Cases   []vector
 		}
 		if err := json.Unmarshal(raw, &file); err != nil {
 			panic(err)
 		}
-		if file.Tier == "full" {
+		if file.Tier == "full" || file.Pending != "" {
 			continue // needs the full tier, which this package does not have yet
 		}
 		for _, c := range file.Cases {

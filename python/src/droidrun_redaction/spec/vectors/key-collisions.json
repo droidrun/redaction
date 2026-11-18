@@ -1,0 +1,63 @@
+{
+  "description": "Object keys that collide after replacement (SPEC 8, L-P, decided by Lutz 2026-11-18), standard tier: no value is lost; the first key keeps the plain placeholder key, the next ones get `#2`, `#3` inside the brackets. `pending` marks a file that Python and Go skip until they implement it (the TypeScript package runs it).",
+  "pending": "L-P",
+  "cases": [
+    {
+      "name": "keys that collide after replacement keep every value: #2, #3 inside the placeholder",
+      "input": {
+        "first": 1,
+        "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "a",
+        "ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "b",
+        "ghp_cccccccccccccccccccccccccccccccccccc": "c"
+      },
+      "expected": {
+        "first": 1,
+        "[REDACTED:github]": "a",
+        "[REDACTED:github#2]": "b",
+        "[REDACTED:github#3]": "c"
+      }
+    },
+    {
+      "name": "collisions are counted per object",
+      "input": {
+        "x": {
+          "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": 1,
+          "ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": 2
+        },
+        "ghp_cccccccccccccccccccccccccccccccccccc": 3,
+        "ghp_dddddddddddddddddddddddddddddddddddd": 4
+      },
+      "expected": {
+        "x": {
+          "[REDACTED:github]": 1,
+          "[REDACTED:github#2]": 2
+        },
+        "[REDACTED:github]": 3,
+        "[REDACTED:github#2]": 4
+      }
+    },
+    {
+      "name": "a key that already is a placeholder takes the plain key",
+      "input": {
+        "[REDACTED:github]": 1,
+        "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": 2
+      },
+      "expected": {
+        "[REDACTED:github]": 1,
+        "[REDACTED:github#2]": 2
+      }
+    },
+    {
+      "name": "strict: keys that collide after replacement keep every value",
+      "input": {
+        "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "a",
+        "ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "b"
+      },
+      "mode": "strict",
+      "expected": {
+        "[REDACTED:github]": "a",
+        "[REDACTED:github#2]": "b"
+      }
+    }
+  ]
+}

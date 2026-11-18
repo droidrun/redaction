@@ -1,5 +1,5 @@
 {
-  "description": "Object keys in the full tier (SPEC 8, 9.4): a key that is itself a secret of the full tier is replaced by its placeholder, in compat and strict. `expectedSync` is the standard tier, which does not know the full-tier formats (npm, 1password, ...); `expectedAsync` the full tier. A collision after replacement follows SPEC 8. An implementation without the full tier skips this file (`tier`).",
+  "description": "Object keys in the full tier (SPEC 8, 9.4): a key that is itself a secret of the full tier is replaced by its placeholder, in compat and strict. `expectedSync` is the standard tier, which does not know the full-tier formats (npm, 1password, ...); `expectedAsync` the full tier. Keys that collide after replacement keep every value: the first has the plain placeholder key, the next ones `#2`, `#3` inside the brackets (SPEC 8, L-P). An implementation without the full tier skips this file (`tier`).",
   "tier": "full",
   "cases": [
     {
@@ -137,26 +137,6 @@
       }
     },
     {
-      "name": "two tokens collide after replacement: the later value replaces the earlier, the key keeps the earlier position",
-      "input": {
-        "first": 1,
-        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
-        "middle": 2,
-        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
-      },
-      "expectedSync": {
-        "first": 1,
-        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
-        "middle": 2,
-        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
-      },
-      "expectedAsync": {
-        "first": 1,
-        "[REDACTED:npm]": "b",
-        "middle": 2
-      }
-    },
-    {
       "name": "a token key and a plain value under it",
       "input": {
         "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": {
@@ -204,24 +184,6 @@
       }
     },
     {
-      "name": "strict: two tokens collide after replacement",
-      "input": {
-        "first": 1,
-        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
-        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
-      },
-      "mode": "strict",
-      "expectedSync": {
-        "first": 1,
-        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
-        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
-      },
-      "expectedAsync": {
-        "first": 1,
-        "[REDACTED:npm]": "b"
-      }
-    },
-    {
       "name": "strict: nested keys",
       "input": {
         "list": [
@@ -237,6 +199,149 @@
             "[REDACTED:slack]": 1
           }
         ]
+      }
+    },
+    {
+      "name": "two tokens collide after replacement: the first keeps the plain key, the second gets #2 (no value lost)",
+      "input": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "middle": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "expectedSync": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "middle": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "expectedAsync": {
+        "first": 1,
+        "[REDACTED:npm]": "a",
+        "middle": 2,
+        "[REDACTED:npm#2]": "b"
+      }
+    },
+    {
+      "name": "three tokens collide: #2 and #3 in contract order",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 3
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 3
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1,
+        "[REDACTED:npm#2]": 2,
+        "[REDACTED:npm#3]": 3
+      }
+    },
+    {
+      "name": "collisions are counted per placeholder key and per object",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 3,
+        "ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": 4,
+        "nested": {
+          "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 5,
+          "npm_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD": 6
+        }
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "[REDACTED:github]": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 3,
+        "[REDACTED:github#2]": 4,
+        "nested": {
+          "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 5,
+          "npm_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD": 6
+        }
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1,
+        "[REDACTED:github]": 2,
+        "[REDACTED:npm#2]": 3,
+        "[REDACTED:github#2]": 4,
+        "nested": {
+          "[REDACTED:npm]": 5,
+          "[REDACTED:npm#2]": 6
+        }
+      }
+    },
+    {
+      "name": "a key that already is a placeholder takes the plain key; the token after it gets #2",
+      "input": {
+        "[REDACTED:npm]": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 2
+      },
+      "expectedSync": {
+        "[REDACTED:npm]": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 2
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1,
+        "[REDACTED:npm#2]": 2
+      }
+    },
+    {
+      "name": "a literal key [REDACTED:npm#2] is taken: the next token key skips to #3",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "[REDACTED:npm#2]": "x",
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "[REDACTED:npm#2]": "x",
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1,
+        "[REDACTED:npm#2]": "x",
+        "[REDACTED:npm#3]": 2
+      }
+    },
+    {
+      "name": "strict: two tokens collide after replacement",
+      "input": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "expectedAsync": {
+        "first": 1,
+        "[REDACTED:npm]": "a",
+        "[REDACTED:npm#2]": "b"
+      }
+    },
+    {
+      "name": "strict: three tokens collide",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 3
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 3
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1,
+        "[REDACTED:npm#2]": 2,
+        "[REDACTED:npm#3]": 3
       }
     }
   ]
