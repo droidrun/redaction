@@ -24,10 +24,23 @@ func repeatedTo(unit string, size int) string {
 	return strings.Repeat(unit, size/len(unit)+1)[:size]
 }
 
-func timeRun(input string) time.Duration {
-	started := time.Now()
-	RedactText(input, Options{})
-	return time.Since(started)
+// timeRun times one call under a deadline. A call that never returns cannot be killed inside the
+// process, so the test fails when the deadline passes and the run ends with it.
+func timeRun(t *testing.T, attack string, input string) time.Duration {
+	t.Helper()
+	elapsed := make(chan time.Duration, 1)
+	go func() {
+		started := time.Now()
+		RedactText(input, Options{})
+		elapsed <- time.Since(started)
+	}()
+	select {
+	case taken := <-elapsed:
+		return taken
+	case <-time.After(absoluteLimit):
+		t.Fatalf("attack %q: no result after %v on %d units", attack, absoluteLimit, len(input))
+		return 0
+	}
 }
 
 func TestAttackStringsScaleLinearly(t *testing.T) {
@@ -40,8 +53,8 @@ func TestAttackStringsScaleLinearly(t *testing.T) {
 	}
 	var slowest time.Duration
 	for _, unit := range units {
-		small := timeRun(repeatedTo(unit, smallSize))
-		large := timeRun(repeatedTo(unit, largeSize))
+		small := timeRun(t, unit, repeatedTo(unit, smallSize))
+		large := timeRun(t, unit, repeatedTo(unit, largeSize))
 		slowest = max(slowest, large)
 		if large > absoluteLimit || large > ratioLimit*max(small, ratioFloor) {
 			t.Errorf("attack %q: %v at 100 KB, %v at 1 MB", unit, small, large)

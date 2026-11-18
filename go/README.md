@@ -124,6 +124,9 @@ go vet ./... && gofmt -l .
 go test -race ./...                      # vectors, golden replay, unicode, strict, integrity
 go test -run TestAttackStrings ./...     # scaling at 100 KB and 1 MB (not under -race)
 go test -run XXX -fuzz FuzzRedactText -fuzztime 60s
+go test -run XXX -fuzz FuzzRedactJSON -fuzztime 60s
+go test -run XXX -bench . ./...          # a 2 KB log line and a 4 MB text
+(cd testdata/consumer && go run .)       # build from outside the module, public API only
 ```
 
 `vectors_test.go` runs every case of `spec/vectors/*.json` on the standard tier; `golden_test.go`
