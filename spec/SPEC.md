@@ -734,9 +734,10 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
   is the double. A differential run converts both sides to doubles before comparing.
 - `null` and booleans are untouched. The empty string is untouched.
 - **Strings** are scanned as texts (4) and a string under a secret key is replaced whole (section 6 and 9).
-- **Keys** are redacted: a key of length from 8 up to 4096 is scanned with the standard rules (`detect`)
-  and spliced when it holds a secret (it can hold one, e.g. `{"password=hunter2xx": 1}`); a shorter key
-  cannot match and a longer one is left as it is in `compat` (strict: section 9).
+- **Keys** are redacted: a key of length from 8 up to 4096 is scanned with the `detect` of the tier (the standard
+  rules in the standard tier; in the full tier the full-tier rules too, 9.4) and spliced when it holds a secret (it
+  can hold one, e.g. `{"password=hunter2xx": 1}`, or in the full tier a key that is itself an npm token); a shorter
+  key cannot match and a longer one is left as it is in `compat` (strict: section 9).
 - **Invalid JSON.** A JSON entry point that takes JSON **text** (Python and Go; the TypeScript entry points take
   values, not JSON text, so this does not apply to them) and receives text that is not valid JSON returns, as
   its value, the text-tier redaction of the raw input (section 9.1, so nothing unscanned is returned), together
@@ -838,14 +839,16 @@ Everything else (order, verdicts, number handling, key redaction) is as in 9.2.
 - `compat`: text: `detect` is the full-tier rules over the first `scanCap` units (windowed) plus `detect`
   over the whole text, merged (4.17); splice. A detector failure emits the event `redaction.detect.failed` with the
   error class only, then returns the result of `detect` alone, or `[REDACTED:error]` with the hit `(error,
-  0, 0)` if that fails too. JSON: each string leaf is a text of this kind; keys use the sync key redaction;
-  no depth, node or character limit (a TypeScript behaviour kept for compatibility).
+  0, 0)` if that fails too. JSON: each string leaf is a text of this kind; **keys are scanned with the full tier's `detect`
+  (4.17, no windows: a key has at most `sync.maxKeyChars` units), not only the standard rules** (decided by Lutz,
+  2026-11-18, L-N), with the key rules of section 8 otherwise unchanged; no depth, node or character limit (a TypeScript behaviour kept for compatibility).
 - `strict`: text: **first** the total-character cap as in 9.1: a text longer than `strict.maxChars`
   (4,000,000) is replaced whole by `[REDACTED:size-limit]` with the hit `(size-limit, 0, length)`, before any scan
   (no scan work is spent on it). Then as `compat`, except that a detector failure returns `[REDACTED:error]`
   (no fallback), the units beyond `scanCap` are replaced by `[REDACTED:size-limit]` (the hit `(size-limit, cap,
   length)` is merged with any hit it touches), and `last4` is ignored (no hit of the strict mode carries a
-  character of the text: the placeholder is always the read form). JSON: the strict walk of 9.3 with each leaf scanned by this text rule.
+  character of the text: the placeholder is always the read form). JSON: the strict walk of 9.3 with each leaf scanned by this text rule and each key scanned with the
+  full tier's `detect` as in `compat` (the key size rules of 9.3 are unchanged).
 
 ## 10. ReDoS rules
 

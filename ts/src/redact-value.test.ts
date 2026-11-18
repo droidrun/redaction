@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { redactJsonValue, STRUCTURAL_SKIP_KEYS, type RedactValueStats } from './redact-value.js';
+import { redactJsonValueSync } from './redact-sync.js';
 
 // Explicit consumer keys from the original structural skip list.
 const LEGACY_SKIP_KEYS: ReadonlySet<string> = new Set([
@@ -180,5 +181,22 @@ describe('recursion', () => {
         const stats = newStats();
         const out = await redactJsonValue({ count: 42, active: true, missing: null }, stats);
         expect(out).toEqual({ count: 42, active: true, missing: null });
+    });
+});
+
+describe('object keys in the full tier (SPEC 9.4)', () => {
+    const NPM = `npm_${'A'.repeat(36)}`;
+
+    test('a key that is a full-tier token is replaced in compat and strict, with its hit', async () => {
+        for (const mode of ['compat', 'strict'] as const) {
+            const stats = { hits: [] as Array<{ ruleId: string }> };
+            const out = await redactJsonValue({ [NPM]: 1, normal_key_name: 2 }, stats as never, { mode });
+            expect(out).toEqual({ '[REDACTED:npm]': 1, normal_key_name: 2 });
+            expect(stats.hits.map((hit) => hit.ruleId)).toEqual(['@secretlint/secretlint-rule-npm']);
+        }
+    });
+
+    test('the sync entry still reads keys with the standard rules only', () => {
+        expect(redactJsonValueSync({ [NPM]: 1 })).toEqual({ [NPM]: 1 });
     });
 });

@@ -3,7 +3,7 @@
  * point for plain text and the JSON-value visitor. A scanner failure falls
  * back to the deterministic rules (see `redactText`); it never passes a secret.
  */
-import { detectFullHits } from './full-rules.js';
+import { detectFullHits, withLegacyId } from './full-rules.js';
 import { applyHits, dedupeRanges, type Hit } from './hits.js';
 import type { RedactMode } from './mode.js';
 import { buildReadPlaceholder } from './placeholder.js';
@@ -28,14 +28,6 @@ const FULL = ALGORITHMS_SPEC.full;
 const MAX_SCAN_LEN = FULL.scanWindow;
 const SCAN_OVERLAP = FULL.scanOverlap;
 const MAX_TOTAL_SCAN_LEN = FULL.scanCap;
-
-/** TypeScript extension (SPEC 13): the hits of the full tier carry the 0.2.0 id of the secretlint rule they were
- *  ported from, so consumers that read `hits` see no change; the placeholder shortens it to the spec id. */
-const LEGACY_RULE_ID_PREFIX = ALGORITHMS_SPEC.placeholder.stripPrefixes[0] as string;
-
-function withLegacyId(hit: Hit): Hit {
-    return { ruleId: `${LEGACY_RULE_ID_PREFIX}${hit.ruleId}`, range: hit.range };
-}
 
 export type RedactTextOpts = {
     /** `strict` never passes an unscanned text: a scanner failure replaces the whole text and the

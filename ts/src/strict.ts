@@ -22,7 +22,7 @@ import {
 import { setOwnKey } from './own-key.js';
 import { isPrimitive } from './primitive.js';
 import { buildReadPlaceholder } from './placeholder.js';
-import { isOverlongKey, redactKey } from './redact-key.js';
+import { isOverlongKey, redactKey, type KeyDetector } from './redact-key.js';
 import { ALGORITHMS_SPEC } from './spec.js';
 
 const { ruleIds } = ALGORITHMS_SPEC;
@@ -60,6 +60,7 @@ type State = {
     skip: ReadonlySet<string>;
     hits: Hit[];
     ancestors: Set<object>;
+    detectKey: KeyDetector | undefined;
 };
 
 function placeholderFor(ruleId: string, state: State): string {
@@ -139,7 +140,7 @@ function nextKey(key: string, state: State): string {
         return placeholderFor(ruleIds.sizeLimit, state);
     }
     state.chars -= key.length;
-    return redactKey(key, state.hits);
+    return redactKey(key, state.hits, state.detectKey);
 }
 
 function place(frame: Frame, value: unknown): void {
@@ -162,6 +163,7 @@ export function* strictWalk(
     limits: StrictLimits,
     skip: ReadonlySet<string>,
     hits: Hit[],
+    detectKey?: KeyDetector,
 ): StrictWalk {
     const state: State = {
         nodes: limits.maxNodes,
@@ -170,6 +172,7 @@ export function* strictWalk(
         skip,
         hits,
         ancestors: new Set(),
+        detectKey,
     };
     const stack: Frame[] = [];
     let pending: { value: unknown; verdict: KeyVerdict; depth: number } | undefined = {

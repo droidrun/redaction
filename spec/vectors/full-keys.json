@@ -1,0 +1,243 @@
+{
+  "description": "Object keys in the full tier (SPEC 8, 9.4): a key that is itself a secret of the full tier is replaced by its placeholder, in compat and strict. `expectedSync` is the standard tier, which does not know the full-tier formats (npm, 1password, ...); `expectedAsync` the full tier. A collision after replacement follows SPEC 8. An implementation without the full tier skips this file (`tier`).",
+  "tier": "full",
+  "cases": [
+    {
+      "name": "a key that is an npm token",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1
+      }
+    },
+    {
+      "name": "a key that is a slack token",
+      "input": {
+        "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx": "v"
+      },
+      "expected": {
+        "[REDACTED:slack]": "v"
+      }
+    },
+    {
+      "name": "a key that is a 1password token",
+      "input": {
+        "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==": "v"
+      },
+      "expectedSync": {
+        "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==": "v"
+      },
+      "expectedAsync": {
+        "[REDACTED:1password]": "v"
+      }
+    },
+    {
+      "name": "a key that is a github token",
+      "input": {
+        "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "v"
+      },
+      "expected": {
+        "[REDACTED:github]": "v"
+      }
+    },
+    {
+      "name": "a key that is a database connection string",
+      "input": {
+        "postgres://admin:Zx9kQ7mPq@db.example.com:5432/app": "v"
+      },
+      "expectedSync": {
+        "postgres://admin:[REDACTED:url-credentials]@db.example.com:5432/app": "v"
+      },
+      "expectedAsync": {
+        "[REDACTED:database-connection-string]": "v"
+      }
+    },
+    {
+      "name": "a normal key is unchanged",
+      "input": {
+        "normal_key_name": "v",
+        "name_npm_AAAAAA": "v"
+      },
+      "expected": {
+        "normal_key_name": "v",
+        "name_npm_AAAAAA": "v"
+      }
+    },
+    {
+      "name": "a key with a token inside it",
+      "input": {
+        "prefix npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA suffix": "v"
+      },
+      "expectedSync": {
+        "prefix npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA suffix": "v"
+      },
+      "expectedAsync": {
+        "prefix [REDACTED:npm] suffix": "v"
+      }
+    },
+    {
+      "name": "a key behind a letter is not a token",
+      "input": {
+        "xnpm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "v"
+      },
+      "expected": {
+        "xnpm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "v"
+      }
+    },
+    {
+      "name": "nested keys and arrays",
+      "input": {
+        "list": [
+          {
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1
+          },
+          {
+            "ok": {
+              "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx": [
+                1,
+                2
+              ]
+            }
+          }
+        ]
+      },
+      "expectedSync": {
+        "list": [
+          {
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1
+          },
+          {
+            "ok": {
+              "[REDACTED:slack]": [
+                1,
+                2
+              ]
+            }
+          }
+        ]
+      },
+      "expectedAsync": {
+        "list": [
+          {
+            "[REDACTED:npm]": 1
+          },
+          {
+            "ok": {
+              "[REDACTED:slack]": [
+                1,
+                2
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "two tokens collide after replacement: the later value replaces the earlier, the key keeps the earlier position",
+      "input": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "middle": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "expectedSync": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "middle": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "expectedAsync": {
+        "first": 1,
+        "[REDACTED:npm]": "b",
+        "middle": 2
+      }
+    },
+    {
+      "name": "a token key and a plain value under it",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": {
+          "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "v"
+        }
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": {
+          "[REDACTED:github]": "v"
+        }
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": {
+          "[REDACTED:github]": "v"
+        }
+      }
+    },
+    {
+      "name": "strict: a key that is an npm token",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "normal_key_name": "v"
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "normal_key_name": "v"
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 1,
+        "normal_key_name": "v"
+      }
+    },
+    {
+      "name": "strict: a key that is a 1password token",
+      "input": {
+        "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==": "v"
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==": "v"
+      },
+      "expectedAsync": {
+        "[REDACTED:1password]": "v"
+      }
+    },
+    {
+      "name": "strict: two tokens collide after replacement",
+      "input": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "first": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": "b"
+      },
+      "expectedAsync": {
+        "first": 1,
+        "[REDACTED:npm]": "b"
+      }
+    },
+    {
+      "name": "strict: nested keys",
+      "input": {
+        "list": [
+          {
+            "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx": 1
+          }
+        ]
+      },
+      "mode": "strict",
+      "expected": {
+        "list": [
+          {
+            "[REDACTED:slack]": 1
+          }
+        ]
+      }
+    }
+  ]
+}

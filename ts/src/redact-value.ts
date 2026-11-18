@@ -37,6 +37,7 @@ import {
 } from './key-names.js';
 import { setOwnKey } from './own-key.js';
 import { isPrimitive } from './primitive.js';
+import { detectFullTierKeyHits } from './full-rules.js';
 import { redactKey } from './redact-key.js';
 
 export { CREDENTIAL_KEY_RE, STRUCTURAL_SKIP_KEYS };
@@ -68,7 +69,13 @@ async function redactJsonValueStrict(
 ): Promise<unknown> {
     const hits: Hit[] = [];
     try {
-        const walk = strictWalk(value, strictLimits(opts), opts.skipKeys ?? STRUCTURAL_SKIP_KEYS, hits);
+        const walk = strictWalk(
+            value,
+            strictLimits(opts),
+            opts.skipKeys ?? STRUCTURAL_SKIP_KEYS,
+            hits,
+            detectFullTierKeyHits,
+        );
         const out = await runStrictAsync(walk, (text) => redactText(text, opts));
         appendHits(stats.hits, hits);
         return out;
@@ -127,7 +134,7 @@ async function visitEntries(
     const out: Record<string, unknown> = {};
     const skipKeys = opts.skipKeys ?? STRUCTURAL_SKIP_KEYS;
     for (const [key, child] of Object.entries(value)) {
-        const outKey = redactKey(key, stats.hits);
+        const outKey = redactKey(key, stats.hits, detectFullTierKeyHits);
         if (skipKeys.has(key) && isPrimitive(child)) {
             setOwnKey(out, outKey, child);
             continue;
