@@ -1,17 +1,27 @@
 """droidrun-redaction: secret redaction for text and JSON values.
 
-The Python implementation of the standard tier of the redaction spec (`spec/SPEC.md`). It redacts
+The Python implementation of the redaction spec (`spec/SPEC.md`), standard and full tier. It redacts
 byte for byte like the TypeScript package `@droidrun/redaction`. The default mode is `strict`: no path
 returns a value that was not scanned.
 """
 
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Literal, NamedTuple
 
 from ._keys import KeyVerdict, is_secret_key_name, key_verdict
 from ._placeholder import build_read_placeholder
-from ._scan import RULE_IDS, STRICT_LIMITS, SYNC_LIMITS, oversize_text, scan_text, tally
+from ._scan import (
+    RULE_IDS,
+    STRICT_LIMITS,
+    SYNC_LIMITS,
+    oversize_text,
+    scan_full_compat,
+    scan_full_strict,
+    scan_text,
+    tally,
+)
 from ._spec import KEYS
 from ._units import from_units, to_units
 from ._walk import WalkState, walk_json
@@ -27,7 +37,9 @@ __all__ = [
 ]
 
 Mode = Literal["strict", "compat"]
+Tier = Literal["standard", "full"]
 _MODES = ("strict", "compat")
+_TIERS = ("standard", "full")
 
 
 class RuleCount(NamedTuple):
@@ -42,7 +54,8 @@ class RedactResult:
     """`value` is the redacted text or JSON value, `hits` the rule counts in order of first hit.
 
     `error` is None, or the class name of the failure that made `value` the placeholder
-    `[REDACTED:redaction-failed]` (never a message: it could echo the input).
+    `[REDACTED:redaction-failed]` (standard tier) or `[REDACTED:error]` (full tier); never a message,
+    which could echo the input.
     """
 
     value: Any
@@ -54,6 +67,12 @@ def _check_mode(mode: str) -> bool:
     if mode not in _MODES:
         raise ValueError("mode must be 'strict' or 'compat'")
     return mode == "strict"
+
+
+def _check_tier(tier: str) -> bool:
+    if tier not in _TIERS:
+        raise ValueError("tier must be 'standard' or 'full'")
+    return tier == "full"
 
 
 def _check_limit(name: str, value: int | None, default: int) -> int:
@@ -73,15 +92,42 @@ def _failed(error: Exception) -> RedactResult:
     return RedactResult(build_read_placeholder(rule_id), (RuleCount(rule_id, 1),), type(error).__name__)
 
 
-def redact_text(text: str, *, mode: Mode = "strict", max_chars: int | None = None) -> RedactResult:
-    """Redact the secrets in `text` with the standard rules.
+def _redact_full_text(text: str, strict: bool, max_chars: int | None) -> RedactResult:
+    """SPEC 9.4. `compat` is TypeScript's full tier and has no length cap (`max_chars` is ignored)."""
+    counts: dict[str, int] = {}
+    try:
+        if strict:
+            limit = _check_limit("max_chars", max_chars, STRICT_LIMITS["maxChars"])
+            if len(text) > limit:
+                placeholder, hits = oversize_text(len(text))
+                tally(counts, hits)
+                return _result(placeholder, counts)
+        scanned, hits, error = (scan_full_strict if strict else scan_full_compat)(to_units(text))
+    except Exception as failure:
+        return _failed(failure)
+    tally(counts, hits)
+    return RedactResult(from_units(scanned), tuple(RuleCount(*item) for item in counts.items()), error)
+
+
+def redact_text(
+    text: str,
+    *,
+    tier: Tier = "standard",
+    mode: Mode = "strict",
+    max_chars: int | None = None,
+) -> RedactResult:
+    """Redact the secrets in `text` with the rules of `tier` (`"standard"` or `"full"`).
 
     A text longer than `max_chars` (default 4,000,000 UTF-16 units) is replaced whole by
-    `[REDACTED:size-limit]`. Never raises for the content of `text`.
+    `[REDACTED:size-limit]`; in the full tier only `strict` applies the cap (`compat` is TypeScript's
+    behaviour, which has none). Never raises for the content of `text`.
     """
-    _check_mode(mode)
+    strict = _check_mode(mode)
+    is_full = _check_tier(tier)
     if not isinstance(text, str):
         raise TypeError("text must be a str")
+    if is_full:
+        return _redact_full_text(text, strict, max_chars)
     limit = _check_limit("max_chars", max_chars, SYNC_LIMITS["maxChars"])
     counts: dict[str, int] = {}
     try:
@@ -101,6 +147,7 @@ def redact_text(text: str, *, mode: Mode = "strict", max_chars: int | None = Non
 def redact_json(
     value: Any,
     *,
+    tier: Tier = "standard",
     mode: Mode = "strict",
     skip_keys: Iterable[str] | None = None,
     max_depth: int | None = None,
@@ -109,24 +156,30 @@ def redact_json(
 ) -> RedactResult:
     """Redact the secrets in a parsed JSON value (dict, list, str, int, float, bool, None).
 
+    Every string is scanned with the rules of `tier`; keys always with the standard rules. In the full tier
+    `compat` is TypeScript's behaviour, which has no depth, node or character limit (the limits are ignored).
+
     Every string is scanned, a string under a secret key name is replaced, and so is a number under a
     singular secret key (`pin`, not `max_tokens`). Output keys keep the ECMAScript order. A value outside
     the JSON model becomes `[REDACTED:redaction-failed]`. `skip_keys` (default `type`, `id`) lists keys
     whose scalar values are never replaced because of a secret parent key; in `strict` they are still scanned.
     """
     strict = _check_mode(mode)
+    is_full = _check_tier(tier)
     limits = STRICT_LIMITS if strict else SYNC_LIMITS
+    unlimited = is_full and not strict
     if isinstance(skip_keys, str | bytes):
         raise TypeError("skip_keys must be a collection of str, not a single string")
     skip = frozenset(KEYS["structuralSkipKeys"] if skip_keys is None else skip_keys)
     if not all(isinstance(key, str) for key in skip):
         raise TypeError("skip_keys must hold str only")
     state = WalkState(
-        _check_limit("max_nodes", max_nodes, limits["maxNodes"]),
-        _check_limit("max_chars", max_chars, limits["maxChars"]),
-        _check_limit("max_depth", max_depth, limits["maxDepth"]),
+        math.inf if unlimited else _check_limit("max_nodes", max_nodes, limits["maxNodes"]),
+        math.inf if unlimited else _check_limit("max_chars", max_chars, limits["maxChars"]),
+        math.inf if unlimited else _check_limit("max_depth", max_depth, limits["maxDepth"]),
         skip,
         strict,
+        is_full,
     )
     try:
         out = walk_json(value, state)

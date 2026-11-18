@@ -13,7 +13,15 @@ from typing import Any
 from ._detect import Hit
 from ._keys import key_verdict, stronger_verdict
 from ._placeholder import build_read_placeholder, is_whole_placeholder
-from ._scan import RULE_IDS, is_overlong_key, redact_key, scan_units, tally
+from ._scan import (
+    RULE_IDS,
+    is_overlong_key,
+    redact_key,
+    scan_full_compat,
+    scan_full_strict,
+    scan_units,
+    tally,
+)
 from ._units import from_units, to_units
 
 _ARRAY_INDEX = re.compile("(?:0|[1-9][0-9]*)", re.ASCII)
@@ -43,7 +51,16 @@ class _Frame:
 
 
 class WalkState:
-    def __init__(self, max_nodes: int, max_chars: int, max_depth: int, skip: frozenset[str], strict: bool):
+    def __init__(
+        self,
+        max_nodes: float,
+        max_chars: float,
+        max_depth: float,
+        skip: frozenset[str],
+        strict: bool,
+        full: bool = False,
+    ):
+        self.full = full
         self.nodes = max_nodes
         self.chars = max_chars
         self.max_depth = max_depth
@@ -109,7 +126,9 @@ def _leaf_replacement(verdict: str, value: Any) -> str | None:
 
 
 def _scan_leaf_text(units: str, state: WalkState) -> str:
-    if not state.strict:
+    if state.full:
+        scanned, hits, _error = (scan_full_strict if state.strict else scan_full_compat)(units)
+    elif not state.strict:
         scanned, hits = scan_units(units)
     else:
         try:
