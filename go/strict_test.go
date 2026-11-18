@@ -194,9 +194,10 @@ func TestJSONKeyOrderDuplicatesAndNumbers(t *testing.T) {
 			`{"a":3,"b":2}`,
 		},
 		{
-			"numbers as ECMAScript writes them",
-			`[1.0, 1e2, 1E+21, -0, 9007199254740993, 0.1, 1e-7, 123456789012345680000, 1.5e300]`, Options{},
-			`[1,100,1e+21,0,9007199254740992,0.1,1e-7,123456789012345680000,1.5e+300]`,
+			"numbers are written back as they appeared",
+			`[1.0, 1e2, 1E+21, -0, 9007199254740993, 0.1, 1e-7, 123456789012345680000, 1.5e300, 1e400]`,
+			Options{},
+			`[1.0,1e2,1E+21,-0,9007199254740993,0.1,1e-7,123456789012345680000,1.5e300,1e400]`,
 		},
 		{
 			"numbers under secret keys",

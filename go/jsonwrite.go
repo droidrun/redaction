@@ -1,9 +1,7 @@
 package redaction
 
 import (
-	"math"
 	"strconv"
-	"strings"
 	"unicode/utf8"
 )
 
@@ -44,54 +42,6 @@ func appendString(out []byte, units []uint16) []byte {
 	return append(out, '"')
 }
 
-// appendNumber writes a double as ECMAScript Number::toString does. A non-finite number is
-// `null`, as JSON.stringify writes it.
-func appendNumber(out []byte, value float64) []byte {
-	if math.IsNaN(value) || math.IsInf(value, 0) {
-		return append(out, "null"...)
-	}
-	if value == 0 {
-		return append(out, '0')
-	}
-	if value < 0 {
-		out = append(out, '-')
-		value = -value
-	}
-	scientific := strconv.FormatFloat(value, 'e', -1, 64)
-	mantissa, exponentText, _ := strings.Cut(scientific, "e")
-	exponent, _ := strconv.Atoi(exponentText)
-	digits := strings.Replace(mantissa, ".", "", 1)
-	return append(out, formatDigits(digits, exponent+1)...)
-}
-
-// formatDigits places the shortest digits: `point` is the position of the decimal point
-// (ECMAScript n): plain notation for -6 < n <= 21, an exponent otherwise.
-func formatDigits(digits string, point int) string {
-	count := len(digits)
-	switch {
-	case count <= point && point <= 21:
-		return digits + strings.Repeat("0", point-count)
-	case 0 < point && point <= 21:
-		return digits[:point] + "." + digits[point:]
-	case -6 < point && point <= 0:
-		return "0." + strings.Repeat("0", -point) + digits
-	}
-	return exponential(digits, point-1)
-}
-
-func exponential(digits string, exponent int) string {
-	sign := "+"
-	if exponent < 0 {
-		sign = "-"
-		exponent = -exponent
-	}
-	mantissa := digits[:1]
-	if len(digits) > 1 {
-		mantissa += "." + digits[1:]
-	}
-	return mantissa + "e" + sign + strconv.Itoa(exponent)
-}
-
 type writeFrame struct {
 	node  *node
 	index int
@@ -127,7 +77,7 @@ func writeStep(out []byte, top *writeFrame) ([]byte, *node) {
 		case kindBool:
 			return finishWith(out, top, strconv.FormatBool(value.flag)), nil
 		case kindNumber:
-			out = appendNumber(out, value.num)
+			out = append(out, value.raw...)
 			top.index = -1
 			return out, nil
 		case kindString:

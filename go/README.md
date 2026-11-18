@@ -34,9 +34,9 @@ redaction.IsSecretKeyName("x-auth-token") // true
   leaf is scanned; a string under a secret-named key (`password`, `apiKey`, `x-auth-token`, ...)
   is replaced whole; so is a number under a singular secret key (`pin`, not `max_tokens`).
   Object keys that hold a secret are redacted too. Output is compact JSON, object keys in
-  ECMAScript order (integer-like keys first), a repeated key keeps its last value, numbers are
-  written as ECMAScript writes the nearest double (`1.0` is `1`, `9007199254740993` is
-  `9007199254740992`). Input that is not one JSON value gives `ErrInvalidJSON` and, as the output,
+  ECMAScript order (integer-like keys first), a repeated key keeps its last value, numbers that are
+  not replaced are written back exactly as they appeared (`1.0` stays `1.0`; the spec compares
+  numbers as doubles, so the other languages may write `1`). Input that is not one JSON value gives `ErrInvalidJSON` and, as the output,
   the `RedactText` redaction of the raw input (with its `Result`): never the input itself, never
   nil, so a caller that logs the output on error cannot leak. The error never quotes the input.
 - `IsSecretKeyName(key string) bool` is the key-name predicate of the spec.

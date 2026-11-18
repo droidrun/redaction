@@ -3,7 +3,6 @@ package redaction
 import (
 	"errors"
 	"sort"
-	"strconv"
 	"unicode/utf8"
 )
 
@@ -27,7 +26,7 @@ const (
 type node struct {
 	kind    kind
 	flag    bool
-	num     float64
+	raw     []byte
 	str     []uint16
 	strSize int
 	items   []*node
@@ -246,17 +245,14 @@ func (p *parser) numberToken() ([]byte, error) {
 	return p.data[start:p.at], nil
 }
 
-// number reads a number and converts it to the nearest double.
+// number reads a number and keeps its text: a number that is not replaced is written back exactly
+// as it appeared (it is a slice of the input, valid until the call returns).
 func (p *parser) number() (*node, error) {
 	token, err := p.numberToken()
 	if err != nil {
 		return nil, err
 	}
-	value, err := strconv.ParseFloat(string(token), 64)
-	if err != nil && !errors.Is(err, strconv.ErrRange) {
-		return nil, ErrInvalidJSON
-	}
-	return &node{kind: kindNumber, num: value}, nil
+	return &node{kind: kindNumber, raw: token}, nil
 }
 
 // charge takes units off the character budget (strict only; the budget does not go below zero).
