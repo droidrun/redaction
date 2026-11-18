@@ -1,0 +1,21 @@
+[project]
+name = "droidrun-redaction"
+version = "0.2.0"
+description = "Secret redaction for text and JSON values (Python implementation of the redaction spec)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest==9.1.1"]
+
+[build-system]
+requires = ["uv_build==0.13.7"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "droidrun_redaction"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error"]
