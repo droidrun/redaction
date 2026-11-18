@@ -3,9 +3,9 @@
  * overflow on deep input), bounded by depth, node and total-character limits, and
  * it never returns text it did not scan (also under skip keys: they only exempt a
  * string from the key-context replacement, the leaf scanner still runs on it).
- * Whatever it cannot scan becomes a placeholder: `[REDACTED:size-limit]` past a node/character limit or for an over-long
- * key, `[REDACTED:depth-limit]` past the depth limit, `[REDACTED:circular]` for a
- * cycle, `[REDACTED:redaction-failed]` for a value outside the JSON model.
+ * Whatever it cannot scan becomes a placeholder: `[REDACTED:size-limit]` past a node/character
+ * limit or for an over-long key, `[REDACTED:depth-limit]` past the depth limit,
+ * `[REDACTED:circular]` for a cycle, `[REDACTED:redaction-failed]` for a value outside the JSON model.
  *
  * The walker is a generator: it yields each string leaf and receives the scanned
  * result, so one traversal serves the sync and the async entry points. Limits and
