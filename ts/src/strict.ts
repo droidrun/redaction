@@ -144,16 +144,22 @@ function* enter(
     if (depth >= state.limits.maxDepth) return { value: placeholderFor(ruleIds.depthLimit, state) };
     if (state.ancestors.has(value)) return { value: placeholderFor(ruleIds.circular, state) };
     const frame = openFrame(value, verdict, depth, state);
-    if (frame.keys !== null) frame.placer = newPlacer(yield* reservedKeys(frame.keys));
+    if (frame.keys !== null) frame.placer = newPlacer(yield* reservedKeys(frame.keys, state.chars));
     return { frame };
 }
 
 /** The input keys that hold a placeholder and that the key scan leaves as they are (SPEC 8): scanned once,
- *  through the leaf scanner, without a budget charge and without hits. */
-function* reservedKeys(keys: string[]): Generator<string, Set<string>, LeafResult> {
+ *  through the leaf scanner, without a budget charge and without hits. Only a key that fits the budget can be
+ *  left as it is (a later one becomes the size-limit placeholder), so the scan stops where the running total
+ *  of the keys' lengths passes the remaining budget: the work is bounded by `maxChars`. */
+function* reservedKeys(keys: string[], budget: number): Generator<string, Set<string>, LeafResult> {
     const reserved = new Set<string>();
-    for (const key of keysHoldingPlaceholder(keys)) {
-        if (isOverlongKey(key)) continue;
+    const candidates = new Set(keysHoldingPlaceholder(keys));
+    let total = 0;
+    for (const key of keys) {
+        total += key.length;
+        if (total > budget) break;
+        if (!candidates.has(key) || isOverlongKey(key)) continue;
         if ((yield key).text === key) reserved.add(key);
     }
     return reserved;

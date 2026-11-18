@@ -230,3 +230,19 @@ describe('key collisions in the walkers (SPEC 8)', () => {
         expect(out).toEqual({ '[REDACTED:github]': 1 });
     });
 });
+
+describe('strict key reservation is bounded by the budget (SPEC 8)', () => {
+    test('only keys that fit the remaining budget are scanned for reservation', async () => {
+        const input = Object.fromEntries(
+            Array.from({ length: 2000 }, (_, at) => [`[REDACTED:rule${String(at).padStart(5, '0')}]`, at]),
+        );
+        let scans = 0;
+        const detect = async () => {
+            scans += 1;
+            return [];
+        };
+        await redactJsonValue(input, { hits: [] }, { mode: 'strict', maxChars: 200, detect });
+        // 200 units hold 8 keys of 24 units: the reservation scan stops there, the walk scans what it reads.
+        expect(scans).toBeLessThan(30);
+    });
+});
