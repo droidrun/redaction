@@ -2,12 +2,17 @@ package redaction
 
 import "strings"
 
-type verdict int
+// Verdict is what a key name makes of the values below it (SPEC section 6).
+type Verdict int
 
 const (
-	verdictNone verdict = iota
-	verdictString
-	verdictAny
+	// VerdictNone: the key does not name a secret; values are scanned as text.
+	VerdictNone Verdict = iota
+	// VerdictString: a string value under the key is replaced, a number is kept (`tokens`,
+	// `max_tokens`: counts are never hidden).
+	VerdictString
+	// VerdictAny: a string and a number under the key are replaced (`password`, `pin`).
+	VerdictAny
 )
 
 // keyNames is the key-name matcher of SPEC section 6, from keys.json.
@@ -204,23 +209,23 @@ var redactedOpen = asUnits("[REDACTED")
 
 // keyVerdict is what a key makes of the values below it. A key that holds placeholders is
 // classified without them, so a second pass gives the first verdict.
-func (k *keyNames) keyVerdict(raw []uint16) verdict {
+func (k *keyNames) keyVerdict(raw []uint16) Verdict {
 	key := raw
 	if containsUnits(raw, redactedOpen) {
 		key = joinSegments(k.placeholders.literalSegments(newText(raw)))
 	}
 	if !k.matchKey(key, true) {
-		return verdictNone
+		return VerdictNone
 	}
 	if !k.matchKey(key, false) {
-		return verdictString
+		return VerdictString
 	}
 	for _, word := range splitKeyWords(key) {
 		if k.countWords[word] {
-			return verdictString
+			return VerdictString
 		}
 	}
-	return verdictAny
+	return VerdictAny
 }
 
 func joinSegments(segments [][]uint16) []uint16 {
@@ -234,6 +239,6 @@ func joinSegments(segments [][]uint16) []uint16 {
 	return joined
 }
 
-func strongerVerdict(a verdict, b verdict) verdict {
+func strongerVerdict(a Verdict, b Verdict) Verdict {
 	return max(a, b)
 }

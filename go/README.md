@@ -40,6 +40,13 @@ redaction.IsSecretKeyName("x-auth-token") // true
   the `RedactText` redaction of the raw input (with its `Result`): never the input itself, never
   nil, so a caller that logs the output on error cannot leak. The error never quotes the input.
 - `IsSecretKeyName(key string) bool` is the key-name predicate of the spec.
+- `KeyVerdict(key string) Verdict` is what a key makes of its values: `VerdictNone`,
+  `VerdictString` (strings are replaced, numbers kept: `tokens`, `max_tokens`) or `VerdictAny`
+  (strings and numbers are replaced: `password`, `pin`).
+- `RedactField(key string, value any) any` redacts one attribute value by its key, for log and
+  span handlers: a string under a secret key becomes `[REDACTED:key-context]`, any other string is
+  scanned, a number is replaced only under `VerdictAny` (counts such as `max_tokens` stay), every
+  other type is returned as it is.
 - `Options{Mode, SkipKeys, MaxDepth, MaxNodes, MaxChars}`; a nil limit is the spec default and an
   explicit one is used as given, so `redaction.Limit(0)` is a limit of zero (as in the TypeScript
   package). `SkipKeys` replaces the default skip keys (`type`, `id`); nil keeps them, an empty
@@ -51,6 +58,21 @@ redaction.IsSecretKeyName("x-auth-token") // true
 
 Redacted output keeps the text around the hits byte for byte. Input that is not valid UTF-8 is
 read with each invalid byte as one U+FFFD (never skipped), and the output holds that U+FFFD.
+
+### Logging with slog
+
+```go
+handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
+		return slog.Any(attr.Key, redaction.RedactField(attr.Key, attr.Value.Resolve().Any()))
+	},
+})
+slog.New(handler).Info("login", "password", "hunter2xx", "max_tokens", 100)
+// level=INFO msg=login password=[REDACTED:key-context] max_tokens=100
+```
+
+`ReplaceAttr` runs on every non-group attribute, so strings are scanned and secret keys are
+replaced; `example_test.go` runs this.
 
 ## Modes
 

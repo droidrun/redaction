@@ -16,7 +16,7 @@ type frame struct {
 	src     *node
 	idx     int
 	out     *node
-	verdict verdict
+	verdict Verdict
 	depth   int
 	outKey  []uint16
 	index   map[string]int
@@ -83,8 +83,8 @@ func (w *walker) limit(ruleID string) *node {
 }
 
 // leafReplacement is SPEC 6 `leafPlaceholder`: the key-context placeholder, or nil to keep.
-func (w *walker) leafReplacement(v verdict, value *node) *node {
-	if v == verdictNone {
+func (w *walker) leafReplacement(v Verdict, value *node) *node {
+	if v == VerdictNone {
 		return nil
 	}
 	switch value.kind {
@@ -93,7 +93,7 @@ func (w *walker) leafReplacement(v verdict, value *node) *node {
 			return nil
 		}
 	case kindNumber:
-		if v != verdictAny {
+		if v != VerdictAny {
 			return nil
 		}
 	default:
@@ -104,7 +104,7 @@ func (w *walker) leafReplacement(v verdict, value *node) *node {
 	return stringNode(w.e.placeholders.readUnits(id))
 }
 
-func (w *walker) scanLeaf(value *node, v verdict) *node {
+func (w *walker) scanLeaf(value *node, v Verdict) *node {
 	length := value.strLen()
 	if length == 0 {
 		return value
@@ -135,7 +135,7 @@ func (w *walker) scanUnits(units []uint16) (out []uint16) {
 }
 
 // enter visits one value. A leaf is finished at once; a container opens a frame.
-func (w *walker) enter(value *node, v verdict, depth int) (*node, *frame) {
+func (w *walker) enter(value *node, v Verdict, depth int) (*node, *frame) {
 	ruleIDs := &w.e.spec.algorithms.RuleIDs
 	if w.nodes <= 0 {
 		return w.limit(ruleIDs.SizeLimit), nil
@@ -210,7 +210,7 @@ func (w *walker) cutHere(top *frame) {
 	w.cut(top, top.src.members[top.idx].key)
 }
 
-func (w *walker) descend(top *frame, value *node, v verdict) *frame {
+func (w *walker) descend(top *frame, value *node, v Verdict) *frame {
 	finished, opened := w.enter(value, v, top.depth+1)
 	if opened != nil {
 		return opened
@@ -247,7 +247,7 @@ func (w *walker) outputKey(key []uint16) []uint16 {
 // only: strict scans a string, compat keeps it as it is.
 func (w *walker) skipValue(top *frame, value *node) *frame {
 	if w.strict && value.kind == kindString {
-		return w.descend(top, value, verdictNone)
+		return w.descend(top, value, VerdictNone)
 	}
 	w.nodes--
 	top.place(value)
@@ -255,7 +255,7 @@ func (w *walker) skipValue(top *frame, value *node) *frame {
 }
 
 func (w *walker) walk(root *node) *node {
-	finished, opened := w.enter(root, verdictNone, 0)
+	finished, opened := w.enter(root, VerdictNone, 0)
 	if opened == nil {
 		return finished
 	}
