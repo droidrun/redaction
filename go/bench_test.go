@@ -41,3 +41,30 @@ func BenchmarkRedactText4MB(b *testing.B) {
 		RedactText(text, Options{})
 	}
 }
+
+func BenchmarkRedactTextFullLogLine(b *testing.B) {
+	line := repeatToSize(benchLine, 2048)
+	b.SetBytes(int64(len(line)))
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		RedactText(line, Options{Tier: TierFull})
+	}
+}
+
+func BenchmarkRedactTextFullLogLineWithSecret(b *testing.B) {
+	line := repeatToSize(benchLine, 2000) + " npm_" + strings.Repeat("A", 36)
+	b.SetBytes(int64(len(line)))
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		RedactText(line, Options{Tier: TierFull})
+	}
+}
+
+func BenchmarkRedactTextFull4MB(b *testing.B) {
+	text := repeatToSize(benchLine, 3_900_000)
+	b.SetBytes(int64(len(text)))
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		RedactText(text, Options{Tier: TierFull})
+	}
+}
