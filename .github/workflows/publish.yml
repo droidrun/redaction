@@ -12,6 +12,9 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ts
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -31,6 +34,9 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: '1.4.4'
+      - name: Spec copies and hash match the spec on the tagged commit
+        working-directory: .
+        run: tools/sync-spec --check
       - name: Setup pnpm
         run: corepack enable && corepack prepare pnpm@10.18.1 --activate
       - run: pnpm install --frozen-lockfile
