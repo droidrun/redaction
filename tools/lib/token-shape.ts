@@ -12,24 +12,37 @@ import type { SpecDir } from './spec-patterns.ts';
 type Part = Record<string, unknown>;
 const MAX_UNIT = 0xffff;
 
-/** The units of a non-negated class `[...]` of the grammar (ranges, escaped punctuation). */
-export function classUnits(source: string): Set<number> | undefined {
-    if (!source.startsWith('[') || !source.endsWith(']') || source[1] === '^') return undefined;
-    const units = new Set<number>();
-    const body = source.slice(1, -1);
-    const items: number[] = [];
-    const isRange: boolean[] = [];
+type Atom = { unit: number; isOperator: boolean };
+
+/** The atoms of a class body: an escaped unit is a plain unit, an unescaped `-` may be a range operator. */
+function atomsOf(body: string): Atom[] {
+    const atoms: Atom[] = [];
     for (let i = 0; i < body.length; i++) {
         const escaped = body[i] === '\\';
         if (escaped) i += 1;
-        items.push((body[i] as string).charCodeAt(0));
-        isRange.push(!escaped && body[i] === '-' && items.length > 1 && i < body.length - 1);
+        atoms.push({ unit: (body[i] as string).charCodeAt(0), isOperator: !escaped && body[i] === '-' });
     }
-    for (let i = 0; i < items.length; i++) {
-        if (isRange[i] === true && i + 1 < items.length) {
-            for (let unit = items[i - 1] as number; unit <= (items[i + 1] as number); unit++) units.add(unit);
-            i += 1;
-        } else units.add(items[i] as number);
+    return atoms;
+}
+
+/** The units of a non-negated class `[...]` of the grammar, read the way JavaScript reads it: an atom, `-`, an atom
+ *  is a range and consumes both endpoints; any other `-` (first, last, or right after a range) is the unit `-`. */
+export function classUnits(source: string): Set<number> | undefined {
+    if (!source.startsWith('[') || !source.endsWith(']') || source[1] === '^') return undefined;
+    const atoms = atomsOf(source.slice(1, -1));
+    const units = new Set<number>();
+    for (let i = 0; i < atoms.length; i++) {
+        const atom = atoms[i] as Atom;
+        const dash = atoms[i + 1];
+        const end = atoms[i + 2];
+        const isRange = dash?.isOperator === true && end !== undefined;
+        if (!isRange) {
+            units.add(atom.unit);
+            continue;
+        }
+        if (end.unit < atom.unit) return undefined;
+        for (let unit = atom.unit; unit <= end.unit; unit++) units.add(unit);
+        i += 2;
     }
     return units.size > 0 && Math.max(...units) <= MAX_UNIT ? units : undefined;
 }

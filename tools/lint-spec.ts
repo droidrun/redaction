@@ -260,6 +260,8 @@ type Plant = {
     field: string;
     value: unknown;
     expect: string;
+    /** Further fields of the rule set with the planted one. */
+    extra?: Record<string, unknown>;
     list?: 'pipeline' | 'full';
 };
 
@@ -436,6 +438,15 @@ const PLANTS: Plant[] = [
         expect: 'does not cover',
     },
     {
+        name: 'chained range [a-b-c] read as two ranges (the second hyphen is a unit)',
+        list: 'full',
+        rule: 'gitlab',
+        field: 'parts',
+        value: [{ lit: 'x' }, { runClass: '[a-b-c]', min: 1, max: 2 }],
+        extra: { notAfter: '[a-c]' },
+        expect: 'does not cover',
+    },
+    {
         name: 'alternative that is a prefix of another',
         list: 'full',
         rule: 'vercel',
@@ -466,6 +477,7 @@ function lintPlanted(plant: Plant): Promise<Problem[]> {
             (rule) => rule.id === plant.rule,
         ) as Record<string, unknown>;
         target[plant.field] = plant.value;
+        Object.assign(target, plant.extra ?? {});
         writeFileSync(rulesPath, JSON.stringify(rules, null, 2));
         return lintDir(copy, { scaling: false, recheck: false });
     } finally {
