@@ -23,6 +23,8 @@ type engine struct {
 	evidence     *evidence
 	keys         *keyNames
 	pipeline     []pipelineEntry
+	full         []pipelineEntry
+	letters      *letterTable
 	whitespace   *unitSet
 	skipKeys     [][]uint16
 	failureIDs   map[string]bool
@@ -107,12 +109,14 @@ func newEngine(spec *loadedSpec) (*engine, error) {
 	for _, key := range spec.keys.StructuralSkipKeys {
 		e.skipKeys = append(e.skipKeys, decodeUTF8(key))
 	}
-	for _, raw := range spec.rules.Pipeline {
-		entry, err := e.buildRule(b, raw)
-		if err != nil {
-			return nil, err
-		}
-		e.pipeline = append(e.pipeline, entry)
+	if e.letters, err = parseLetters(spec.algorithms.Letters.Ranges); err != nil {
+		return nil, err
+	}
+	if e.pipeline, err = e.buildRules(b, spec.rules.Pipeline, e.standardKinds()); err != nil {
+		return nil, err
+	}
+	if e.full, err = e.buildRules(b, spec.rules.Full, e.fullKinds()); err != nil {
+		return nil, err
 	}
 	if b.err != nil {
 		return nil, b.err
@@ -158,12 +162,12 @@ type ruleHead struct {
 	Kind string `json:"kind"`
 }
 
-func (e *engine) buildRule(b *builder, raw json.RawMessage) (pipelineEntry, error) {
-	var head ruleHead
-	if err := decodeRule(raw, &head); err != nil {
-		return pipelineEntry{}, err
-	}
-	builders := map[string]func(*builder, json.RawMessage) (scanner, error){
+type ruleBuilder func(*builder, json.RawMessage) (scanner, error)
+
+// standardKinds are the rule kinds of the standard tier (`pipeline`); anything else in it stops the
+// package at load time.
+func (e *engine) standardKinds() map[string]ruleBuilder {
+	return map[string]ruleBuilder{
 		"regex":          e.newRegexRule,
 		"dotted-token":   e.newDottedToken,
 		"pem-blocks":     e.newPemBlocks,
@@ -174,15 +178,40 @@ func (e *engine) buildRule(b *builder, raw json.RawMessage) (pipelineEntry, erro
 		"unquoted-pairs": e.newUnquotedPairs,
 		"query-values":   e.newQueryValues,
 	}
-	build, known := builders[head.Kind]
-	if !known {
-		return pipelineEntry{}, errors.New("redaction: unknown rule kind in the spec")
+}
+
+// fullKinds are the rule kinds of the full tier (`full`).
+func (e *engine) fullKinds() map[string]ruleBuilder {
+	return map[string]ruleBuilder{
+		"regex":          e.newRegexRule,
+		"token":          e.newTokenRule,
+		"dash-chain":     e.newDashChain,
+		"sendgrid-key":   e.newSendgridKey,
+		"pem-key":        e.newPemKey,
+		"credential-uri": e.newCredentialURI,
 	}
-	rule, err := build(b, raw)
-	if err != nil {
-		return pipelineEntry{}, err
+}
+
+func (e *engine) buildRules(
+	b *builder, raws []json.RawMessage, kinds map[string]ruleBuilder,
+) ([]pipelineEntry, error) {
+	rules := make([]pipelineEntry, 0, len(raws))
+	for _, raw := range raws {
+		var head ruleHead
+		if err := decodeRule(raw, &head); err != nil {
+			return nil, err
+		}
+		build, known := kinds[head.Kind]
+		if !known {
+			return nil, errors.New("redaction: unknown rule kind in the spec")
+		}
+		rule, err := build(b, raw)
+		if err != nil {
+			return nil, err
+		}
+		rules = append(rules, pipelineEntry{id: head.ID, scanner: rule})
 	}
-	return pipelineEntry{id: head.ID, scanner: rule}, nil
+	return rules, nil
 }
 
 // detect is the standard tier on a whole text: every rule in pipeline order, hits merged.

@@ -226,3 +226,18 @@ func (a *anchored) end(t *text, at int) int {
 	}
 	return t.unitAt(start + loc[1])
 }
+
+// indexFrom is the unit index of the first occurrence of `literal` at or after unit `from`, or -1.
+// A literal holds no surrogate (a unit of D800 to DFFF is not in the mapped text as itself), so a
+// match in the mapped text is a match in the units.
+func (t *text) indexFrom(literal string, from int) int {
+	if from >= t.length() {
+		return -1
+	}
+	start := t.byteAt(from)
+	at := strings.Index(t.mapped[start:], literal)
+	if at < 0 {
+		return -1
+	}
+	return t.unitAt(start + at)
+}

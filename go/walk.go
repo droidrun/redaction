@@ -4,6 +4,7 @@ package redaction
 // deep input costs no stack.
 type walker struct {
 	e        *engine
+	mode     scanMode
 	strict   bool
 	nodes    int
 	chars    int
@@ -120,10 +121,11 @@ func (w *walker) scanLeaf(value *node, v Verdict) *node {
 	return stringNode(w.scanUnits(value.str))
 }
 
-// scanUnits runs the standard rules on one leaf. In strict mode a failure replaces that leaf;
-// in compat mode it ends the whole walk (recovered by the caller).
+// scanUnits runs the rules of the tier on one leaf. A failure replaces that leaf: the full tier
+// handles it itself (SPEC 9.4); in the standard tier, strict mode replaces the leaf and compat
+// mode ends the whole walk (recovered by the caller).
 func (w *walker) scanUnits(units []uint16) (out []uint16) {
-	if w.strict {
+	if w.strict && w.mode.tier == TierStandard {
 		defer func() {
 			if recover() != nil {
 				w.rec.add(w.e.spec.algorithms.RuleIDs.Failed)
@@ -131,7 +133,7 @@ func (w *walker) scanUnits(units []uint16) (out []uint16) {
 			}
 		}()
 	}
-	return w.e.redactUnits(units, w.rec)
+	return w.e.scan(units, w.mode, w.rec)
 }
 
 // enter visits one value. A leaf is finished at once; a container opens a frame.

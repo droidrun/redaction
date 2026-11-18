@@ -1,9 +1,8 @@
 // Package redaction finds secrets in text and JSON values and replaces them with placeholders
 // such as `[REDACTED:generic-keyword]`. It is the Go interpreter of the language-neutral spec in
-// spec/ of the same repository and gives the same output as the TypeScript package.
-//
-// Only the standard tier exists in this version. Output of a call never contains text that was
-// not scanned in the default Strict mode.
+// spec/ of the same repository and gives the same output as the TypeScript package, in both tiers:
+// the standard tier (the default) and the full tier (the standard rules plus the ported secretlint
+// preset). In the default Strict mode a call never returns text that was not scanned.
 package redaction
 
 import (
@@ -22,9 +21,24 @@ const (
 	Compat
 )
 
+// Tier selects the rule set.
+type Tier int
+
+const (
+	// TierStandard runs the standard rules. It is the zero value.
+	TierStandard Tier = iota
+	// TierFull runs the standard rules and the full-tier rules (key formats, connection strings,
+	// private keys, ...). The full-tier rules see the first 2,000,000 units of a text, in windows.
+	TierFull
+)
+
 // Options are the parameters of a call. A nil limit is the spec default; an explicit limit is
 // used as given, so Limit(0) is a limit of zero (as in the TypeScript package).
+//
+// The full tier in Compat mode has no length, depth or node limit (SPEC 9.4, as in the TypeScript
+// package): MaxChars, MaxDepth and MaxNodes are not used there. Use Strict for limits.
 type Options struct {
+	Tier Tier
 	Mode Mode
 	// SkipKeys replaces the default skip keys (`type`, `id`): a primitive value under such a key
 	// is not replaced by key context. A nil slice keeps the default; an empty one skips nothing.
@@ -92,6 +106,28 @@ func (r *recorder) result() Result {
 	return Result{Hits: r.hits, Err: r.failure}
 }
 
+// scanMode says how a text or a leaf is scanned: which tier, and what a failure or a size limit does.
+type scanMode struct {
+	tier     Tier
+	strict   bool
+	maxChars int
+}
+
+func (e *engine) scanMode(opts Options, lim limits) scanMode {
+	return scanMode{tier: opts.Tier, strict: opts.Mode != Compat, maxChars: lim.maxChars}
+}
+
+// scan scans a text of units in the given mode and returns it with the hits spliced.
+func (e *engine) scan(units []uint16, mode scanMode, rec *recorder) []uint16 {
+	switch {
+	case mode.tier == TierFull && mode.strict:
+		return e.redactFullStrict(units, mode.maxChars, rec)
+	case mode.tier == TierFull:
+		return e.redactFullCompat(units, rec)
+	}
+	return e.redactUnits(units, rec)
+}
+
 // redactUnits scans a text of units with the standard rules and returns it with the hits spliced.
 func (e *engine) redactUnits(units []uint16, rec *recorder) []uint16 {
 	if len(units) < e.spec.algorithms.Text.MinScanLength {
@@ -113,16 +149,17 @@ func orDefault(value *int, fallback int) int {
 	return *value
 }
 
-// RedactText redacts one text with the standard tier. Input that is not valid UTF-8 is read with
-// each invalid byte as U+FFFD, and the output holds that U+FFFD. It never panics: an internal
-// failure gives `[REDACTED:redaction-failed]`.
+// RedactText redacts one text. Input that is not valid UTF-8 is read with each invalid byte as
+// U+FFFD, and the output holds that U+FFFD. It never panics: an internal failure gives
+// `[REDACTED:redaction-failed]` (standard tier) or `[REDACTED:error]` (full tier).
 func RedactText(s string, opts Options) (string, Result) {
 	e := theEngine
 	rec := newRecorder(e)
-	return e.redactTextSafely(s, e.limits(opts).maxChars, rec), rec.result()
+	mode := e.scanMode(opts, e.limits(opts))
+	return e.redactTextSafely(s, mode, rec), rec.result()
 }
 
-func (e *engine) redactTextSafely(s string, maxChars int, rec *recorder) (out string) {
+func (e *engine) redactTextSafely(s string, mode scanMode, rec *recorder) (out string) {
 	defer func() {
 		if recover() != nil {
 			failed := e.spec.algorithms.RuleIDs.Failed
@@ -130,7 +167,7 @@ func (e *engine) redactTextSafely(s string, maxChars int, rec *recorder) (out st
 			out = e.placeholders.read(failed)
 		}
 	}()
-	return e.redactText(s, maxChars, rec)
+	return e.redactText(s, mode, rec)
 }
 
 // exceedsChars is true when the text certainly or exactly holds more than maxChars units. A unit
@@ -139,18 +176,18 @@ func exceedsChars(s string, maxChars int) bool {
 	return maxChars < unbounded/3 && len(s) > 3*maxChars
 }
 
-func (e *engine) redactText(s string, maxChars int, rec *recorder) string {
+func (e *engine) redactText(s string, mode scanMode, rec *recorder) string {
 	sizeLimit := e.spec.algorithms.RuleIDs.SizeLimit
-	if exceedsChars(s, maxChars) {
+	if exceedsChars(s, mode.maxChars) {
 		rec.add(sizeLimit)
 		return e.placeholders.read(sizeLimit)
 	}
 	units := decodeUTF8(s)
-	if len(units) > maxChars {
+	if len(units) > mode.maxChars {
 		rec.add(sizeLimit)
 		return e.placeholders.read(sizeLimit)
 	}
-	out := e.redactUnits(units, rec)
+	out := e.scan(units, mode, rec)
 	if len(rec.hits) == 0 && utf8.ValidString(s) {
 		return s
 	}
@@ -170,7 +207,11 @@ type limits struct {
 }
 
 // limits are the limits of a call: the options of the caller over the spec defaults of the mode.
+// The full tier in compat mode has none (SPEC 9.4).
 func (e *engine) limits(opts Options) limits {
+	if opts.Tier == TierFull && opts.Mode == Compat {
+		return limits{maxChars: unbounded, maxDepth: unbounded, maxNodes: unbounded}
+	}
 	defaults := limits{
 		e.spec.algorithms.Strict.MaxChars,
 		e.spec.algorithms.Strict.MaxDepth,
@@ -187,7 +228,7 @@ func (e *engine) limits(opts Options) limits {
 	}
 }
 
-// RedactJSON redacts a JSON value with the standard tier and the key-name rules: a string leaf
+// RedactJSON redacts a JSON value with the rules of the tier and the key-name rules: a string leaf
 // is scanned, a string under a secret-named key is replaced, and so is a number under a singular
 // secret key. Object keys come out in ECMAScript order (integer-like keys first); for a repeated
 // key the last value wins; numbers are written as ECMAScript writes the nearest double. The
@@ -233,6 +274,7 @@ func (e *engine) walkSafely(root *node, opts Options, lim limits, rec *recorder)
 func (e *engine) newWalker(opts Options, lim limits, rec *recorder) *walker {
 	w := &walker{
 		e:        e,
+		mode:     e.scanMode(opts, lim),
 		strict:   opts.Mode != Compat,
 		nodes:    lim.maxNodes,
 		chars:    lim.maxChars,

@@ -10,17 +10,27 @@ type filters struct {
 	requireClass    *unitSet
 	requireLiteral  []uint16
 	dropPlaceholder bool
+	ignoreEquals    [][]uint16
 	placeholders    *placeholders
 }
 
-func (e *engine) newFilters(b *builder, requireClass string, literal string, drop bool) filters {
+// filterSpec holds the filter fields of a rule.
+type filterSpec struct {
+	RequireClass    string   `json:"requireClass"`
+	RequireLiteral  string   `json:"requireLiteral"`
+	DropPlaceholder bool     `json:"dropPlaceholder"`
+	IgnoreEquals    []string `json:"ignoreEquals"`
+}
+
+func (e *engine) newFilters(b *builder, spec filterSpec) filters {
 	found := filters{
-		requireLiteral:  decodeUTF8(literal),
-		dropPlaceholder: drop,
+		requireLiteral:  decodeUTF8(spec.RequireLiteral),
+		dropPlaceholder: spec.DropPlaceholder,
+		ignoreEquals:    asUnitLists(spec.IgnoreEquals),
 		placeholders:    e.placeholders,
 	}
-	if requireClass != "" {
-		found.requireClass = b.class(requireClass)
+	if spec.RequireClass != "" {
+		found.requireClass = b.class(spec.RequireClass)
 	}
 	return found
 }
@@ -33,17 +43,20 @@ func (f *filters) passes(t *text, candidate span) bool {
 	if len(f.requireLiteral) > 0 && !containsUnits(value, f.requireLiteral) {
 		return false
 	}
+	for _, ignored := range f.ignoreEquals {
+		if equalUnits(value, ignored) {
+			return false
+		}
+	}
 	return !f.dropPlaceholder || !f.placeholders.isValue(t, candidate.start, candidate.end)
 }
 
 type regexSpec struct {
-	Pattern         string `json:"pattern"`
-	Group           int    `json:"group"`
-	NotBefore       string `json:"notBefore"`
-	NotAfter        string `json:"notAfter"`
-	RequireClass    string `json:"requireClass"`
-	RequireLiteral  string `json:"requireLiteral"`
-	DropPlaceholder bool   `json:"dropPlaceholder"`
+	filterSpec
+	Pattern   string `json:"pattern"`
+	Group     int    `json:"group"`
+	NotBefore string `json:"notBefore"`
+	NotAfter  string `json:"notAfter"`
 }
 
 // regexRule is SPEC 4.1: one portable pattern, optional neighbour guards and filters.
@@ -63,7 +76,7 @@ func (e *engine) newRegexRule(b *builder, raw json.RawMessage) (scanner, error) 
 	rule := &regexRule{
 		search:  b.searcher(spec.Pattern),
 		group:   spec.Group,
-		filters: e.newFilters(b, spec.RequireClass, spec.RequireLiteral, spec.DropPlaceholder),
+		filters: e.newFilters(b, spec.filterSpec),
 	}
 	if spec.NotBefore != "" {
 		rule.notBefore = b.class(spec.NotBefore)
@@ -290,11 +303,10 @@ func (p *pemBlocks) scan(t *text) []span {
 }
 
 type cookieSpec struct {
-	Prefix          string `json:"prefix"`
-	PlainChar       string `json:"plainChar"`
-	EscapeStop      string `json:"escapeStop"`
-	RequireLiteral  string `json:"requireLiteral"`
-	DropPlaceholder bool   `json:"dropPlaceholder"`
+	filterSpec
+	Prefix     string `json:"prefix"`
+	PlainChar  string `json:"plainChar"`
+	EscapeStop string `json:"escapeStop"`
 }
 
 // cookieLines is SPEC 4.4: `Cookie: a=b; c=d` up to the end of the line.
@@ -312,7 +324,7 @@ func (e *engine) newCookieLines(b *builder, raw json.RawMessage) (scanner, error
 	return &cookieLines{
 		search:  b.searcher(spec.Prefix),
 		run:     runClasses{plain: b.class(spec.PlainChar), stop: b.class(spec.EscapeStop)},
-		filters: e.newFilters(b, "", spec.RequireLiteral, spec.DropPlaceholder),
+		filters: e.newFilters(b, spec.filterSpec),
 	}, b.err
 }
 
