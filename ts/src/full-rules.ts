@@ -7,6 +7,7 @@
 import { FULL_KINDS } from './algorithms/full-registry.js';
 import { prepareRules } from './algorithms/registry.js';
 import { dedupeRanges, type Hit } from './hits.js';
+import { registerFullKeyDetector } from './key-detectors.js';
 import { ALGORITHMS_SPEC, RULES_SPEC } from './spec.js';
 import { detectSyncHits } from './sync-rules.js';
 
@@ -33,3 +34,5 @@ export function withLegacyId(hit: Hit): Hit {
 export function detectFullTierKeyHits(key: string): Hit[] {
     return dedupeRanges([...detectFullHits(key).map(withLegacyId), ...detectSyncHits(key)]);
 }
+
+registerFullKeyDetector(detectFullTierKeyHits);
