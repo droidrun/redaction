@@ -10,14 +10,15 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from ._detect import Hit
 from ._keys import key_verdict, stronger_verdict
 from ._placeholder import build_read_placeholder, is_whole_placeholder
-from ._scan import RULE_IDS, is_overlong_key, redact_key, scan_units
+from ._scan import RULE_IDS, is_overlong_key, redact_key, scan_units, tally
 from ._units import from_units, to_units
 
 _ARRAY_INDEX = re.compile("(?:0|[1-9][0-9]*)", re.ASCII)
 _MAX_ARRAY_INDEX = 4294967294
-_EXACT_DOUBLE = 2**53
+_MAX_ARRAY_INDEX_DIGITS = len(str(_MAX_ARRAY_INDEX))
 _KEY_CONTEXT = RULE_IDS["keyContext"]
 _SIZE_LIMIT = RULE_IDS["sizeLimit"]
 _DEPTH_LIMIT = RULE_IDS["depthLimit"]
@@ -54,9 +55,8 @@ class WalkState:
     def count(self, rule_id: str, times: int = 1) -> None:
         self.counts[rule_id] = self.counts.get(rule_id, 0) + times
 
-    def count_hits(self, hits: list[tuple[str, int, int]]) -> None:
-        for rule_id, _start, _end in hits:
-            self.count(rule_id)
+    def count_hits(self, hits: list[Hit]) -> None:
+        tally(self.counts, hits)
 
     def limit(self, rule_id: str) -> str:
         self.count(rule_id)
@@ -71,18 +71,11 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _as_double(value: int | float) -> int | float:
-    """A number as the JSON model has it: an IEEE 754 double (a larger integer becomes its nearest double)."""
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise _OutsideModel
-        return value
-    if -_EXACT_DOUBLE <= value <= _EXACT_DOUBLE:
-        return value
-    try:
-        return float(value)
-    except OverflowError:
-        raise _OutsideModel from None
+def _checked_number(value: int | float) -> int | float:
+    """A number the package keeps: an integer exactly as given, a float only when it is finite."""
+    if isinstance(value, float) and not math.isfinite(value):
+        raise _OutsideModel
+    return value
 
 
 def _contract_keys(mapping: dict[Any, Any]) -> list[Any]:
@@ -96,7 +89,10 @@ def _contract_keys(mapping: dict[Any, Any]) -> list[Any]:
 
 
 def _is_array_index(key: str) -> bool:
-    return _ARRAY_INDEX.fullmatch(key) is not None and int(key) <= _MAX_ARRAY_INDEX
+    # A longer key is no index; checked first, so a huge digit string never reaches `int` (its size limit).
+    if len(key) > _MAX_ARRAY_INDEX_DIGITS or _ARRAY_INDEX.fullmatch(key) is None:
+        return False
+    return int(key) <= _MAX_ARRAY_INDEX
 
 
 def _leaf_replacement(verdict: str, value: Any) -> str | None:
@@ -131,6 +127,11 @@ def _string_leaf(value: str, verdict: str, state: WalkState) -> str:
     if keyed is not None:
         state.count(_KEY_CONTEXT)
         return keyed
+    # A text has at least as many units as characters, so a text over the budget by characters is over it
+    # by units: no conversion for it.
+    if len(value) > state.chars:
+        state.chars = 0
+        return state.limit(_SIZE_LIMIT)
     units = to_units(value)
     if len(units) > state.chars:
         state.chars = 0
@@ -141,7 +142,7 @@ def _string_leaf(value: str, verdict: str, state: WalkState) -> str:
 
 def _scalar_leaf(value: Any, verdict: str, state: WalkState) -> Any:
     if _is_number(value):
-        value = _as_double(value)
+        value = _checked_number(value)
     keyed = _leaf_replacement(verdict, value)
     if keyed is None:
         return value
@@ -183,17 +184,23 @@ def _enter(value: Any, verdict: str, depth: int, state: WalkState) -> tuple[_Fra
     return frame, None
 
 
+def _over_budget(state: WalkState) -> str:
+    state.chars = 0
+    return state.limit(_SIZE_LIMIT)
+
+
 def _next_key(key: str, state: WalkState) -> str:
     """The output key of the next object entry."""
-    if not state.strict:
-        redacted, hits = redact_key(to_units(key))
-        state.count_hits(hits)
-        return key if not hits else from_units(redacted)
+    # A key has at least as many units as characters: one over a limit by characters is over it by units.
+    if is_overlong_key(key) and not state.strict:
+        return key
+    if state.strict and (is_overlong_key(key) or len(key) > state.chars):
+        return _over_budget(state)
     units = to_units(key)
-    if is_overlong_key(units) or len(units) > state.chars:
-        state.chars = 0
-        return state.limit(_SIZE_LIMIT)
-    state.chars -= len(units)
+    if state.strict:
+        if is_overlong_key(units) or len(units) > state.chars:
+            return _over_budget(state)
+        state.chars -= len(units)
     redacted, hits = redact_key(units)
     state.count_hits(hits)
     return key if not hits else from_units(redacted)
@@ -224,7 +231,7 @@ def _skip_key_scalar(child: Any, state: WalkState) -> tuple[bool, Any]:
     if isinstance(child, str):
         return True, child
     try:
-        return True, _as_double(child) if _is_number(child) else child
+        return True, _checked_number(child) if _is_number(child) else child
     except _OutsideModel:
         return True, state.limit(_FAILED)
 

@@ -45,18 +45,35 @@ result.value   # {'user': 'a', 'api_key': '[REDACTED:key-context]', 'note': 'Bea
   - `skip_keys` (default `type` and `id`): a scalar under such a key is not replaced because of a secret
     parent key. In `strict` mode a string under a skip key is still scanned.
 - `is_secret_key_name(key: str) -> bool`
+- `key_verdict(key: str) -> Literal["none", "string", "any"]`: what the key makes of the value under it
+  (`none`: nothing; `string`: a string is replaced; `any`: a number is replaced too).
 - `RedactResult(value, hits, error)` is a frozen dataclass. `hits` is a tuple of
   `RuleCount(rule_id, count)` in order of first hit: **rule id and count only, never a range or any text**
   (ranges reveal lengths). `error` is `None`, or the class name of the failure that made `value` the
   placeholder `[REDACTED:redaction-failed]` (never a message: it could echo the input).
+
+### Logging filter
+
+`redact_json` is a ready-made filter for structured log records: strings under secret key names are replaced,
+counts are kept, and every other string is scanned.
+
+```python
+record = {"user": "u1", "api_key": "k-123", "max_tokens": 100, "prompt_tokens": 12, "pin": 4321}
+redact_json(record).value
+# {'user': 'u1', 'api_key': '[REDACTED:key-context]', 'max_tokens': 100, 'prompt_tokens': 12,
+#  'pin': '[REDACTED:key-context]'}
+```
+
+`key_verdict("max_tokens")` is `"string"` (a number stays), `key_verdict("pin")` is `"any"` (a number is
+replaced). `skip_keys` must be a collection of strings (a single `str` raises `TypeError`).
 
 Every rule, word list, threshold and limit comes from the spec data embedded in the package.
 
 ## Modes
 
 - `strict` (default): no path returns a value that was not scanned. A text or leaf over a limit, a depth or
-  node limit, an over-long key, a value outside the JSON model (`NaN`, infinities, integers beyond a double,
-  bytes, sets, tuples, class instances, non-string keys) and any internal failure give a placeholder
+  node limit, an over-long key, a value outside the JSON model (`NaN`, infinities, bytes, sets, tuples,
+  class instances, non-string keys) and any internal failure give a placeholder
   (`[REDACTED:size-limit]`, `[REDACTED:depth-limit]`, `[REDACTED:circular]`,
   `[REDACTED:redaction-failed]`). The JSON walk is iterative: deep input cannot overflow the stack.
 - `compat`: reproduces the TypeScript v0.2.0 behaviour of its sync entry (a string under a skip key is
@@ -72,8 +89,9 @@ Every rule, word list, threshold and limit comes from the spec data embedded in 
 | `max_nodes` | 500,000 | values visited; the rest of the container becomes `[REDACTED:size-limit]` |
 
 All lengths, offsets and windows count **UTF-16 code units** (an astral character is two units, a lone
-surrogate one), because the spec fixes that unit for every language. Numbers are IEEE 754 doubles: an integer
-beyond 2^53 comes back as its nearest double.
+surrogate one), because the spec fixes that unit for every language. A number that is not replaced comes back
+exactly as given (an integer beyond 2^53 is not rounded; the TypeScript package rounds it to a double, so
+outputs agree at the double level). A float that is not finite becomes `[REDACTED:redaction-failed]`.
 
 ## Not supported yet
 

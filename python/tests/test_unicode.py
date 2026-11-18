@@ -118,14 +118,23 @@ def test_a_key_that_holds_a_secret_is_redacted_and_colliding_keys_merge():
     assert redact_json(value, mode="compat").value == {f"password={PLACEHOLDER}": "[REDACTED:key-context]"}
 
 
-def test_numbers_are_doubles():
+def test_numbers_equal_the_typescript_output_as_doubles():
     value = {"n": 9007199254740993, "pin": 12, "max_tokens": 5, "f": 1.0, "neg": -0.0}
     out = redact_json(value, mode="compat").value
-    assert out == {
-        "n": 9007199254740992.0,
-        "pin": "[REDACTED:key-context]",
-        "max_tokens": 5,
-        "f": 1.0,
-        "neg": 0.0,
-    }
-    assert type(out["n"]) is float
+    assert list(out) == ["n", "pin", "max_tokens", "f", "neg"]
+    assert float(out["n"]) == 9007199254740992.0
+    assert out["pin"] == "[REDACTED:key-context]"
+    assert (out["max_tokens"], out["f"], out["neg"]) == (5, 1.0, 0.0)
+
+
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_an_integer_that_is_not_replaced_comes_back_exactly(mode):
+    value = {"big": 9007199254740993, "huge": 10**400, "neg": -(2**70), "list": [2**64 + 1]}
+    out = redact_json(value, mode=mode).value
+    assert out == value
+    assert all(type(item) is int for item in (out["big"], out["huge"], out["neg"], out["list"][0]))
+
+
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_an_integer_under_a_secret_key_is_still_replaced(mode):
+    assert redact_json({"pin": 10**400}, mode=mode).value == {"pin": "[REDACTED:key-context]"}

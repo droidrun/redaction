@@ -87,7 +87,6 @@ def test_keys_count_against_the_character_budget():
         pytest.param((1, 2), id="tuple"),
         pytest.param(math.nan, id="nan"),
         pytest.param(math.inf, id="infinity"),
-        pytest.param(10**400, id="integer beyond a double"),
     ],
 )
 @pytest.mark.parametrize("mode", ["strict", "compat"])
@@ -140,3 +139,32 @@ def test_the_default_depth_limit_holds_for_deep_input():
 def test_an_invalid_mode_is_refused():
     with pytest.raises(ValueError):
         redact_text("x", mode="loose")  # type: ignore[arg-type]
+
+
+def test_a_float_that_is_not_finite_still_becomes_a_placeholder():
+    assert redact_json({"a": 1e999}).value == {"a": FAILED}
+
+
+@pytest.mark.parametrize("digits", [10, 11, 5000, 100_000])
+def test_an_overlong_numeric_key_does_not_fail_the_value_in_strict(digits):
+    out = redact_json({"a": 1, "9" * digits: "v"}).value
+    expected = {"a": 1, SIZE_LIMIT: SIZE_LIMIT} if digits > 4096 else {"a": 1, "9" * digits: "v"}
+    assert out == expected
+
+
+@pytest.mark.parametrize("digits", [10, 11, 5000, 100_000])
+def test_an_overlong_numeric_key_does_not_fail_the_value_in_compat(digits):
+    key = "9" * digits
+    assert redact_json({"a": 1, key: "v"}, mode="compat").value == {"a": 1, key: "v"}
+
+
+def test_numeric_keys_around_the_array_index_limit_are_ordered_as_ecmascript_orders_them():
+    value = {"b": 0, "4294967295": 1, "4294967294": 2, "99999999999": 3, "10": 4, "9": 5}
+    keys = list(redact_json(value, mode="compat").value)
+    assert keys == ["9", "10", "4294967294", "b", "4294967295", "99999999999"]
+
+
+@pytest.mark.parametrize("skip", ["id", b"id", 5])
+def test_skip_keys_must_be_a_collection_of_strings(skip):
+    with pytest.raises(TypeError):
+        redact_json({"id": TOKEN}, skip_keys=skip)

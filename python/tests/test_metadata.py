@@ -1,7 +1,19 @@
 """Metadata (SPEC section 11): hits are rule id and count only; no input fragment reaches an error."""
 
-from droidrun_redaction import RedactResult, RuleCount, redact_json, redact_text
-from droidrun_redaction import _detect
+import droidrun_redaction
+import pytest
+from droidrun_redaction import (
+    RedactResult,
+    RuleCount,
+    _detect,
+    _keys,
+    _walk,
+    is_secret_key_name,
+    key_verdict,
+    redact_json,
+    redact_text,
+)
+from droidrun_redaction._spec import SpecError
 
 SECRET = "Zq9abcDEF123ghi_x"
 
@@ -53,3 +65,42 @@ def test_a_failing_leaf_becomes_a_placeholder_in_strict_and_fails_the_value_in_c
     compat = redact_json(value, mode="compat")
     assert (compat.value, compat.error) == ("[REDACTED:redaction-failed]", "RuntimeError")
     assert SECRET not in repr(compat)
+
+
+def test_an_unknown_rule_kind_in_the_spec_is_a_spec_error():
+    with pytest.raises(SpecError):
+        _detect._prepare({"id": "x", "kind": "no-such-kind"})
+
+
+def test_a_text_over_the_cap_is_not_converted(monkeypatch):
+    def refuse(text):
+        raise AssertionError("converted")
+
+    monkeypatch.setattr(droidrun_redaction, "to_units", refuse)
+    result = redact_text("a" * 11, max_chars=10)
+    assert (result.value, result.hits, result.error) == ("[REDACTED:size-limit]", (("size-limit", 1),), None)
+
+
+def test_a_leaf_and_a_key_over_the_budget_are_not_converted(monkeypatch):
+    real = _walk.to_units
+
+    def refuse_long(text):
+        if len(text) > 4:
+            raise AssertionError("converted")
+        return real(text)
+
+    monkeypatch.setattr(_walk, "to_units", refuse_long)
+    assert redact_json({"a": "b" * 11}, max_chars=10).value == {"a": "[REDACTED:size-limit]"}
+    assert redact_json({"k" * 11: "b"}, max_chars=10).value == {
+        "[REDACTED:size-limit]": "[REDACTED:size-limit]"
+    }
+    assert redact_json({"k" * 5000: "b"}).value == {"[REDACTED:size-limit]": "[REDACTED:size-limit]"}
+
+
+def test_a_long_key_is_not_kept_in_the_key_cache():
+    before = _keys._evaluate_cached.cache_info().currsize
+    assert not is_secret_key_name("ab_" * 200)
+    assert key_verdict("password" + "x" * 300) == "none"
+    assert _keys._evaluate_cached.cache_info().currsize == before
+    assert is_secret_key_name("api_key_for_cache_test")
+    assert _keys._evaluate_cached.cache_info().currsize == before + 1

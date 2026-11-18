@@ -1,6 +1,8 @@
 """Key names (SPEC section 6): which object keys name a secret."""
 
+import re
 from functools import lru_cache
+from typing import Literal
 
 from ._patterns import fold_lower
 from ._placeholder import PLACEHOLDER_MARK, literal_segments
@@ -17,68 +19,37 @@ _PREFIX_WORDS = tuple(KEYS["prefixWords"])
 _PASS_LAST_WORD = KEYS["passLastWord"]
 
 
-def _is_upper(unit: str) -> bool:
-    return "A" <= unit <= "Z"
+# The word split of SPEC section 6 as one pattern: a run of capitals that no lower-case letter follows (a
+# run followed by one gives back its last capital: backtracking), an optional capital and lower-case
+# letters, digits.
+_WORDS = re.compile("[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+", re.ASCII)
+_NOT_COMPACT = re.compile("[^a-z0-9]", re.ASCII)
+# Keys longer than this are not cached: a cache entry keeps the whole (possibly secret) key alive.
+_CACHE_LIMIT = 256
 
-
-def _is_lower(unit: str) -> bool:
-    return "a" <= unit <= "z"
-
-
-def _is_digit(unit: str) -> bool:
-    return "0" <= unit <= "9"
-
-
-def _run_end(key: str, start: int, test) -> int:
-    end = start
-    while end < len(key) and test(key[end]):
-        end += 1
-    return end
-
-
-def _word_end(key: str, start: int) -> int:
-    """End of the word that starts at `start`, or `start` when none does."""
-    unit = key[start]
-    if _is_upper(unit):
-        capitals = _run_end(key, start, _is_upper)
-        follower = key[capitals : capitals + 1]
-        if follower == "" or not _is_lower(follower):
-            return capitals
-        if capitals - start >= 2:
-            return capitals - 1
-    lower_start = start + 1 if _is_upper(unit) else start
-    lower_end = _run_end(key, lower_start, _is_lower)
-    if lower_end > lower_start:
-        return lower_end
-    return _run_end(key, start, _is_digit) if _is_digit(unit) else start
+# The word sequences by their first word; with `plural` a first word also matches with a trailing `s`.
+_BY_FIRST: dict[str, list[list[str]]] = {}
+_BY_FIRST_PLURAL: dict[str, list[list[str]]] = {}
+for _sequence in _SEQUENCES:
+    _BY_FIRST.setdefault(_sequence[0], []).append(_sequence)
+    _BY_FIRST_PLURAL.setdefault(_sequence[0], []).append(_sequence)
+    _BY_FIRST_PLURAL.setdefault(_sequence[0] + "s", []).append(_sequence)
 
 
 def split_key_words(key: str) -> list[str]:
     """`clientSecret` gives `client secret`, `APIKey` gives `api key`, `x-auth-token` gives `x auth token`."""
-    words: list[str] = []
-    at = 0
-    while at < len(key):
-        end = _word_end(key, at)
-        if end == at:
-            at += 1
-            continue
-        words.append(key[at:end].lower())
-        at = end
-    return words
+    return [word.lower() for word in _WORDS.findall(key)]
 
 
 def _compact_key(key: str) -> str:
-    folded = fold_lower(key).replace("İ", "i")
-    return "".join(unit for unit in folded if _is_lower(unit) or _is_digit(unit))
+    return _NOT_COMPACT.sub("", fold_lower(key).replace("İ", "i"))
 
 
 def _is_secret_word(word: str, plural: bool) -> bool:
     base = word.removesuffix("s") if plural else word
     if word in _JOINED or base in _JOINED:
         return True
-    if any(base.endswith(suffix) for suffix in _SUFFIX_WORDS):
-        return True
-    return any(word.startswith(prefix) for prefix in _PREFIX_WORDS)
+    return base.endswith(_SUFFIX_WORDS) or word.startswith(_PREFIX_WORDS)
 
 
 def _word_matches(word: str | None, expected: str, plural: bool) -> bool:
@@ -93,39 +64,57 @@ def _starts_sequence(words: list[str], start: int, sequence: list[str], plural: 
     return True
 
 
-@lru_cache(maxsize=2048)
-def _match_key(key: str, plural: bool) -> bool:
-    """Pure in its arguments, and the same few keys come back again and again, so results are cached."""
-    words = split_key_words(key)
+def _match_words(key: str, words: list[str], plural: bool) -> bool:
     if _compact_key(key) in _EXACT_KEYS:
         return True
     if words and words[-1] == _PASS_LAST_WORD:
         return True
     if any(_is_secret_word(word, plural) for word in words):
         return True
+    by_first = _BY_FIRST_PLURAL if plural else _BY_FIRST
     return any(
         _starts_sequence(words, start, sequence, plural)
-        for sequence in _SEQUENCES
-        for start in range(len(words))
+        for start, word in enumerate(words)
+        for sequence in by_first.get(word, ())
     )
+
+
+def _evaluate(key: str) -> tuple[bool, bool, bool]:
+    """(matches as a plural, matches as a singular, holds a count word): one split of the key."""
+    words = split_key_words(key)
+    has_count_word = any(word in _COUNT_WORDS for word in words)
+    return _match_words(key, words, True), _match_words(key, words, False), has_count_word
+
+
+_evaluate_cached = lru_cache(maxsize=2048)(_evaluate)
+
+
+def _evaluation(key: str) -> tuple[bool, bool, bool]:
+    return _evaluate(key) if len(key) > _CACHE_LIMIT else _evaluate_cached(key)
 
 
 def is_secret_key_name(key: str) -> bool:
     """True for names such as `apiKey`, `client_secret`, `x-auth-token`, `Set-Cookie`, `pin`, `tokens`."""
-    return _match_key(key, True)
+    return _evaluation(key)[0]
 
 
-def key_verdict(raw_key: str) -> str:
-    """What a key makes of the values below it: `none`, `string` (strings only) or `any` (numbers too)."""
-    key = " ".join(literal_segments(raw_key)) if PLACEHOLDER_MARK in raw_key else raw_key
-    if not _match_key(key, True):
+KeyVerdict = Literal["none", "string", "any"]
+
+
+def key_verdict(key: str) -> KeyVerdict:
+    """What a key makes of the values below it: `none`, `string` (strings only) or `any` (numbers too).
+
+    A string under a `string` or `any` key is replaced; a number only under an `any` key (`pin`, `password`;
+    not `max_tokens`, `prompt_tokens`). A key that was itself redacted is read without its placeholders.
+    """
+    text = " ".join(literal_segments(key)) if PLACEHOLDER_MARK in key else key
+    matches_plural, matches_singular, has_count_word = _evaluation(text)
+    if not matches_plural:
         return "none"
-    if not _match_key(key, False):
-        return "string"
-    return "string" if any(word in _COUNT_WORDS for word in split_key_words(key)) else "any"
+    return "string" if not matches_singular or has_count_word else "any"
 
 
-def stronger_verdict(first: str, second: str) -> str:
+def stronger_verdict(first: str, second: str) -> KeyVerdict:
     """The stronger of two verdicts: a nested secret key never weakens the context."""
     if first == "any" or second == "any":
         return "any"

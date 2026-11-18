@@ -9,14 +9,22 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Literal, NamedTuple
 
-from ._keys import is_secret_key_name
+from ._keys import KeyVerdict, is_secret_key_name, key_verdict
 from ._placeholder import build_read_placeholder
-from ._scan import RULE_IDS, STRICT_LIMITS, SYNC_LIMITS, scan_text
+from ._scan import RULE_IDS, STRICT_LIMITS, SYNC_LIMITS, oversize_text, scan_text, tally
 from ._spec import KEYS
 from ._units import from_units, to_units
 from ._walk import WalkState, walk_json
 
-__all__ = ["RedactResult", "RuleCount", "is_secret_key_name", "redact_json", "redact_text"]
+__all__ = [
+    "KeyVerdict",
+    "RedactResult",
+    "RuleCount",
+    "is_secret_key_name",
+    "key_verdict",
+    "redact_json",
+    "redact_text",
+]
 
 Mode = Literal["strict", "compat"]
 _MODES = ("strict", "compat")
@@ -56,6 +64,10 @@ def _check_limit(name: str, value: int | None, default: int) -> int:
     return value
 
 
+def _result(value: Any, counts: dict[str, int]) -> RedactResult:
+    return RedactResult(value, tuple(RuleCount(*item) for item in counts.items()), None)
+
+
 def _failed(error: Exception) -> RedactResult:
     rule_id = RULE_IDS["failed"]
     return RedactResult(build_read_placeholder(rule_id), (RuleCount(rule_id, 1),), type(error).__name__)
@@ -71,14 +83,19 @@ def redact_text(text: str, *, mode: Mode = "strict", max_chars: int | None = Non
     if not isinstance(text, str):
         raise TypeError("text must be a str")
     limit = _check_limit("max_chars", max_chars, SYNC_LIMITS["maxChars"])
+    counts: dict[str, int] = {}
     try:
+        # A text has at least as many units as characters, so a text over the cap by characters is over it
+        # by units: it is replaced without being converted.
+        if len(text) > limit:
+            placeholder, hits = oversize_text(len(text))
+            tally(counts, hits)
+            return _result(placeholder, counts)
         scanned, hits = scan_text(to_units(text), limit)
     except Exception as error:
         return _failed(error)
-    counts: dict[str, int] = {}
-    for rule_id, _start, _end in hits:
-        counts[rule_id] = counts.get(rule_id, 0) + 1
-    return RedactResult(from_units(scanned), tuple(RuleCount(*item) for item in counts.items()), None)
+    tally(counts, hits)
+    return _result(from_units(scanned), counts)
 
 
 def redact_json(
@@ -99,7 +116,11 @@ def redact_json(
     """
     strict = _check_mode(mode)
     limits = STRICT_LIMITS if strict else SYNC_LIMITS
+    if isinstance(skip_keys, str | bytes):
+        raise TypeError("skip_keys must be a collection of str, not a single string")
     skip = frozenset(KEYS["structuralSkipKeys"] if skip_keys is None else skip_keys)
+    if not all(isinstance(key, str) for key in skip):
+        raise TypeError("skip_keys must hold str only")
     state = WalkState(
         _check_limit("max_nodes", max_nodes, limits["maxNodes"]),
         _check_limit("max_chars", max_chars, limits["maxChars"]),
@@ -111,4 +132,4 @@ def redact_json(
         out = walk_json(value, state)
     except Exception as error:
         return _failed(error)
-    return RedactResult(out, tuple(RuleCount(*item) for item in state.counts.items()), None)
+    return _result(out, state.counts)
