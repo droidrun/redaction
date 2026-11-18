@@ -35,7 +35,7 @@ bun tools/lint-spec.ts                         # needs python3 and go on the PAT
 bun tools/lint-spec.ts --self-test             # plants non-portable patterns, expects failures
 tools/sync-spec --check                        # generated spec files up to date
 bun tools/check-pack.ts                        # npm pack and import from the tarball
-bun tools/gen-letters.ts --check               # the Unicode 15.0.0 letter table (downloads UnicodeData.txt)
+bun tools/gen-letters.ts --check               # the Unicode 15.0.0 letter table (downloads UnicodeData.txt; CI runs it weekly and on release, not per pull request)
 ```
 
 The TypeScript package is documented in [`ts/README.md`](ts/README.md).

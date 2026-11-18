@@ -68,9 +68,18 @@ export function decodeRanges(encoded: string): Range[] {
     });
 }
 
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
+async function download(): Promise<Buffer> {
+    const response = await fetch(DATA_URL, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) }).catch(() => {
+        throw new Error(`could not download ${DATA_URL} (network error or timeout)`);
+    });
+    if (!response.ok) throw new Error(`could not download ${DATA_URL}: HTTP ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
+}
+
 async function readUnicodeData(path: string | undefined): Promise<string> {
-    const bytes =
-        path === undefined ? Buffer.from(await (await fetch(DATA_URL)).arrayBuffer()) : readFileSync(path);
+    const bytes = path === undefined ? await download() : readFileSync(path);
     const digest = createHash('sha256').update(bytes).digest('hex');
     if (digest !== DATA_SHA256) throw new Error(`UnicodeData.txt ${UNICODE_VERSION}: unexpected SHA-256`);
     return bytes.toString('utf8');

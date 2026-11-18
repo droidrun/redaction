@@ -87,8 +87,6 @@ jobs:
         run: pnpm run typecheck
       - name: Spec copies and hash are up to date
         run: tools/sync-spec --check
-      - name: Letter table is the Unicode 15.0.0 table (SHA-256 of UnicodeData.txt pinned)
-        run: bun tools/gen-letters.ts --check
       - name: Lint spec (schemas, grammar, recheck, JS/Python/Go compile, scaling)
         run: bun tools/lint-spec.ts
       - name: Lint self-test (planted non-portable patterns must fail)

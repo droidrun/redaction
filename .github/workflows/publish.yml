@@ -55,6 +55,9 @@ jobs:
       - name: Lint spec on the tagged commit
         working-directory: .
         run: bun tools/lint-spec.ts
+      - name: Letter table is the Unicode 15.0.0 table (UnicodeData.txt checked against a pinned SHA-256)
+        working-directory: .
+        run: bun tools/gen-letters.ts --check
       - name: Pack and import from the tarball
         working-directory: .
         run: bun tools/check-pack.ts
