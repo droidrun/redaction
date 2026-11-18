@@ -24,10 +24,11 @@ type frame struct {
 	cutDone bool
 	// keyChanged: redaction changed the key of the entry being placed (an unchanged key is its own).
 	keyChanged bool
-	// inputIndex is the index of each input key of the object (made when a changed key needs it), and
-	// unchanged says per input key index whether redaction leaves that key as it is.
-	inputIndex map[string]int
-	unchanged  map[int]bool
+	// inputNames are the input keys of the object by name, also those that were left out under a node limit
+	// and hold a placeholder (made when a changed key needs them), and unchanged says per name whether
+	// redaction leaves that key as it is.
+	inputNames map[string][]uint16
+	unchanged  map[string]bool
 	// lastNumber is, per output key that was taken, the number of the last numbered key made of it.
 	lastNumber map[string]int
 }
@@ -52,22 +53,35 @@ func (f *frame) addMember(key []uint16, value *node) {
 }
 
 // place stores a finished value under the current output key of the frame (or appends it to an
-// array). SPEC 8, key collisions (L-P, L-Q): a key that redaction leaves unchanged keeps its own key, and
-// that name is reserved for it before any numbering, wherever the entry stands in the object. A changed
-// key whose name is taken (by an earlier entry, or reserved) gets a number inside its last placeholder,
-// `[REDACTED:rule#2]`, `#3`, ... in contract order, skipping taken names: no value is lost.
+// array). SPEC 8, key collisions (L-P, L-Q): a key that redaction leaves unchanged keeps its own name, and
+// that name is reserved for it before any numbering, wherever the entry stands in the object (also when the
+// entry is left out under a node limit). A changed key whose name is taken (by an earlier entry, or
+// reserved) gets a number inside its last placeholder, `[REDACTED:rule#2]`, `#3`, ... in contract order,
+// skipping taken names. Any other key keeps the old rule: the later value replaces the earlier one and the
+// key keeps the earlier position (no duplicate key is ever written).
 func (w *walker) place(f *frame, value *node) {
 	if f.isArray() {
 		f.out.items = append(f.out.items, value)
 		return
 	}
-	if !f.keyChanged || !w.isTaken(f, f.outKey) {
+	if f.keyChanged && w.isTaken(f, f.outKey) {
+		if at, numberable := w.e.placeholders.numberAt(f.outKey); numberable {
+			f.addMember(w.numberedKey(f, f.outKey, at), value)
+			return
+		}
+	}
+	if !f.keyChanged && !containsUnits(f.outKey, redactedOpen) {
+		// Input keys are distinct and only a placeholder key can equal an earlier output key.
 		f.addMember(f.outKey, value)
 		return
 	}
-	key, numbered := w.numberedKey(f, f.outKey)
-	if !numbered { // a changed key holds a placeholder, so this cannot happen; the old rule
-		f.out.members[f.memberAt(f.outKey)].val = value
+	f.setMember(f.outKey, value)
+}
+
+// setMember stores the value under the key, replacing an earlier entry of that name.
+func (f *frame) setMember(key []uint16, value *node) {
+	if at := f.memberAt(key); at >= 0 {
+		f.out.members[at].val = value
 		return
 	}
 	f.addMember(key, value)
@@ -80,21 +94,30 @@ func (w *walker) isTaken(f *frame, key []uint16) bool {
 
 // isReserved: the object has an input key of that name that redaction leaves unchanged.
 func (w *walker) isReserved(f *frame, key []uint16) bool {
-	if f.inputIndex == nil {
-		f.inputIndex = make(map[string]int, len(f.src.members))
-		for at, entry := range f.src.members {
-			f.inputIndex[unitsKey(entry.key)] = at
+	if f.inputNames == nil {
+		f.inputNames = make(map[string][]uint16, len(f.src.members))
+		for _, entry := range f.src.members {
+			f.inputNames[unitsKey(entry.key)] = entry.key
 		}
-		f.unchanged = make(map[int]bool)
+		if first := f.src.firstLeftOut(); first != nil { // known also without room for the others
+			f.inputNames[unitsKey(first)] = first
+		}
+		if f.src.left != nil {
+			for _, left := range f.src.left.keys {
+				f.inputNames[unitsKey(left)] = left
+			}
+		}
+		f.unchanged = make(map[string]bool)
 	}
-	at, found := f.inputIndex[unitsKey(key)]
+	name := unitsKey(key)
+	input, found := f.inputNames[name]
 	if !found {
 		return false
 	}
-	unchanged, known := f.unchanged[at]
+	unchanged, known := f.unchanged[name]
 	if !known {
-		unchanged = !w.wouldChange(f.src.members[at].key)
-		f.unchanged[at] = unchanged
+		unchanged = !w.wouldChange(input)
+		f.unchanged[name] = unchanged
 	}
 	return unchanged
 }
@@ -109,6 +132,12 @@ func (w *walker) wouldChange(key []uint16) bool {
 	if len(key) > limits.Sync.MaxKeyChars {
 		return w.strict
 	}
+	if w.strict && w.mode.tier == TierFull && len(key) > w.mode.maxChars {
+		// The strict full-tier scan replaces a text over the character limit by the size-limit
+		// placeholder, a key too: the key is unchanged only when it reads exactly like that.
+		sizeLimit := w.e.placeholders.readUnits(limits.RuleIDs.SizeLimit)
+		return !equalUnits(key, sizeLimit)
+	}
 	t := newText(key)
 	detect := func() []hit { return w.e.detect(t) }
 	if w.mode.tier == TierFull {
@@ -119,8 +148,8 @@ func (w *walker) wouldChange(key []uint16) bool {
 }
 
 // numberedKey is the next free numbered form of a taken output key: the number starts at 2 and counts
-// up per object and per key; a number whose key is taken is skipped.
-func (w *walker) numberedKey(f *frame, key []uint16) ([]uint16, bool) {
+// up per object and per key; a number whose key is taken is skipped. `at` is where the number goes.
+func (w *walker) numberedKey(f *frame, key []uint16, at int) []uint16 {
 	if f.lastNumber == nil {
 		f.lastNumber = make(map[string]int)
 	}
@@ -128,13 +157,10 @@ func (w *walker) numberedKey(f *frame, key []uint16) ([]uint16, bool) {
 	last := max(f.lastNumber[base], 1)
 	for {
 		last++
-		candidate, ok := w.e.placeholders.numbered(key, last)
-		if !ok {
-			return nil, false
-		}
+		candidate := w.e.placeholders.numbered(key, at, last)
 		if !w.isTaken(f, candidate) {
 			f.lastNumber[base] = last
-			return candidate, true
+			return candidate
 		}
 	}
 }
@@ -266,15 +292,17 @@ func (w *walker) redactKey(key []uint16) []uint16 {
 	return w.e.scan(key, w.mode, w.rec)
 }
 
-// strictKey scans a key against the character budget; one that does not fit becomes a placeholder.
-func (w *walker) strictKey(key []uint16) []uint16 {
+// strictKey scans a key against the character budget; one that does not fit becomes a placeholder, and
+// that is a change even when the key reads the same (a key written as `[REDACTED:size-limit]`).
+func (w *walker) strictKey(key []uint16) (out []uint16, changed bool) {
 	ruleIDs := &w.e.spec.algorithms.RuleIDs
 	if len(key) > w.e.spec.algorithms.Sync.MaxKeyChars || len(key) > w.chars {
 		w.chars = 0
-		return w.limit(ruleIDs.SizeLimit).str
+		return w.limit(ruleIDs.SizeLimit).str, true
 	}
 	w.chars -= len(key)
-	return w.redactKey(key)
+	out = w.redactKey(key)
+	return out, !equalUnits(out, key)
 }
 
 // cut closes a frame early: what is left of it collapses into one size-limit marker. `rawKey` is
@@ -320,8 +348,7 @@ func (w *walker) step(top *frame) *frame {
 		return w.descend(top, top.src.items[at], top.verdict)
 	}
 	entry := top.src.members[at]
-	top.outKey = w.outputKey(entry.key)
-	top.keyChanged = !equalUnits(top.outKey, entry.key)
+	top.outKey, top.keyChanged = w.outputKey(entry.key)
 	if w.isSkipKey(entry.key) && entry.val.isPrimitive() {
 		return w.skipValue(top, entry.val)
 	}
@@ -329,11 +356,12 @@ func (w *walker) step(top *frame) *frame {
 	return w.descend(top, entry.val, childVerdict)
 }
 
-func (w *walker) outputKey(key []uint16) []uint16 {
+func (w *walker) outputKey(key []uint16) (out []uint16, changed bool) {
 	if w.strict {
 		return w.strictKey(key)
 	}
-	return w.redactKey(key)
+	out = w.redactKey(key)
+	return out, !equalUnits(out, key)
 }
 
 // skipValue handles a primitive under a skip key. It is exempt from the key-context replacement
@@ -356,7 +384,7 @@ func (w *walker) walk(root *node) *node {
 	for {
 		top := stack[len(stack)-1]
 		if top.done() && top.src.cut && !top.cutDone {
-			w.cut(top, top.src.cutKey)
+			w.cut(top, top.src.firstLeftOut())
 			continue
 		}
 		if top.done() {

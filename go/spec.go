@@ -69,6 +69,7 @@ type algorithmsFile struct {
 	Placeholder struct {
 		Open          string   `json:"open"`
 		Close         string   `json:"close"`
+		NumberMark    string   `json:"numberMark"`
 		StripPrefixes []string `json:"stripPrefixes"`
 	} `json:"placeholder"`
 	Evidence struct {

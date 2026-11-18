@@ -87,16 +87,36 @@ func TestNumberedKeysAreFixedPointsAndPlaceholders(t *testing.T) {
 			t.Errorf("%q is not a whole placeholder", key)
 		}
 	}
-	bare, ok := theEngine.placeholders.numbered(decodeUTF8("a [REDACTED] b"), 2)
-	if !ok || unitsToString(bare) != "a [REDACTED:#2] b" {
-		t.Errorf("a bare placeholder: got %q, %v", unitsToString(bare), ok)
+	// Where a number goes (SPEC 8, rule 3 and 4): the last placeholder must be exactly `[REDACTED:<rule>]`,
+	// a rule with no `:suffix` that does not itself end with the number mark and digits.
+	places := map[string]int{ // key -> the unit before which `#n` goes, or -1
+		"[REDACTED:npm]":                      13,
+		"token [REDACTED:npm] end":            19,
+		"x [REDACTED:npm] y [REDACTED:npm]":   32,
+		"[REDACTED:x#]":                       12,
+		"[REDACTED:a#b2]":                     14,
+		"no placeholder here":                 -1,
+		"a [REDACTED] b":                      -1,
+		"[REDACTED]":                          -1,
+		"[REDACTED:a:b]":                      -1,
+		"[REDACTED:npm#2]":                    -1,
+		"[REDACTED:#5]":                       -1,
+		"[REDACTED:npm] [REDACTED:npm#2]":     -1,
+		"[REDACTED:npm#2] [REDACTED:npm]":     30,
+		"[REDACTED:npm] [REDACTED]":           -1,
+		"[REDACTED:npm] [REDACTED:a:b]":       -1,
+		"password=[REDACTED:generic-keyword]": 34,
 	}
-	last, ok := theEngine.placeholders.numbered(decodeUTF8("x [REDACTED:npm] y [REDACTED:npm]"), 3)
-	if !ok || unitsToString(last) != "x [REDACTED:npm] y [REDACTED:npm#3]" {
-		t.Errorf("the last placeholder: got %q, %v", unitsToString(last), ok)
+	for key, want := range places {
+		at, ok := theEngine.placeholders.numberAt(decodeUTF8(key))
+		if ok != (want >= 0) || (ok && at != want) {
+			t.Errorf("%q: got %d, %v; want %d", key, at, ok, want)
+		}
 	}
-	if _, ok := theEngine.placeholders.numbered(decodeUTF8("no placeholder here"), 2); ok {
-		t.Error("a key without a placeholder was numbered")
+	at, _ := theEngine.placeholders.numberAt(decodeUTF8("x [REDACTED:npm] y [REDACTED:npm]"))
+	renumbered := theEngine.placeholders.numbered(decodeUTF8("x [REDACTED:npm] y [REDACTED:npm]"), at, 3)
+	if unitsToString(renumbered) != "x [REDACTED:npm] y [REDACTED:npm#3]" {
+		t.Errorf("the last placeholder: got %q", unitsToString(renumbered))
 	}
 }
 

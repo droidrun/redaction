@@ -21,7 +21,7 @@ const (
 // members in the contract order of SPEC section 8.
 //
 // The parser stops building at the limits of the call (see parseLimits). A container that was cut
-// short has cut set (and, for an object, cutKey: the key of the first entry that was left out);
+// short has cut set (and, for an object, left: the key of the first entry that was left out);
 // a string that is longer than the character limit has no units and its size in strSize.
 type node struct {
 	kind    kind
@@ -32,7 +32,25 @@ type node struct {
 	items   []*node
 	members []member
 	cut     bool
-	cutKey  []uint16
+	left    *leftOut
+}
+
+// leftOut is what an object remembers of its entries that were left out under a limit. It sits behind a
+// pointer because every node of a large input carries the field. `first` is the key of the first entry
+// left out; `keys` are the keys of the entries left out that hold the text `[REDACTED`: the walk
+// reserves them like the keys it visits (SPEC 8). They are kept up to the character limit of the call;
+// further ones are not (the walk then only avoids a duplicate key).
+type leftOut struct {
+	first []uint16
+	keys  [][]uint16
+}
+
+// firstLeftOut is the key of the first entry that was left out (nil when there is none).
+func (n *node) firstLeftOut() []uint16 {
+	if n.left == nil {
+		return nil
+	}
+	return n.left.first
 }
 
 type member struct {
@@ -73,6 +91,8 @@ type parser struct {
 	data   []byte
 	at     int
 	limits parseLimits
+	// reserveRoom is what is left of the units that may be kept for node.left.
+	reserveRoom int
 }
 
 type openContainer struct {
@@ -438,7 +458,7 @@ func (p *parser) skipValue() error {
 
 // parseJSON reads exactly one JSON value (RFC 8259 grammar, as ECMAScript JSON.parse reads it).
 func parseJSON(data []byte, limits parseLimits) (*node, error) {
-	p := &parser{data: data, limits: limits}
+	p := &parser{data: data, limits: limits, reserveRoom: limits.chars}
 	var stack []*openContainer
 	for {
 		p.skipSpace()
@@ -552,7 +572,7 @@ func (p *parser) memberKey(open *openContainer) error {
 func (p *parser) closeOrContinue(stack []*openContainer, value *node) (*node, bool, error) {
 	top := stack[len(stack)-1]
 	isObject := top.node.kind == kindObject
-	attach(top, value)
+	p.attach(top, value)
 	p.skipSpace()
 	if p.take(closerFor(isObject)) {
 		finishObject(top.node)
@@ -567,13 +587,26 @@ func (p *parser) closeOrContinue(stack []*openContainer, value *node) (*node, bo
 	return nil, false, nil
 }
 
+// keepCutKey remembers the key of an entry that was left out: the first one, and every one that holds
+// a placeholder (as long as there is room).
+func (p *parser) keepCutKey(top *openContainer) {
+	if top.node.left == nil {
+		top.node.left = &leftOut{first: top.key}
+	}
+	holdsPlaceholder := containsUnits(top.key, redactedOpen)
+	if holdsPlaceholder && len(top.key) <= p.reserveRoom {
+		top.node.left.keys = append(top.node.left.keys, top.key)
+		p.reserveRoom -= len(top.key)
+	}
+}
+
 // attach adds a finished value to its container; a value that was left out marks the container
 // cut (an object remembers the key of the first entry that was left out).
-func attach(top *openContainer, value *node) {
+func (p *parser) attach(top *openContainer, value *node) {
 	switch {
 	case value == nil:
-		if !top.node.cut && top.node.kind == kindObject {
-			top.node.cutKey = top.key
+		if top.node.kind == kindObject {
+			p.keepCutKey(top)
 		}
 		top.node.cut = true
 	case top.node.kind == kindObject:
