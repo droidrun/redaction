@@ -730,7 +730,10 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
   placeholders included), and call a key **changed** when its output key is not the key itself. The rules, for
   one object, in contract order:
   1. **Reserved names.** Before the first entry, scan every input key that contains the text `[REDACTED` (no
-     budget, no hits, the same key scan as the walk) and **reserve** each one the scan leaves as it is. A key that
+     budget charge, no hits, the same key scan as the walk) and **reserve** each one the scan leaves as it is.
+     In `strict` the scan covers only the keys, in contract order, whose running total length (with the keys
+     before them in the object) stays within the remaining `chars` budget; a later key becomes the size-limit
+     placeholder anyway (9.3), so it cannot be left as it is. A key over `sync.maxKeyChars` is not scanned. A key that
      redaction leaves unchanged always keeps its own name, whatever else collides; a changed key never takes a
      reserved name.
   2. A changed entry whose output key is neither reserved nor the name of an earlier entry of the object is
@@ -938,7 +941,8 @@ These exist for compatibility with v0.2.0 and never change what is detected:
   is replaced by the one stored key of the same object whose redaction, named as in section 8 with the standard
   rules or the full tier, is exactly that key, and its value is restored against the stored value. No such stored
   key, more than one, or one that an earlier incoming key already took: the incoming key stays and the path is
-  reported as a conflict.
+  reported as a conflict. Paths of conflicts below a restored key are built from the key the
+  client sent (the placeholder key), never from the stored key (a secret).
 - The 0.1.1 `last4` placeholder `[REDACTED:<rule>:<last4>]` for matches of at least 16 units (`opts.last4`);
   brackets in the last four units are replaced by `*`. `last4` has no effect in `strict`.
 - `CREDENTIAL_KEY_RE` (the 0.1.1 substring matcher; a TypeScript constant, not spec data), `STRUCTURAL_SKIP_KEYS`.

@@ -180,3 +180,44 @@ describe('restoreRedacted maps placeholder keys back (L-R)', () => {
         expect([...names.keys()]).toEqual([NPM_A, '[REDACTED:npm]', NPM_B]);
     });
 });
+
+describe('restore conflict paths never hold a stored key (A1)', () => {
+    test('a conflict below a restored key is named by the placeholder key the client sent', () => {
+        const npm = restoreRedacted(
+            { '[REDACTED:npm]': { tok: '[REDACTED:stripe]' } },
+            { [NPM_A]: { tok: null } },
+        );
+        expect(npm.conflicts).toEqual(['$["[REDACTED:npm]"].tok']);
+        const partly = restoreRedacted(
+            { 'password=[REDACTED:generic-keyword]': { tok: '[REDACTED:stripe]' } },
+            { [PW_1]: { tok: null } },
+        );
+        expect(partly.conflicts).toEqual(['$["password=[REDACTED:generic-keyword]"].tok']);
+    });
+
+    test('over seeded documents no conflict path contains a stored key or a secret', () => {
+        const secrets = [NPM_A, NPM_B, GH_A, GH_B, PW_1, PW_2];
+        let state = 12345;
+        const next = (limit: number): number => {
+            state = (state * 1103515245 + 12345) % 2147483648;
+            return state % limit;
+        };
+        let conflictsSeen = 0;
+        for (let round = 0; round < 300; round++) {
+            const stored: Record<string, unknown> = {};
+            for (const secret of secrets)
+                if (next(2) === 0) stored[secret] = { tok: next(2) === 0 ? null : 'v' };
+            if (next(2) === 0) stored['[REDACTED:npm]'] = { tok: null };
+            const redacted = redactJsonValueSync(stored) as Record<string, unknown>;
+            const incoming = Object.fromEntries(
+                Object.keys(redacted)
+                    .filter((key) => key.includes('[REDACTED'))
+                    .map((key) => [key, { tok: '[REDACTED:stripe]' }]),
+            );
+            const { conflicts } = restoreRedacted(incoming, stored);
+            conflictsSeen += conflicts.length;
+            for (const path of conflicts) for (const secret of secrets) expect(path).not.toContain(secret);
+        }
+        expect(conflictsSeen).toBeGreaterThan(200);
+    });
+});

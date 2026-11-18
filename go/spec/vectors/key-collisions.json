@@ -178,6 +178,36 @@
         "b": 2,
         "[REDACTED:size-limit#2]": "[REDACTED:size-limit]"
       }
+    },
+    {
+      "name": "a key whose last placeholder has a suffix is not numbered: the later value replaces the earlier",
+      "input": {
+        "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa [REDACTED:x:y]": 1,
+        "ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb [REDACTED:x:y]": 2
+      },
+      "expected": {
+        "[REDACTED:github] [REDACTED:x:y]": 2
+      }
+    },
+    {
+      "name": "a key whose last placeholder is the bare [REDACTED] is not numbered: the later value replaces the earlier",
+      "input": {
+        "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa [REDACTED]": 1,
+        "ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb [REDACTED]": 2
+      },
+      "expected": {
+        "[REDACTED:github] [REDACTED]": 2
+      }
+    },
+    {
+      "name": "a key whose last placeholder is already numbered is not numbered again: the later value replaces the earlier",
+      "input": {
+        "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa [REDACTED:npm#2]": 1,
+        "ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb [REDACTED:npm#2]": 2
+      },
+      "expected": {
+        "[REDACTED:github] [REDACTED:npm#2]": 2
+      }
     }
   ]
 }
