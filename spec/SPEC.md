@@ -695,7 +695,8 @@ one more element than there are placeholders; empty elements are kept.
 **Numbered form (L-P, decided by Lutz 2026-11-18).** The rule part of a placeholder may end with `#<n>`
 (`[REDACTED:npm#2]`): the grammar above already admits it (`#` is a unit of the rule class), and it is a
 placeholder like any other (whole-placeholder tests, `isPlaceholderValue`, idempotence, `literalSegments`,
-restore). Only object-key collisions write it (section 8, **key collisions**).
+restore). Only object-key collisions write it (section 8, **key collisions**; it goes inside the last
+placeholder of a key, also of a key that merely contains placeholders).
 
 **Read form**: `[REDACTED:` + `shorten(ruleId)` + `]`, where `shorten` removes one leading prefix of
 `stripPrefixes` (`@secretlint/secretlint-rule-`, then `mobilerun-redaction/`, tried in that order, each
@@ -724,17 +725,30 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
 - **Duplicate keys.** The input has been parsed, so for duplicate keys the last value wins and the key
   keeps the position of its first occurrence (as in ECMAScript); only the surviving value is walked.
   Two different keys can also become the same key after redaction (two keys that each held a secret
-  give the same placeholder text). **Key collisions (L-P, decided by Lutz 2026-11-18): no value is lost.** Let
-  the *output key* of an entry be its key after redaction. When an output key is a **rule placeholder** (exactly
-  `[REDACTED:<rule>]`: a whole placeholder with a rule and no `:suffix`) and an earlier entry of the same object
-  already has that output key, the entry is stored under `[REDACTED:<rule>#<n>]` instead. `n` starts at 2 for the
-  second entry and counts up in contract order, per object and per placeholder key; a number whose key already
-  exists in the output object (a literal `[REDACTED:npm#2]` key, or one given earlier) is skipped. The first
-  entry keeps the plain placeholder key (also when that key was written in the input). Every key replaced in
-  the walk takes part alike: a secret key of the standard or the full tier (`ghp_...`, `npm_...`), the
-  `[REDACTED:size-limit]` key of a key over the limit or of a collapsed rest (section 9.3). A key that is not a
-  rule placeholder (`password=[REDACTED:generic-keyword]`: only a part of the key was replaced) keeps the old
-  rule: the later value replaces the earlier one and the key keeps the earlier position.
+  give the same placeholder text). **Key collisions (L-P, L-Q, decided by Lutz 2026-11-18): no value is lost.**
+  Let the *output key* of an entry be its key after redaction (the key scan of section 9, size-limit
+  placeholders included), and call a key **changed** when its output key is not the key itself. The rules, for
+  one object, in contract order:
+  1. **Reserved names.** Before the first entry, scan every input key that contains the text `[REDACTED` (no
+     budget, no hits, the same key scan as the walk) and **reserve** each one the scan leaves as it is. A key that
+     redaction leaves unchanged always keeps its own name, whatever else collides; a changed key never takes a
+     reserved name.
+  2. A changed entry whose output key is neither reserved nor the name of an earlier entry of the object is
+     stored under its output key.
+  3. Otherwise (the name is reserved or taken), the entry gets a number. Take the **last placeholder** of the
+     output key (the last match of the placeholder grammar, section 7). If it is exactly `[REDACTED:<rule>]` (a
+     rule, no `:suffix`, and a rule that does not itself end with `#<digits>`), the entry is stored under the
+     output key with `#<n>` inserted before the `]` of that last placeholder: `[REDACTED:npm#2]`,
+     `token [REDACTED:npm#2] end`, `password=[REDACTED:generic-keyword#2]`. `n` starts at 2 and counts up per
+     object and per output key in contract order; a number whose name is reserved or already in the output
+     object is skipped. The `[REDACTED:size-limit]` key of a key over the limit or of a collapsed rest (9.3) is
+     a changed key like any other; an entry written under a node limit (9.2 step 6) is an unchanged key.
+  4. Any other output key (no placeholder, a last placeholder with a `:suffix`, the bare `[REDACTED]`, an
+     already numbered last placeholder) keeps the old rule: the later value replaces the earlier one and the
+     key keeps the earlier position.
+  The first entry therefore keeps the plain key unless that name is written in the input, in which case the entry
+  written there keeps it and the changed key is numbered. Idempotence: the next pass leaves a numbered key as it
+  is (a placeholder is not a secret), so redacting the output gives the output.
 - **Numbers.** A number under a key whose verdict is `any` is replaced as a unit by `[REDACTED:key-context]`.
   Every other number is untouched in value: its digits are never scanned. The data model is the IEEE 754
   double: a JSON number is parsed to the nearest double, and **equality of outputs is value equality** of
@@ -812,8 +826,8 @@ State: `nodes = maxNodes` (default 500,000), `chars = maxChars` (4,000,000), `ma
    when its own depth is below the limit; a primitive is never depth-limited.)
 5. An array: for each element in order: if `nodes <= 0`: append `limit(size-limit)` as the next element and
    stop; else the element is `walk(element, depth + 1, verdict)`.
-6. An object: for each key in contract order: if `nodes <= 0`: set `out[key] = limit(size-limit)` (the key as
-   it was) and stop. Else `outKey` = the key redacted (section 8, with its hits appended to `hits`). If the
+6. An object: for each key in contract order: if `nodes <= 0`: store `limit(size-limit)` under the key as it was
+   (an unchanged key: it keeps its name, section 8 **key collisions**) and stop. Else `outKey` = the key redacted (section 8, with its hits appended to `hits`). If the
    key is a skip key and the value is a primitive: `nodes -= 1`, `out[outKey] = value` unchanged (`compat`; strict
    scans a string, 9.3). Else
    `out[outKey] = walk(value, depth + 1, strongerVerdict(verdict, keyVerdict(key)))`.
@@ -919,7 +933,12 @@ of the package itself, so a package runs without reading any file at runtime:
 These exist for compatibility with v0.2.0 and never change what is detected:
 
 - Async signatures and `bigint` values (a `bigint` counts as a number).
-- `restoreRedacted(redacted, stored)` and its options (restores values behind placeholders from a stored copy).
+- `restoreRedacted(redacted, stored)` and its options (restores values behind placeholders from a stored copy). It
+  also maps **placeholder keys** back (L-R): an incoming key that is or contains a placeholder (plain or numbered)
+  is replaced by the one stored key of the same object whose redaction, named as in section 8 with the standard
+  rules or the full tier, is exactly that key, and its value is restored against the stored value. No such stored
+  key, more than one, or one that an earlier incoming key already took: the incoming key stays and the path is
+  reported as a conflict.
 - The 0.1.1 `last4` placeholder `[REDACTED:<rule>:<last4>]` for matches of at least 16 units (`opts.last4`);
   brackets in the last four units are replaced by `*`. `last4` has no effect in `strict`.
 - `CREDENTIAL_KEY_RE` (the 0.1.1 substring matcher; a TypeScript constant, not spec data), `STRUCTURAL_SKIP_KEYS`.

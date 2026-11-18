@@ -15,6 +15,7 @@
   "placeholder": {
     "open": "[REDACTED:",
     "close": "]",
+    "numberMark": "#",
     "stripPrefixes": [
       "@secretlint/secretlint-rule-",
       "mobilerun-redaction/"

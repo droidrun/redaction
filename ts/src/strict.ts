@@ -19,10 +19,10 @@ import {
     strongerVerdict,
     type KeyVerdict,
 } from './key-names.js';
-import { placeKey, type KeySlots } from './place-key.js';
+import { keysHoldingPlaceholder, newPlacer, placeKey, type KeyPlacer } from './place-key.js';
 import { isPrimitive } from './primitive.js';
 import { buildReadPlaceholder } from './placeholder.js';
-import { isOverlongKey, redactKey, type KeyDetector } from './redact-key.js';
+import { isOverlongKey, isScannableKey } from './redact-key.js';
 import { ALGORITHMS_SPEC } from './spec.js';
 
 const { ruleIds } = ALGORITHMS_SPEC;
@@ -49,7 +49,9 @@ type Frame = {
     verdict: KeyVerdict;
     depth: number;
     outKey: string;
-    slots: KeySlots;
+    /** True when the scan or a limit changed the key (an unchanged key keeps its own name, SPEC 8). */
+    changed: boolean;
+    placer: KeyPlacer;
 };
 
 type Entered = { frame: Frame } | { value: unknown };
@@ -61,7 +63,6 @@ type State = {
     skip: ReadonlySet<string>;
     hits: Hit[];
     ancestors: Set<object>;
-    detectKey: KeyDetector | undefined;
 };
 
 function placeholderFor(ruleId: string, state: State): string {
@@ -117,7 +118,8 @@ function openFrame(value: object, verdict: KeyVerdict, depth: number, state: Sta
         verdict,
         depth,
         outKey: '',
-        slots: new Map(),
+        changed: false,
+        placer: newPlacer(),
     };
 }
 
@@ -141,17 +143,37 @@ function* enter(
     }
     if (depth >= state.limits.maxDepth) return { value: placeholderFor(ruleIds.depthLimit, state) };
     if (state.ancestors.has(value)) return { value: placeholderFor(ruleIds.circular, state) };
-    return { frame: openFrame(value, verdict, depth, state) };
+    const frame = openFrame(value, verdict, depth, state);
+    if (frame.keys !== null) frame.placer = newPlacer(yield* reservedKeys(frame.keys));
+    return { frame };
 }
 
-/** The key of the next entry, scanned, or its size-limit placeholder. */
-function nextKey(key: string, state: State): string {
+/** The input keys that hold a placeholder and that the key scan leaves as they are (SPEC 8): scanned once,
+ *  through the leaf scanner, without a budget charge and without hits. */
+function* reservedKeys(keys: string[]): Generator<string, Set<string>, LeafResult> {
+    const reserved = new Set<string>();
+    for (const key of keysHoldingPlaceholder(keys)) {
+        if (isOverlongKey(key)) continue;
+        if ((yield key).text === key) reserved.add(key);
+    }
+    return reserved;
+}
+
+/** The key of the next entry, scanned by the leaf scanner (so the tier and `opts.detect` apply to keys as to
+ *  leaves), or its size-limit placeholder. */
+function* nextKey(
+    key: string,
+    state: State,
+): Generator<string, { outKey: string; changed: boolean }, LeafResult> {
     if (isOverlongKey(key) || key.length > state.chars) {
         state.chars = 0;
-        return placeholderFor(ruleIds.sizeLimit, state);
+        return { outKey: placeholderFor(ruleIds.sizeLimit, state), changed: true };
     }
     state.chars -= key.length;
-    return redactKey(key, state.hits, state.detectKey);
+    if (!isScannableKey(key)) return { outKey: key, changed: false };
+    const scanned = yield key;
+    appendHits(state.hits, scanned.hits);
+    return { outKey: scanned.text, changed: scanned.text !== key };
 }
 
 function place(frame: Frame, value: unknown): void {
@@ -159,12 +181,13 @@ function place(frame: Frame, value: unknown): void {
         (frame.out as unknown[]).push(value);
         return;
     }
-    placeKey(frame.out as Record<string, unknown>, frame.slots, frame.outKey, value);
+    placeKey(frame.out as Record<string, unknown>, frame.placer, frame.outKey, frame.changed, value);
 }
 
 /** Close a frame early: what is left of it collapses into one size-limit marker. */
 function collapse(frame: Frame, state: State): void {
     frame.outKey = buildReadPlaceholder(ruleIds.sizeLimit);
+    frame.changed = true;
     place(frame, placeholderFor(ruleIds.sizeLimit, state));
     frame.index = frame.items.length;
 }
@@ -174,7 +197,6 @@ export function* strictWalk(
     limits: StrictLimits,
     skip: ReadonlySet<string>,
     hits: Hit[],
-    detectKey?: KeyDetector,
 ): StrictWalk {
     const state: State = {
         nodes: limits.maxNodes,
@@ -183,7 +205,6 @@ export function* strictWalk(
         skip,
         hits,
         ancestors: new Set(),
-        detectKey,
     };
     const stack: Frame[] = [];
     let pending: { value: unknown; verdict: KeyVerdict; depth: number } | undefined = {
@@ -223,7 +244,9 @@ export function* strictWalk(
             continue;
         }
         const key = top.keys[index] as string;
-        top.outKey = nextKey(key, state);
+        const next = yield* nextKey(key, state);
+        top.outKey = next.outKey;
+        top.changed = next.changed;
         if (state.skip.has(key) && isPrimitive(child)) {
             // A skip key only exempts a value from the key-context replacement: a string is still scanned.
             if (typeof child === 'string') {

@@ -1,5 +1,5 @@
 {
-  "description": "Object keys in the full tier (SPEC 8, 9.4): a key that is itself a secret of the full tier is replaced by its placeholder, in compat and strict. `expectedSync` is the standard tier, which does not know the full-tier formats (npm, 1password, ...); `expectedAsync` the full tier. Keys that collide after replacement keep every value: the first has the plain placeholder key, the next ones `#2`, `#3` inside the brackets (SPEC 8, L-P). An implementation without the full tier skips this file (`tier`).",
+  "description": "Object keys in the full tier (SPEC 8, 9.4): a key that is itself a secret of the full tier is replaced by its placeholder, in compat and strict. `expectedSync` is the standard tier, which does not know the full-tier formats (npm, 1password, ...); `expectedAsync` the full tier. Keys that collide after replacement keep every value (SPEC 8, L-P and L-Q): the full-tier tokens collide like the standard ones. ",
   "tier": "full",
   "cases": [
     {
@@ -202,7 +202,7 @@
       }
     },
     {
-      "name": "two tokens collide after replacement: the first keeps the plain key, the second gets #2 (no value lost)",
+      "name": "two tokens collide after replacement: the first keeps the plain key, the second gets #2",
       "input": {
         "first": 1,
         "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "a",
@@ -274,36 +274,51 @@
       }
     },
     {
-      "name": "a key that already is a placeholder takes the plain key; the token after it gets #2",
+      "name": "a key written as a placeholder keeps its own name, also when a token key comes first",
       "input": {
-        "[REDACTED:npm]": 1,
-        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 2
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "[REDACTED:npm]": 2
       },
       "expectedSync": {
-        "[REDACTED:npm]": 1,
-        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 2
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "[REDACTED:npm]": 2
       },
       "expectedAsync": {
-        "[REDACTED:npm]": 1,
-        "[REDACTED:npm#2]": 2
+        "[REDACTED:npm#2]": 1,
+        "[REDACTED:npm]": 2
       }
     },
     {
-      "name": "a literal key [REDACTED:npm#2] is taken: the next token key skips to #3",
+      "name": "a key written as a numbered placeholder is reserved: the generated numbers skip it",
       "input": {
         "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
-        "[REDACTED:npm#2]": "x",
-        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "[REDACTED:npm#2]": 3
       },
       "expectedSync": {
         "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
-        "[REDACTED:npm#2]": "x",
-        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "[REDACTED:npm#2]": 3
       },
       "expectedAsync": {
         "[REDACTED:npm]": 1,
-        "[REDACTED:npm#2]": "x",
-        "[REDACTED:npm#3]": 2
+        "[REDACTED:npm#3]": 2,
+        "[REDACTED:npm#2]": 3
+      }
+    },
+    {
+      "name": "a key that holds a token gets the number inside its last placeholder",
+      "input": {
+        "token npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "token npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+      },
+      "expectedSync": {
+        "token [REDACTED:auth-header]": "[REDACTED:key-context]",
+        "token [REDACTED:auth-header#2]": "[REDACTED:key-context]"
+      },
+      "expectedAsync": {
+        "token [REDACTED:npm]": "[REDACTED:key-context]",
+        "token [REDACTED:npm#2]": "[REDACTED:key-context]"
       }
     },
     {
@@ -326,22 +341,35 @@
       }
     },
     {
-      "name": "strict: three tokens collide",
+      "name": "strict: a key written as a placeholder keeps its own name",
       "input": {
         "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
-        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
-        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 3
+        "[REDACTED:npm]": 2
       },
       "mode": "strict",
       "expectedSync": {
         "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
-        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
-        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 3
+        "[REDACTED:npm]": 2
       },
       "expectedAsync": {
-        "[REDACTED:npm]": 1,
-        "[REDACTED:npm#2]": 2,
-        "[REDACTED:npm#3]": 3
+        "[REDACTED:npm#2]": 1,
+        "[REDACTED:npm]": 2
+      }
+    },
+    {
+      "name": "strict: a key that holds a token gets the number inside its last placeholder",
+      "input": {
+        "token npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "token npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "token [REDACTED:auth-header]": "[REDACTED:key-context]",
+        "token [REDACTED:auth-header#2]": "[REDACTED:key-context]"
+      },
+      "expectedAsync": {
+        "token [REDACTED:npm]": "[REDACTED:key-context]",
+        "token [REDACTED:npm#2]": "[REDACTED:key-context]"
       }
     }
   ]

@@ -21,7 +21,7 @@
  *   - Skipped primitive values are never scanned, even if they contain
  *     secret-shaped content.
  */
-import { appendHits } from './hits.js';
+import { appendHits, applyHits } from './hits.js';
 import { redactText, type Hit, type RedactTextOpts } from './redact-text.js';
 import { buildPlaceholder, buildReadPlaceholder } from './placeholder.js';
 import { ALGORITHMS_SPEC } from './spec.js';
@@ -35,10 +35,10 @@ import {
     strongerVerdict,
     type KeyVerdict,
 } from './key-names.js';
-import { placeKey, type KeySlots } from './place-key.js';
+import { keysHoldingPlaceholder, newPlacer, placeKey } from './place-key.js';
 import { isPrimitive } from './primitive.js';
 import { detectFullTierKeyHits } from './full-rules.js';
-import { redactKey } from './redact-key.js';
+import { isScannableKey, redactKey } from './redact-key.js';
 
 export { CREDENTIAL_KEY_RE, STRUCTURAL_SKIP_KEYS };
 
@@ -69,13 +69,7 @@ async function redactJsonValueStrict(
 ): Promise<unknown> {
     const hits: Hit[] = [];
     try {
-        const walk = strictWalk(
-            value,
-            strictLimits(opts),
-            opts.skipKeys ?? STRUCTURAL_SKIP_KEYS,
-            hits,
-            detectFullTierKeyHits,
-        );
+        const walk = strictWalk(value, strictLimits(opts), opts.skipKeys ?? STRUCTURAL_SKIP_KEYS, hits);
         const out = await runStrictAsync(walk, (text) => redactText(text, opts));
         appendHits(stats.hits, hits);
         return out;
@@ -125,6 +119,22 @@ async function visit(
     return keyed;
 }
 
+/** A key after the key scan of the full tier (SPEC 9.4): `opts.detect`, when given, is the detector of keys
+ *  as of leaves (SPEC 13), else the full-tier rules. */
+async function scanKey(key: string, hits: Hit[], opts: RedactValueOpts): Promise<string> {
+    if (opts.detect === undefined) return redactKey(key, hits, detectFullTierKeyHits);
+    if (!isScannableKey(key)) return key;
+    try {
+        const found = await opts.detect(key);
+        if (found.length === 0) return key;
+        appendHits(hits, found);
+        return applyHits(key, found);
+    } catch {
+        // Like a leaf (`redactText`): a failing detector falls back to the standard rules, never the raw key.
+        return redactKey(key, hits);
+    }
+}
+
 async function visitEntries(
     value: Record<string, unknown>,
     stats: RedactValueStats,
@@ -132,16 +142,23 @@ async function visitEntries(
     verdict: KeyVerdict,
 ): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
-    const slots: KeySlots = new Map();
     const skipKeys = opts.skipKeys ?? STRUCTURAL_SKIP_KEYS;
-    for (const [key, child] of Object.entries(value)) {
-        const outKey = redactKey(key, stats.hits, detectFullTierKeyHits);
+    const keys = Object.keys(value);
+    const reserved = new Set<string>();
+    for (const key of keysHoldingPlaceholder(keys)) {
+        if ((await scanKey(key, [], opts)) === key) reserved.add(key);
+    }
+    const placer = newPlacer(reserved);
+    for (const key of keys) {
+        const child = value[key];
+        const outKey = await scanKey(key, stats.hits, opts);
+        const changed = outKey !== key;
         if (skipKeys.has(key) && isPrimitive(child)) {
-            placeKey(out, slots, outKey, child);
+            placeKey(out, placer, outKey, changed, child);
             continue;
         }
         const childVerdict = strongerVerdict(verdict, keyVerdict(key));
-        placeKey(out, slots, outKey, await visit(child, stats, opts, childVerdict));
+        placeKey(out, placer, outKey, changed, await visit(child, stats, opts, childVerdict));
     }
     return out;
 }

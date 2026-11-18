@@ -12,10 +12,15 @@ const MAX_KEY_CHARS = ALGORITHMS_SPEC.sync.maxKeyChars;
 
 export type KeyDetector = (key: string) => Hit[];
 
+/** True when a key is long enough to hold a secret and short enough to be scanned (longer ones stay). */
+export function isScannableKey(key: string): boolean {
+    return key.length >= MIN_SCAN_LEN && key.length <= MAX_KEY_CHARS;
+}
+
 /** The key as written, or its placeholder when the key text itself holds a secret. `detect` is the standard
  *  rules (default) or, in the full tier, the full-tier rules too (SPEC 9.4). */
 export function redactKey(key: string, hits: Hit[], detect: KeyDetector = detectSyncHits): string {
-    if (key.length < MIN_SCAN_LEN || key.length > MAX_KEY_CHARS) return key;
+    if (!isScannableKey(key)) return key;
     const found = detect(key);
     if (found.length === 0) return key;
     appendHits(hits, found);
