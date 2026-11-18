@@ -1,6 +1,7 @@
 """Scaling (SPEC section 10.5): attack strings through `redact_text` at 100 KB and 1 MB, and long JSON keys.
 
-The attack units come from tools/lib/attacks.ts (run by bun) plus the units below. Each worker is a subprocess
+The attack units come from tools/lib/attacks.ts (run by bun), among them a PEM header whose body stops at
+once and a query value followed by a space. Each worker is a subprocess
 under an external deadline. The time at 1 MB must not exceed 15 times the time at 100 KB (floor 10 ms; linear
 growth is 10 times). A first pass runs the attacks in parallel; every attack that fails the ratio there is
 measured again alone, one at a time, best of three, because a loaded machine skews a single run.
@@ -25,15 +26,6 @@ DEADLINE_SECONDS = 900
 RATIO_LIMIT = 15
 FLOOR_MS = 10
 REPEATS = 3
-# Attack units of this repository's own, until tools/lib/attacks.ts carries them: a header whose body stops at
-# once (every header searched for a footer), and a query value followed by a space (every value cut at `&`).
-EXTRA_UNITS = [
-    "-----BEGIN PRIVATE KEY-----!",
-    "-----BEGIN PRIVATE KEY-----#",
-    "?password=Ab1defgh ",
-    "?password=Abc12345 ",
-    "?token=Ab1defgh ",
-]
 LONG_KEY_LIMIT_SECONDS = 2.0
 
 
@@ -45,10 +37,7 @@ def load_attacks():
     output = subprocess.run(
         [bun, str(TESTS / "attacks.ts")], check=True, capture_output=True, text=True, timeout=120
     ).stdout
-    attacks = json.loads(output)
-    known = {attack["unit"] for attack in attacks}
-    extra = [{"name": json.dumps(unit), "unit": unit} for unit in EXTRA_UNITS if unit not in known]
-    return attacks + extra
+    return json.loads(output)
 
 
 def run_worker(attacks, runs):
