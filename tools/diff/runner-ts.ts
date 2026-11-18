@@ -54,10 +54,10 @@ async function respond(line: string): Promise<string> {
     const request = JSON.parse(line) as Request;
     try {
         const { out, hits } = await redact(request);
-        return toLine({ id: request.id, out, hits: counts(hits), error: null });
+        return toLine({ id: request.id, out, hits: counts(hits), error: null, crash: null });
     } catch (error) {
         const name = error instanceof Error ? error.constructor.name : typeof error;
-        return toLine({ id: request.id, out: null, hits: [], error: name });
+        return toLine({ id: request.id, out: null, hits: [], error: null, crash: name });
     }
 }
 

@@ -39,10 +39,13 @@ type requestOpts struct {
 }
 
 type response struct {
-	ID    json.RawMessage `json:"id"`
-	Out   json.RawMessage `json:"out"`
-	Hits  [][]any         `json:"hits"`
-	Error *string         `json:"error"`
+	ID   json.RawMessage `json:"id"`
+	Out  json.RawMessage `json:"out"`
+	Hits [][]any         `json:"hits"`
+	// Error is the class of a fail-closed event of the library (informational, not compared).
+	Error *string `json:"error"`
+	// Crash is an exception of the runner or an unexpected failure of the call; the driver fails on it.
+	Crash *string `json:"crash"`
 }
 
 // surrogateEscape matches a JSON escape of a UTF-16 surrogate unit.
@@ -99,7 +102,12 @@ func marshalString(s string) []byte {
 	return bytes.TrimRight(buf.Bytes(), "\n")
 }
 
-func handle(req request) response {
+func handle(req request) (resp response) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			resp = crash(req, "panic")
+		}
+	}()
 	opts := options(req)
 	var out []byte
 	var result redaction.Result
@@ -107,7 +115,7 @@ func handle(req request) response {
 	case req.Kind == "text" && !surrogateEscape.Match(req.Input):
 		var text string
 		if err := json.Unmarshal(req.Input, &text); err != nil {
-			return failure(req, err)
+			return crash(req, fmt.Sprintf("%T", err))
 		}
 		redacted, res := redaction.RedactText(text, opts)
 		out, result = marshalString(redacted), res
@@ -115,15 +123,18 @@ func handle(req request) response {
 		var err error
 		out, result, err = redaction.RedactJSON(req.Input, opts)
 		if err != nil {
-			return failure(req, err)
+			return crash(req, fmt.Sprintf("%T", err))
 		}
 	}
-	return response{ID: req.ID, Out: out, Hits: counts(result)}
+	resp = response{ID: req.ID, Out: out, Hits: counts(result)}
+	if result.Err != "" {
+		resp.Error = &result.Err
+	}
+	return resp
 }
 
-func failure(req request, err error) response {
-	message := fmt.Sprintf("%T", err)
-	return response{ID: req.ID, Hits: [][]any{}, Error: &message}
+func crash(req request, class string) response {
+	return response{ID: req.ID, Out: json.RawMessage("null"), Hits: [][]any{}, Crash: &class}
 }
 
 func main() {

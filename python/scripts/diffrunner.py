@@ -49,13 +49,14 @@ def compact(value) -> str:
 def respond(request: dict) -> str:
     try:
         result = redact(request)
-    except Exception as error:  # a runner reports a failure of the call, it does not stop
-        return compact({"id": request["id"], "out": None, "hits": [], "error": type(error).__name__})
+    except Exception as error:  # an exception of the call is a `crash`: the driver fails the job on it
+        crash = type(error).__name__
+        return compact({"id": request["id"], "out": None, "hits": [], "error": None, "crash": crash})
     hits = [[hit.rule_id, hit.count] for hit in result.hits]
     # `out` is written by hand so that the redacted value keeps the order of its keys.
     return (
         f'{{"id":{compact(request["id"])},"out":{compact(result.value)},'
-        f'"hits":{compact(hits)},"error":{compact(result.error)}}}'
+        f'"hits":{compact(hits)},"error":{compact(result.error)},"crash":null}}'
     )
 
 

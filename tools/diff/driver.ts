@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { allCases, type DiffCase } from './cases.ts';
+import { EXPECTED, MIN_CASES } from './expected.ts';
 import {
     canonicalJson,
     countKey,
@@ -28,7 +29,6 @@ import {
 const ROOT = resolve(import.meta.dir, '..', '..');
 const TIERS: Tier[] = ['standard', 'full'];
 const MODES: Mode[] = ['compat', 'strict'];
-const MIN_CASES = 5000;
 const DEADLINE_MS = 25 * 60 * 1000;
 
 type RunnerSpec = { name: string; command: string; args: string[]; cwd: string };
@@ -120,14 +120,21 @@ class Runner {
     }
 }
 
-type Parsed = { out: string; counts: string };
+type Parsed = { out: string; counts: string; crash: string | null };
 
 function parse(line: string | undefined): Parsed | undefined {
     if (line === undefined) return undefined;
     const outStart = line.indexOf('"out":') + 6;
     const hitsStart = line.lastIndexOf(',"hits":');
-    const hitsAndError = JSON.parse(`{${line.slice(hitsStart + 1)}`) as { hits: Array<[string, number]> };
-    return { out: canonicalJson(line.slice(outStart, hitsStart)), counts: countKey(hitsAndError.hits) };
+    const tail = JSON.parse(`{${line.slice(hitsStart + 1)}`) as {
+        hits: Array<[string, number]>;
+        crash?: string | null;
+    };
+    return {
+        out: canonicalJson(line.slice(outStart, hitsStart)),
+        counts: countKey(tail.hits),
+        crash: tail.crash ?? null,
+    };
 }
 
 function requestsFor(cases: DiffCase[], tier: Tier, mode: Mode): Request[] {
@@ -177,12 +184,22 @@ function compare(runners: Runner[], cases: DiffCase[], show: number): { rows: Ro
                     row.differing += 1;
                     continue;
                 }
-                if (active.length < 2) continue;
-                row.compared += 1;
                 const parsed = answers.map((answer) => ({
                     name: answer.name,
                     ...(parse(answer.line) as Parsed),
                 }));
+                // A crash is a runner exception, not a library result: it never counts as an answer.
+                const crashed = parsed.filter((answer) => answer.crash !== null);
+                if (crashed.length > 0) {
+                    row.differing += 1;
+                    if (failures.length < show) {
+                        const who = crashed.map((answer) => `${answer.name} (${answer.crash})`).join(', ');
+                        failures.push(`${request.id}: runner exception in ${who}`);
+                    }
+                    continue;
+                }
+                if (active.length < 2) continue;
+                row.compared += 1;
                 const [reference, ...others] = parsed as [
                     Parsed & { name: string },
                     ...Array<Parsed & { name: string }>,
@@ -204,6 +221,33 @@ function compare(runners: Runner[], cases: DiffCase[], show: number): { rows: Ro
         }
     }
     return { rows, failures };
+}
+
+/** Problems with what the runners reported or what a row covered, against the table in expected.ts. */
+function coverageProblems(rows: Row[], runners: Runner[], enforceMinimum: boolean): string[] {
+    const names = runners.map((runner) => runner.spec.name);
+    const problems: string[] = [];
+    for (const row of rows) {
+        const expected = EXPECTED[row.tier][row.mode].filter((name) => names.includes(name));
+        const missing = expected.filter((name) => !row.runners.includes(name));
+        if (missing.length > 0) {
+            problems.push(`${row.tier}/${row.mode}: ${missing.join(', ')} no longer report this capability`);
+        }
+        const extra = row.runners.filter((name) => !EXPECTED[row.tier][row.mode].includes(name));
+        if (extra.length > 0) {
+            console.log(
+                `note: ${extra.join(', ')} report ${row.tier}/${row.mode}; add them to tools/diff/expected.ts`,
+            );
+        }
+        if (!enforceMinimum || expected.length === 0) continue;
+        const covered = expected.length >= 2 ? row.compared : row.sent;
+        if (covered < MIN_CASES) {
+            problems.push(
+                `${row.tier}/${row.mode}: ${covered} cases ${expected.length >= 2 ? 'compared' : 'run'}, fewer than ${MIN_CASES}`,
+            );
+        }
+    }
+    return problems;
 }
 
 function printTable(rows: Row[], runners: Runner[]): void {
@@ -261,6 +305,11 @@ async function main(): Promise<void> {
             console.log(`  ${runner.spec.name}: ${JSON.stringify(runner.capabilities)}`);
         printTable(rows, runners);
         const differing = rows.reduce((sum, row) => sum + row.differing, 0);
+        const problems = coverageProblems(rows, runners, limit === 0);
+        if (problems.length > 0) {
+            console.error(`\ncoverage problems:\n  ${problems.join('\n  ')}`);
+            process.exit(1);
+        }
         if (differing > 0) {
             console.error(`\n${differing} difference(s); first ${failures.length}:\n${failures.join('\n')}`);
             process.exit(1);
