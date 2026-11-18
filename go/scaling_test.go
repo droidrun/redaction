@@ -130,7 +130,7 @@ func shortest(t *testing.T, name string, input string, run func(string)) time.Du
 // run once, however many starts the cluster has. A memory per class is overwritten by the other parts of
 // the same class and measures it again at every start (170 times as much work with 170 starts), so the
 // text with 170 starts must cost about as much as the one with 2.
-func TestRunMemoIsPerPart(t *testing.T) {
+func TestAttackStringsRunMemoIsPerPart(t *testing.T) {
 	const run = 1_000_000
 	build := func(starts int) string {
 		return strings.Repeat("ghs_1_", starts) + "." + strings.Repeat("a", run)

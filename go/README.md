@@ -151,8 +151,7 @@ input from a broken copy. `tools/sync-spec` writes the copy and the constant fro
 cd go
 go vet ./... && gofmt -l .
 go test -race ./...                      # vectors, golden replay, unicode, strict, integrity
-go test -run TestAttackStrings ./...     # scaling at 100 KB and 1 MB (not under -race)
-go test -run TestRunMemoIsPerPart ./...  # the run memory of the token rules is per part
+go test -run TestAttackStrings ./...     # scaling at 100 KB and 1 MB, and the per-part run memory (not under -race)
 go test -run XXX -fuzz FuzzRedactText -fuzztime 60s
 go test -run XXX -fuzz FuzzRedactJSON -fuzztime 60s
 go test -run XXX -bench . ./...          # a 2 KB log line and a 4 MB text, both tiers
