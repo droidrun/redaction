@@ -22,6 +22,7 @@ import {
     toLine,
     type Capabilities,
     type Mode,
+    type RequestOpts,
     type Request,
     type Tier,
 } from './protocol.ts';
@@ -137,6 +138,13 @@ function parse(line: string | undefined): Parsed | undefined {
     };
 }
 
+/** The full tier in compat mode has no length, depth or node limit (SPEC 9.4): a language may refuse the options
+ *  and TypeScript ignores them, so the driver leaves them out of those requests. `skipKeys` stays. */
+function optsFor(opts: RequestOpts, tier: Tier, mode: Mode): RequestOpts {
+    if (tier !== 'full' || mode !== 'compat') return opts;
+    return opts.skipKeys === undefined ? {} : { skipKeys: opts.skipKeys };
+}
+
 function requestsFor(cases: DiffCase[], tier: Tier, mode: Mode): Request[] {
     return cases
         .filter((item) => item.modes === undefined || item.modes.includes(mode))
@@ -145,7 +153,7 @@ function requestsFor(cases: DiffCase[], tier: Tier, mode: Mode): Request[] {
             kind: item.kind,
             tier,
             mode,
-            opts: item.opts,
+            opts: optsFor(item.opts, tier, mode),
             input: item.input,
         }));
 }
