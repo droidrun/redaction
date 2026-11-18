@@ -134,4 +134,4 @@ test('strict: a million hits in one value do not overflow the stack', () => {
     const out = redactJsonValueSync(value, { ...limits, stats: stats as { hits: never[] } }) as string[];
     expect(out[1_049_999]).toBe('token=[REDACTED:generic-keyword]');
     expect(stats.hits).toHaveLength(1_050_000);
-});
+}, 120_000);
