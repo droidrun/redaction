@@ -215,6 +215,27 @@ func TestFullTierWindowsAndTheScanCap(t *testing.T) {
 	}
 }
 
+// A hit that reaches the scan cap merges with the size-limit hit that follows it and keeps its own
+// rule id and count; the call still reports that units beyond the cap were not scanned.
+func TestFullTierStrictReportsTheCapWhenTheSizeLimitHitIsMerged(t *testing.T) {
+	text := strings.Repeat(" ", 1_999_960) + npmToken + strings.Repeat("b", 1000)
+	out, result := RedactText(text, Options{Tier: TierFull, Mode: Strict})
+	if out != strings.Repeat(" ", 1_999_960)+"[REDACTED:npm]" {
+		t.Fatalf("got %d units, placeholder at %d", unitLength(out), placeholderAt(out))
+	}
+	if result.Err != "size-limit" || len(result.Hits) != 1 || result.Hits[0] != (RuleCount{"npm", 1}) {
+		t.Fatalf("got %+v", result)
+	}
+	_, plain := RedactText(strings.Repeat(" ", 1_999_990)+npmToken, Options{Tier: TierFull, Mode: Strict})
+	if plain.Err != "size-limit" || len(plain.Hits) != 1 || plain.Hits[0].RuleID != "size-limit" {
+		t.Fatalf("an unmerged size-limit hit: got %+v", plain)
+	}
+	_, within := RedactText(strings.Repeat(" ", 1_999_900)+npmToken, Options{Tier: TierFull, Mode: Compat})
+	if within.Err != "" {
+		t.Fatalf("compat reported a failure: %+v", within)
+	}
+}
+
 func TestFullTierCompatHasNoLimitsAndStrictDoes(t *testing.T) {
 	long := strings.Repeat("a", 50) + " " + npmToken
 	compat, _ := RedactText(long, Options{Tier: TierFull, Mode: Compat, MaxChars: Limit(10)})

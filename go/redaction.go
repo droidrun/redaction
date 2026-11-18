@@ -96,6 +96,14 @@ func (r *recorder) add(ruleID string) {
 	r.hits = append(r.hits, RuleCount{RuleID: ruleID, Count: 1})
 }
 
+// fail records the class of a fail-closed event without counting a hit (the event may be part of a
+// merged hit that carries another rule id).
+func (r *recorder) fail(ruleID string) {
+	if r.failure == "" {
+		r.failure = ruleID
+	}
+}
+
 func (r *recorder) addHits(hits []hit) {
 	for _, found := range hits {
 		r.add(found.id)

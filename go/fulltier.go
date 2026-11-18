@@ -104,6 +104,7 @@ func (e *engine) redactFullStrict(units []uint16, maxChars int, rec *recorder) [
 	}
 	if scanCap := e.spec.algorithms.Full.ScanCap; len(units) > scanCap {
 		hits = mergeHits(append(hits, hit{id: sizeLimit, start: scanCap, end: len(units)}))
+		rec.fail(sizeLimit)
 	}
 	rec.addHits(hits)
 	return e.splice(units, hits)
