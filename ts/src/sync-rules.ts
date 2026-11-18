@@ -8,36 +8,11 @@
  * Every rule is linear-time or bounded per candidate. Only ranges leave this
  * module; it never logs or returns matched text.
  */
-import { prepareAuthValues } from './algorithms/auth-values.js';
-import { prepareDottedToken } from './algorithms/dotted-token.js';
-import { prepareKeywordPairs, prepareQuotedPairs, prepareUnquotedPairs } from './algorithms/pairs.js';
-import { preparePemBlocks } from './algorithms/pem-blocks.js';
-import { prepareQueryValues } from './algorithms/query-values.js';
-import { prepareCookieLines, prepareRegexRule, type Scanner } from './algorithms/regex-rule.js';
+import { prepareRules } from './algorithms/registry.js';
 import { dedupeRanges, type Hit } from './hits.js';
-import { RULES_SPEC, type Rule } from './spec.js';
+import { RULES_SPEC } from './spec.js';
 
-const PREPARE: Record<string, (rule: never) => Scanner> = {
-    regex: prepareRegexRule,
-    'dotted-token': prepareDottedToken,
-    'pem-blocks': preparePemBlocks,
-    'cookie-lines': prepareCookieLines,
-    'auth-values': prepareAuthValues,
-    'keyword-pairs': prepareKeywordPairs,
-    'quoted-pairs': prepareQuotedPairs,
-    'unquoted-pairs': prepareUnquotedPairs,
-    'query-values': prepareQueryValues,
-};
-
-type PreparedRule = { ruleId: string; scan: Scanner };
-
-function prepareRule(rule: Rule): PreparedRule {
-    const prepare = PREPARE[rule.kind];
-    if (prepare === undefined) throw new Error('unknown rule kind in the spec');
-    return { ruleId: rule.id, scan: prepare(rule as never) };
-}
-
-const PIPELINE: PreparedRule[] = RULES_SPEC.pipeline.map(prepareRule);
+const PIPELINE = prepareRules(RULES_SPEC.pipeline);
 
 /** Every secret range the deterministic rules find in `text`, overlapping
  *  ranges merged. Earlier rules win equal starts (the merged hit keeps the first

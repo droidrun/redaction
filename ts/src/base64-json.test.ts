@@ -1,0 +1,113 @@
+/**
+ * base64-json.test.ts — the 1Password check (SPEC 5.7) decodes and parses with its own code, so the three languages
+ * agree. Here that code is held against this runtime's `atob` and `JSON.parse` on seeded random strings.
+ */
+import { expect, test } from 'bun:test';
+import { mulberry32, pick } from '../../tools/corpus/rng.ts';
+import { decodeBase64, isBase64Json, isJsonContainer } from './algorithms/base64-json.js';
+
+const BASE64_UNITS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+const JSON_UNITS = [
+    '{',
+    '}',
+    '[',
+    ']',
+    '"',
+    ':',
+    ',',
+    '0',
+    '1',
+    '9',
+    '-',
+    '.',
+    'e',
+    'E',
+    '+',
+    'true',
+    'false',
+    'null',
+    'nul',
+    'a',
+    '\\',
+    'u',
+    '00e9',
+    ' ',
+    '\t',
+    '\n',
+    '\r',
+    ' ',
+    '\u0001',
+    'é',
+    '/',
+    'b',
+    'f',
+    'n',
+    'r',
+    't',
+    'x',
+];
+
+function randomFrom(rng: () => number, units: readonly string[], max: number): string {
+    let out = '';
+    for (let count = Math.floor(rng() * max); count > 0; count--) out += pick(rng, units);
+    return out;
+}
+
+function runtimeBytes(input: string): number[] | undefined {
+    try {
+        return [...atob(input)].map((char) => char.charCodeAt(0));
+    } catch {
+        return undefined;
+    }
+}
+
+function runtimeIsContainer(bytes: number[]): boolean {
+    try {
+        const value: unknown = JSON.parse(String.fromCharCode(...bytes));
+        return typeof value === 'object' && value !== null;
+    } catch {
+        return false;
+    }
+}
+
+test('the decoder gives what atob gives, byte for byte, and fails where atob throws', () => {
+    const rng = mulberry32(1);
+    const differing: string[] = [];
+    for (let i = 0; i < 20000; i++) {
+        const input = randomFrom(rng, [...BASE64_UNITS], 14);
+        if (JSON.stringify(decodeBase64(input)) !== JSON.stringify(runtimeBytes(input)))
+            differing.push(input);
+    }
+    expect(differing.slice(0, 10)).toEqual([]);
+});
+
+test('the JSON check says what JSON.parse says for an object or an array', () => {
+    const rng = mulberry32(2);
+    const differing: string[] = [];
+    let accepted = 0;
+    for (let i = 0; i < 60000; i++) {
+        const text = `${pick(rng, ['', '{', '[', '{"a":', '[1,'])}${randomFrom(rng, JSON_UNITS, 12)}${pick(rng, ['', '}', ']'])}`;
+        const bytes = [...text].map((char) => char.charCodeAt(0) & 0xff);
+        const mine = isJsonContainer(bytes);
+        if (mine) accepted += 1;
+        if (mine !== runtimeIsContainer(bytes)) differing.push(text);
+    }
+    expect(differing.slice(0, 10)).toEqual([]);
+    expect(accepted).toBeGreaterThan(200);
+});
+
+test('a deep container does not need recursion', () => {
+    const depth = 2000;
+    const bytes = [...`${'['.repeat(depth)}${']'.repeat(depth)}`].map((char) => char.charCodeAt(0));
+    expect(isJsonContainer(bytes)).toBe(true);
+    expect(isJsonContainer(bytes.slice(0, -1))).toBe(false);
+});
+
+test('the token check on whole tokens', () => {
+    const encode = (text: string): string => Buffer.from(text, 'latin1').toString('base64');
+    expect(isBase64Json(encode('{"a":1}'))).toBe(true);
+    expect(isBase64Json(encode('[1]'))).toBe(true);
+    expect(isBase64Json(encode('"a"'))).toBe(false);
+    expect(isBase64Json(encode('{"a":1,}'))).toBe(false);
+    expect(isBase64Json(`${encode('{"a":1}')}A`)).toBe(false);
+});

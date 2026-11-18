@@ -1,7 +1,7 @@
 /**
- * sync-entry.test.ts — the `./sync` subpath: importing it must not load
- * secretlint (the logger and edge workers import only this), and it exports
- * the same functions as the full entry.
+ * sync-entry.test.ts — the `./sync` subpath: importing it must not load the full tier
+ * (the logger and edge workers import only this), no entry loads secretlint, and it
+ * exports the same functions as the full entry.
  */
 import { expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -9,14 +9,14 @@ import { fileURLToPath } from 'node:url';
 import * as full from './index.js';
 import * as sync from './sync.js';
 
-test('importing the sync entry loads no secretlint module', () => {
+test('importing the sync entry loads no full-tier and no secretlint module', () => {
     const result = spawnSync(process.execPath, ['--eval', `
         import { strict as assert } from 'node:assert';
         const sync = await import('./src/sync.ts');
         const out = sync.redactTextSync('login password: Zq9fakeMARKER_x1');
         assert.equal(out.text, 'login password: [REDACTED:generic-keyword]');
         assert.equal(sync.restoreRedacted({ a: '[REDACTED]' }, { a: 'x' }).value.a, 'x');
-        const loaded = Object.keys(require.cache).filter((path) => path.includes('secretlint'));
+        const loaded = Object.keys(require.cache).filter((path) => /secretlint|full-rules/.test(path));
         assert.deepEqual(loaded, []);
     `], {
         cwd: fileURLToPath(new URL('..', import.meta.url)),
@@ -27,12 +27,13 @@ test('importing the sync entry loads no secretlint module', () => {
     expect(result.status, result.stderr).toBe(0);
 }, 20_000);
 
-test('the full entry loads secretlint (so the check above can fail)', () => {
+test('the full entry loads the full tier and still no secretlint module (so the check above can fail)', () => {
     const result = spawnSync(process.execPath, ['--eval', `
         import { strict as assert } from 'node:assert';
         await import('./src/index.ts');
-        const loaded = Object.keys(require.cache).filter((path) => path.includes('secretlint'));
-        assert.notEqual(loaded.length, 0);
+        const paths = Object.keys(require.cache);
+        assert.notEqual(paths.filter((path) => path.includes('full-rules')).length, 0);
+        assert.deepEqual(paths.filter((path) => path.includes('secretlint')), []);
     `], {
         cwd: fileURLToPath(new URL('..', import.meta.url)),
         encoding: 'utf8',

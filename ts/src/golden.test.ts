@@ -5,7 +5,10 @@
  * the JS whitespace set, case-fold and astral characters, lone surrogates, adversarial prefixes
  * before every rule, integer-like keys, key collisions, cases crossing every cap) on all four
  * entry points, and for the behaviour probes (`last4`, `detect`, `onEvent`, failures, values
- * that are not JSON, exported constants and helpers). Current output and hits must equal it.
+ * that are not JSON, exported constants and helpers). Current output and hits must equal it, with ONE
+ * enumerated exception: the AWS secret access key, which the full tier now reports over the whole secret
+ * (SPEC 4.17, decided by Lutz 2026-11-18) where secretlint reported from the key name; the recorded output of
+ * that case redacted the whole text because the old range covered the key name.
  */
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -24,23 +27,69 @@ test('the corpus holds at least 5000 cases', () => {
     expect(GOLDEN.count).toBeGreaterThanOrEqual(5000);
 });
 
-test('every corpus case gives the recorded output and hits, sync and async', async () => {
+/** The cases whose async result changed because of the AWS correction, with the result they give now. */
+const AWS_CORRECTION = {
+    'vector-109': {
+        input: 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYzzzzKEY9xxx1',
+        recordedOut: '[REDACTED:aws]',
+        out: 'AWS_SECRET_ACCESS_KEY=[REDACTED:aws]',
+        hits: [['@secretlint/secretlint-rule-aws', 22, 62]],
+    },
+};
+
+test('every corpus case gives the recorded output and hits, sync and async, but the AWS correction', async () => {
     const differing: string[] = [];
     for (const item of GOLDEN.cases) {
         const now = await replayCase(api as never, item);
         const same =
             JSON.stringify(now.sync) === JSON.stringify(item.sync) &&
             JSON.stringify(now.async) === JSON.stringify(item.async);
-        if (!same) differing.push(item.id);
+        if (same) continue;
+        differing.push(item.id);
+        const expected = AWS_CORRECTION[item.id as keyof typeof AWS_CORRECTION];
+        expect(item.input).toBe(expected?.input);
+        expect(item.async.out).toBe(expected?.recordedOut);
+        expect(JSON.stringify(now.sync)).toBe(JSON.stringify(item.sync));
+        expect(now.async as unknown).toEqual({ out: expected?.out, hits: expected?.hits });
     }
-    expect(differing).toEqual([]);
+    expect(differing).toEqual(Object.keys(AWS_CORRECTION));
 }, 120_000);
 
-test('every behaviour probe gives the recorded result', async () => {
+/** Where two recorded values differ: path, then the recorded and the current leaf. */
+function differences(recorded: unknown, now: unknown, path = ''): Array<[string, unknown, unknown]> {
+    if (JSON.stringify(recorded) === JSON.stringify(now)) return [];
+    const isContainer = (value: unknown): value is Record<string, unknown> =>
+        value !== null && typeof value === 'object';
+    if (!isContainer(recorded) || !isContainer(now)) return [[path, recorded, now]];
+    const keys = new Set([...Object.keys(recorded), ...Object.keys(now)]);
+    return [...keys].flatMap((key) => differences(recorded[key], now[key], `${path}.${key}`));
+}
+
+test('every behaviour probe gives the recorded result, but the AWS correction in two probes', async () => {
     const now = (await runBehaviors(api as never)) as Record<string, unknown>;
     const differing = Object.keys(GOLDEN.behaviors).filter((name) => {
         return JSON.stringify(now[name]) !== JSON.stringify(GOLDEN.behaviors[name]);
     });
-    expect(differing).toEqual([]);
+    expect(differing).toEqual(['last4Text', 'detectSecretsDirect']);
+    // The secret access key of the probe text: the hit now starts at the secret (22), not at the key name (0), so
+    // the text keeps `AWS_SECRET_ACCESS_KEY=`; the same three texts of `last4Text` (last4 on, off, default).
+    expect(
+        differences(GOLDEN.behaviors.last4Text, now.last4Text).map(([, recorded, current]) => [
+            recorded,
+            current,
+        ]),
+    ).toEqual([
+        ['[REDACTED:aws:EKEz]', 'AWS_SECRET_ACCESS_KEY=[REDACTED:aws:EKEz]'],
+        [0, 22],
+        ['[REDACTED:aws]', 'AWS_SECRET_ACCESS_KEY=[REDACTED:aws]'],
+        [0, 22],
+        ['[REDACTED:aws]', 'AWS_SECRET_ACCESS_KEY=[REDACTED:aws]'],
+        [0, 22],
+    ]);
+    expect(
+        differences(GOLDEN.behaviors.detectSecretsDirect, now.detectSecretsDirect).map(
+            ([, recorded, current]) => [recorded, current],
+        ),
+    ).toEqual([[378, 400]]);
     expect(Object.keys(now).sort()).toEqual(Object.keys(GOLDEN.behaviors).sort());
 }, 60_000);
