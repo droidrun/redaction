@@ -5,6 +5,7 @@ Expected values were produced by the TypeScript package and are written out here
 
 import pytest
 from droidrun_redaction import is_secret_key_name, redact_json, redact_text
+from droidrun_redaction._units import to_units, unit_length
 
 SECRET = "Zq9abcDEF123ghi_x"
 PLACEHOLDER = "[REDACTED:generic-keyword]"
@@ -141,3 +142,12 @@ def test_an_integer_that_is_not_replaced_comes_back_exactly(mode):
 @pytest.mark.parametrize("mode", ["strict", "compat"])
 def test_an_integer_under_a_secret_key_is_still_replaced(mode):
     assert redact_json({"pin": 10**400}, mode=mode).value == {"pin": "[REDACTED:key-context]"}
+
+
+@pytest.mark.parametrize(
+    ("text", "units"),
+    [("", 0), ("abc", 3), ("é", 1), (SMILE, 2), (SMILE * 3 + "a", 7), ("\ud800", 1), ("𝐀", 2)],
+)
+def test_unit_length_counts_utf16_units_without_converting(text, units):
+    assert unit_length(text) == units
+    assert unit_length(text) == len(to_units(text))

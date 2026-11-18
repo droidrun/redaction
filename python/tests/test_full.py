@@ -506,6 +506,98 @@ def test_a_strict_node_limit_marker_key_does_not_take_a_name_from_an_unchanged_k
     ]
 
 
+OTHER_NPM = "npm_" + "B" * 36
+
+
+@pytest.mark.parametrize(
+    ("suffix", "kept"),
+    [
+        (" [REDACTED:foo:bar]", "[REDACTED:npm] [REDACTED:foo:bar]"),
+        (" [REDACTED]", "[REDACTED:npm] [REDACTED]"),
+        (" [REDACTED:npm#2]", "[REDACTED:npm] [REDACTED:npm#2]"),
+    ],
+    ids=["suffix", "bare", "already numbered"],
+)
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_a_last_placeholder_that_cannot_take_a_number_keeps_the_old_rule(mode, suffix, kept):
+    # SPEC 8 rule 4: no number is written; the later value replaces the earlier one at the earlier position.
+    value = {"first": 0, NPM + suffix: 1, OTHER_NPM + suffix: 2}
+    out = redact_json(value, tier="full", mode=mode).value
+    assert list(out.items()) == [("first", 0), (kept, 2)]
+
+
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_an_unnumbered_placeholder_before_a_suffixed_one_is_numbered_at_the_last_placeholder(mode):
+    value = {NPM + " [REDACTED:foo:bar] " + NPM: 1, OTHER_NPM + " [REDACTED:foo:bar] " + OTHER_NPM: 2}
+    out = redact_json(value, tier="full", mode=mode).value
+    assert list(out.items()) == [
+        ("[REDACTED:npm] [REDACTED:foo:bar] [REDACTED:npm]", 1),
+        ("[REDACTED:npm] [REDACTED:foo:bar] [REDACTED:npm#2]", 2),
+    ]
+
+
+def test_strict_a_reserved_key_that_the_budget_replaces_keeps_its_name_reserved():
+    # The first key takes the whole budget (40); the literal placeholder key after it is replaced by the
+    # size-limit placeholder, and the scan for reserved names stopped before it, so it is not reserved.
+    value = {NPM: 2, "[REDACTED:size-limit]": 1, "other": 3, "more": 4}
+    out = redact_json(value, tier="full", max_chars=40).value
+    assert list(out.items()) == [
+        ("[REDACTED:npm]", 2),
+        ("[REDACTED:size-limit]", 1),
+        ("[REDACTED:size-limit#2]", 3),
+        ("[REDACTED:size-limit#3]", 4),
+    ]
+
+
+def test_strict_a_key_inside_the_budget_is_reserved_and_the_size_limit_keys_are_numbered_round_it():
+    value = {"a": "x" * 30, "[REDACTED:npm]": 1, NPM: 2}
+    assert list(redact_json(value, tier="full", max_chars=40).value.items()) == [
+        ("a", "x" * 30),
+        ("[REDACTED:size-limit]", 1),
+        ("[REDACTED:size-limit#2]", 2),
+    ]
+    value = {"[REDACTED:npm]": 1, NPM: 2, OTHER_NPM: 3}
+    assert list(redact_json(value, tier="full", max_chars=20).value.items()) == [
+        ("[REDACTED:npm]", 1),
+        ("[REDACTED:size-limit]", 2),
+        ("[REDACTED:size-limit#2]", 3),
+    ]
+
+
+def test_strict_a_size_limit_key_equal_to_an_input_key_is_still_a_changed_key():
+    value = {"[REDACTED:size-limit]": 1, NPM: 2, OTHER_NPM: 3}
+    assert list(redact_json(value, tier="full", max_chars=30).value.items()) == [
+        ("[REDACTED:size-limit]", 1),
+        ("[REDACTED:size-limit#2]", 2),
+        ("[REDACTED:size-limit#3]", 3),
+    ]
+    value = {"[REDACTED:npm]" + "x" * 5000: 1, NPM: 2, "[REDACTED:size-limit]": 3}
+    assert list(redact_json(value, tier="full").value.items()) == [
+        ("[REDACTED:size-limit#2]", 1),
+        ("[REDACTED:size-limit#3]", 2),
+        ("[REDACTED:size-limit#4]", 3),
+    ]
+
+
+def test_compat_a_key_over_the_limit_that_holds_a_placeholder_is_left_and_reserved():
+    long_key = "[REDACTED:npm]" + "x" * 5000
+    out = redact_json({long_key: 1, NPM: 2}, tier="full", mode="compat").value
+    assert list(out.items()) == [(long_key, 1), ("[REDACTED:npm]", 2)]
+
+
+def test_a_node_limit_writes_the_raw_key_in_compat_and_numbers_the_marker_in_strict():
+    value = {NPM: "keep", "[REDACTED:npm]": 2}
+    assert list(redact_json(value, max_nodes=2, mode="compat").value.items()) == [
+        (NPM, "keep"),
+        ("[REDACTED:npm]", "[REDACTED:size-limit]"),
+    ]
+    value = {NPM: "keep", "[REDACTED:npm]": 2, "c": 3}
+    assert list(redact_json(value, tier="full", max_nodes=2).value.items()) == [
+        ("[REDACTED:npm#2]", "keep"),
+        ("[REDACTED:size-limit]", "[REDACTED:size-limit]"),
+    ]
+
+
 def test_a_numbered_key_is_a_placeholder_and_the_output_is_a_fixed_point():
     value = {DB_URL: "first", OTHER_DB_URL: "second", NPM: "third", f"password={SECRET}": "x"}
     once = redact_json(value, tier="full")
