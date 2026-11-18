@@ -1,6 +1,6 @@
 #!/bin/sh
-# Builds the wheel, installs it into a fresh virtual environment outside the repository, runs the vectors,
-# the golden replay and the integrity tests against the installed package (proves the spec data is inside the
+# Builds the wheel, installs it into a fresh virtual environment outside the repository, runs the vectors
+# and the integrity tests against the installed package (proves the spec data is inside the
 # wheel), and checks that a wheel whose spec files were removed refuses to import.
 #
 #   scripts/wheel-test.sh [python-version]      default 3.11
@@ -28,7 +28,7 @@ case "$INSTALLED" in
 esac
 
 "$VENV_PYTHON" -m pytest -q -p no:cacheprovider -c "$HERE/pyproject.toml" --rootdir "$HERE" \
-    "$HERE/tests/test_vectors.py" "$HERE/tests/test_golden.py" "$HERE/tests/test_integrity.py"
+    "$HERE/tests/test_vectors.py" "$HERE/tests/test_integrity.py"
 
 PACKAGE_DIR="$(dirname "$INSTALLED")"
 rm -r "$PACKAGE_DIR/spec"

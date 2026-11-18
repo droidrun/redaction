@@ -19,3 +19,7 @@ module-name = "droidrun_redaction"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["error"]
+
+[tool.uv]
+# The newest upload time the lock may use (uv lock --exclude-newer): a package must be a week old.
+exclude-newer = "2026-11-11T07:50:03Z"
