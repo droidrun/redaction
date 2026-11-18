@@ -69,7 +69,17 @@ Banned:
 | possessive quantifiers, atomic groups | not portable |
 | unbounded lazy quantifier, lazy bound above 64 | cost and portability |
 | a repeated group that holds a repeating quantifier (nested quantifier) | ReDoS |
+| a class that starts with `]` (`[]a]`, `[^]a]`) | JavaScript reads `[]` as an empty class, Python and Go read `]` as a member |
+| a surrogate unit (an astral character or a lone surrogate) in pattern text | one character in Python and Go, two units in JavaScript |
+| a pattern that can match the empty string (a zero-length match on `''`, `'a'` or `' '`) | engines differ and scanners loop |
+| a class field that is not exactly one class | ReDoS and engine differences hide in a "class" field |
 | rule id outside `^[a-z0-9-]+$` | ids are part of the placeholder |
+
+The linter checks **every** regex-bearing field of a rule, found by name: `pattern`, `header`, `footer`,
+`prefix`, `bearer`, `scheme`, `label`, `queryKey` hold patterns; `notBefore`, `notAfter` and every field ending
+in `Class`, `Char`, `Stop` or `End` hold exactly one character class; `id`, `kind`, `lead`, `separator`,
+`footerMarker`, `requireLiteral` are literal text. A string field with another name is an error, so a new
+field cannot escape the checks.
 
 A pattern is searched, never anchored: matches are found left to right, each starting at the
 leftmost position where the pattern matches, with the preference order of Perl-style engines
@@ -155,6 +165,12 @@ Fields: `pattern`, optional `group` (default 0), `notBefore`, `notAfter`, `requi
    `isPlaceholderValue`. A candidate that fails a filter is dropped (the search is not
    restarted: the match was consumed).
 4. Output the surviving candidates in order.
+
+A match of `group` where the capture group **did not participate** in the match (it is in an alternative
+that was not taken) has no span: the match is dropped, nothing is output for it. A rule pattern never matches
+the empty string (the linter rejects such patterns), so the empty-match case does not arise; if an engine
+reports an empty match anyway, the search position advances by one unit before the next search (the
+ECMAScript `matchAll` rule).
 
 ### 4.2 `dotted-token`
 
@@ -279,9 +295,25 @@ Fields: `queryKey` (a pattern with capture 1 = the parameter name; it starts at 
 `isSecretParam(k)` is `isSecretKeyName(k)` (section 6) or `lower(k)` in `queryOnlyKeys` (`code`,
 `sid`, `session`, `otp`, `pwd` are ordinary words in JSON, secret only in a URL query).
 
-`percentDecode(x)` is URI component decoding (`%XX` sequences, UTF-8) that returns `x` itself,
-unchanged, when it contains a malformed sequence (a bad `%` triple, a lone UTF-8 byte). It never
-fails. A `+` is not a space.
+`percentDecode(x)` is ECMAScript `decodeURIComponent`, except that it never fails: on a malformed
+sequence it returns `x` itself, unchanged and whole (never a partial decoding). Exact steps, over the units
+of `x`:
+
+1. Walk `x` left to right. A unit other than `%` is copied. (`+` is copied: it is **not** a space.)
+2. A `%` must be followed by two hexadecimal digits (`0-9 a-f A-F`), else `x` is malformed. Let `b` be the
+   byte they give.
+3. If `b < 0x80` the byte is the character `b`. Otherwise it is the first byte of a UTF-8 sequence: count its
+   leading one bits `k`; `k == 1` or `k > 4` is malformed. The next `k - 1` units MUST each be `%` and two hex
+   digits giving a byte of the form `10xxxxxx`, else malformed. Compute the code point from the bits. It is
+   malformed when it is overlong (below `0x80`, `0x800`, `0x10000` for `k` = 2, 3, 4), when it is in
+   `0xD800` to `0xDFFF`, or above `0x10FFFF`.
+4. The result is the text of the copied units and decoded characters; an astral character is two UTF-16 units
+   (every later step, including `hasSecretQueryParam`, works on units).
+
+Not conforming: Python `urllib.parse.unquote` (it replaces errors with U+FFFD and decodes the rest) and Go
+`url.QueryUnescape` (it turns `+` into a space). Python: decode the byte runs with a strict UTF-8 decoder
+(`errors='strict'`), on any error return `x`. Go: implement the steps above (`url.PathUnescape` neither
+validates the UTF-8 nor rejects the same sequences).
 
 `budget = decodeBudget`. Scan `queryKey` from 0. For each match: `v` is the match end, `key =
 percentDecode(capture 1)`.
@@ -340,12 +372,38 @@ return `[a, i)`; else `[a, b)`.
    least `minClasses` (3), return true.
 5. Return `entropy(u) >= entropyThreshold` (3.4).
 
-**entropy(u)**: let `n` be the length of `u` in units. Walk `u` by code point (an astral character
-or a surrogate pair is one symbol; a lone surrogate is one symbol); keep a count per symbol, symbols in
-order of first occurrence. `H = 0`; for each symbol in that order: `p = count / n` (the divisor is the
-length in **units**, which is larger than the number of symbols when astral characters are present), `H
-= H - p * log2(p)`. IEEE 754 double arithmetic, that summation order. The empty string has entropy 0.
-See section 15 about the exact comparison.
+**entropy(u)**, exact steps (the reference is the TypeScript code, run on Node):
+
+1. `n` = the length of `u` in UTF-16 **units**. If `n == 0` the entropy is 0.
+2. Walk `u` by code point (a surrogate pair is one symbol; a lone surrogate is one symbol). Keep a count `c` per
+   symbol in a map that remembers the order of **first occurrence** (insertion order; Go maps are unordered,
+   keep a list).
+3. `H = 0.0` (IEEE 754 double). For each symbol in first-occurrence order: `p = c / n` (a double division;
+   `n` is the unit length, larger than the number of symbols when astral characters are present, so the
+   probabilities do not sum to 1); `H = H - (p * log2(p))` (the product is rounded to a double, then the
+   subtraction). The order matters: two orders of the same counts differ in the last digits.
+4. The comparison is `H >= 3.4` in double arithmetic (`3.4` is the double nearest to 3.4).
+
+`log2(p)` for `0 < p <= 1` is the **fdlibm `__ieee754_log2`** (FreeBSD `e_log2.c`), the function V8 uses for
+`Math.log2`. Platform functions are not conforming unless they return the same double: JavaScriptCore (Bun)
+and the common C libraries differ from V8 in the last bit for some arguments (measured: of the 20,099 values
+`log2(c/n)` with `2 <= n <= 200`, 214 differ in the last digits between Node and Bun). An implementation MAY use its
+platform `log2` only after checking it against this table, which is the Node output:
+
+| `p` | `log2(p)` | `p` | `log2(p)` |
+|---|---|---|---|
+| 1/3 | -1.5849625007211563 | 1/22 | -4.459431618637297 |
+| 1/7 | -2.807354922057604 | 7/44 | -2.652076696579693 |
+| 2/9 | -2.1699250014423126 | 1/13 | -3.700439718141092 |
+| 3/22 | -2.8744691179161412 | 1/10 | -3.321928094887362 |
+| 5/13 | -1.3785116232537298 | 3/4 | -0.4150374992788438 |
+| 3/17 | -2.502500340529183 | 11/29 | -1.398549376490275 |
+| 1/1000003 | -19.931572897402805 | 17/19 | -0.1604646721932461 |
+
+A decision is only at risk when `|H - 3.4|` is below about 1e-9. `vectors/entropy.json` holds values 1e-5 to
+1e-4 on both sides of the threshold (with the same counts in different first-occurrence order) and values
+whose entropy only comes out right when `n` is the unit length. Exactness inside the 1e-9 band is
+specified by this section, not covered by vectors.
 
 ### 5.5 Trivial values and stand-ins
 
@@ -354,7 +412,8 @@ See section 15 about the exact comparison.
 is non-empty and every unit equals one `maskChars` character (`x` or `*`, so `xxxx` and `****`); or `v`
 has length at least 2, starts with the first and ends with the second of a `wrappers` pair (`<` `>`,
 `{` `}`), and every unit between them is in `wrapperInner` (any unit that is not a line terminator:
-U+000A, U+000D, U+2028, U+2029). (The wrapper test is the JavaScript `^<.*>$`.)
+U+000A, U+000D, U+2028, U+2029). (The wrapper test is the JavaScript `^<.*>$`: the test walks the **UTF-16 units** between the wrapper
+characters, so an astral character (two units) or a lone surrogate is allowed inside, `<🔑>` is a stand-in.)
 
 `isDocPlaceholder(raw)`: `v = lower(trim(raw))`. True when `v` starts with one of `prefixes`
 (`your`, `my`, `the`, `replace`, `insert`, `example`, `dummy`, `sample`) followed by a unit in `separator`
@@ -417,6 +476,11 @@ kept byte for byte and never scanned; containers under them are walked.
 optionally `:` suffix `[^\[\]]*`, then `]`. So `[REDACTED]`, `[REDACTED:rule]` and
 `[REDACTED:rule:suffix]` are placeholders. `placeholderEndAt(text, i)` is the end of the longest such
 placeholder that starts exactly at `i` (the grammar has one match length per start), or `-1`.
+A **whole placeholder** is a string that is exactly one placeholder from its first to its last unit. The
+end anchor is the end of the text and nothing else: a placeholder followed by a final line terminator
+(LF, CR, U+2028, U+2029) is **not** a whole placeholder (`{"token": "[REDACTED]\n"}` is replaced). An
+implementation uses a full-string match (`fullmatch`, `\A...\Z`); Python `$` and Go/Python `re.match` with
+`$` accept a final `\n` and are not conforming. Vectors in `nested-json.json` cover all four terminators.
 `literalSegments(text)` is `text` split by every (non-overlapping, left to right) placeholder; it has
 one more element than there are placeholders; empty elements are kept.
 
@@ -450,9 +514,13 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
   give the same placeholder text): the later value replaces the earlier one and the key keeps the earlier
   position.
 - **Numbers.** A number under a key whose verdict is `any` is replaced as a unit by `[REDACTED:key-context]`.
-  Every other number is untouched and written back as it was parsed. (A number's digits are never
-  scanned. Numbers beyond double precision and `-0` are out of the differential corpus; TypeScript
-  parses to doubles.)
+  Every other number is untouched in value: its digits are never scanned. The data model is the IEEE 754
+  double: a JSON number is parsed to the nearest double, and **equality of outputs is value equality** of
+  those doubles. A serializer writes a double the way ECMAScript `Number::toString` does, so `1.0` is written
+  `1`, `1e2` is `100`, `1E+21` is `1e+21`, `-0` is `0`, and an integer beyond 2^53 is the nearest double
+  (`9007199254740993` becomes `9007199254740992`). An implementation that keeps the source token or an
+  arbitrary-precision integer (Python `int`, Go `json.Number`) MUST convert to a double and use that.
+  `NaN` and the infinities are not JSON. Vectors and the corpus compare parsed values, never number text.
 - `null` and booleans are untouched. The empty string is untouched.
 - **Strings** are scanned as texts (4) and a string under a secret key is replaced whole (section 6 and 9).
 - **Keys** are redacted: a key of length from 8 up to 4096 is scanned with the standard rules (`detect`)
@@ -551,9 +619,12 @@ Everything else (order, verdicts, number handling, key redaction) is as in 9.2.
   error class only, then returns the result of `detect` alone, or `[REDACTED:error]` with the hit `(error,
   0, 0)` if that fails too. JSON: each string leaf is a text of this kind; keys use the sync key redaction;
   no depth, node or character limit (a TypeScript behaviour kept for compatibility).
-- `strict`: text: as `compat`, except that a detector failure returns `[REDACTED:error]` (no fallback), and
-  the units beyond `scanCap` are replaced by `[REDACTED:size-limit]` (the hit `(size-limit, cap, length)` is
-  merged with any hit it touches). JSON: the strict walk of 9.3 with each leaf scanned by this text rule.
+- `strict`: text: **first** the total-character cap as in 9.1: a text longer than `strict.maxChars`
+  (4,000,000) is replaced whole by `[REDACTED:size-limit]` with the hit `(size-limit, 0, length)`, before any scan
+  (no scan work is spent on it). Then as `compat`, except that a detector failure returns `[REDACTED:error]`
+  (no fallback), the units beyond `scanCap` are replaced by `[REDACTED:size-limit]` (the hit `(size-limit, cap,
+  length)` is merged with any hit it touches), and `last4` is ignored (no hit of the strict mode carries a
+  character of the text: the placeholder is always the read form). JSON: the strict walk of 9.3 with each leaf scanned by this text rule.
 
 ## 10. ReDoS rules
 
@@ -566,11 +637,13 @@ Everything else (order, verdicts, number handling, key redaction) is as in 9.2.
 4. Work per candidate is bounded or linear; a rule restarts a failed scan so that no unit is the start of
    more than a bounded number of attempts (`restart at matchStart + 1` only where the attempt did bounded
    work; `restart at the start of the rejected value` where it is linear).
-5. `tools/lint-spec` runs a **scaling test**: generated attack strings (each unit of a list that holds
+5. `tools/lint-spec` runs two **scaling tests**. The first: generated attack strings (each unit of a list that holds
    unterminated quotes, repeated keywords of the key lists, `a-` runs, whitespace runs, escape runs,
    percent triples, PEM headers, key-format prefixes) are repeated to 100 KB and to 1 MB and run through every
    pattern in JavaScript and in Python. The time at 1 MB must not exceed 30 times the time at 100 KB (floor 10
-   ms) and 3 s absolute. Each run is a subprocess under an external deadline.
+   ms) and 3 s absolute. The second runs the same attack strings through the interpreter (`detectSyncHits` of the
+   TypeScript package: every rule kind with its restart loops, not only the raw patterns) at the same sizes with the
+   same ratio and a 10 s absolute bound. Each run is a subprocess under an external deadline.
 6. Every call has a total-character cap (`sync.maxChars`, `strict.maxChars`).
 
 ## 11. Metadata
@@ -605,7 +678,7 @@ These exist for compatibility with v0.2.0 and never change what is detected:
 - Async signatures and `bigint` values (a `bigint` counts as a number).
 - `restoreRedacted(redacted, stored)` and its options (restores values behind placeholders from a stored copy).
 - The 0.1.1 `last4` placeholder `[REDACTED:<rule>:<last4>]` for matches of at least 16 units (`opts.last4`);
-  brackets in the last four units are replaced by `*`.
+  brackets in the last four units are replaced by `*`. `last4` has no effect in `strict`.
 - `CREDENTIAL_KEY_RE` (the 0.1.1 substring matcher, `keys.json` `tsExtensions`), `STRUCTURAL_SKIP_KEYS`.
 - Input shapes outside JSON in `compat`: `Date` is returned as is; typed arrays and buffers become
   `[REDACTED:size-limit]`; an `Error` is read as `{name, message, stack}`; an object with `toJSON` as its
@@ -631,13 +704,14 @@ same seeded corpus through every implementation.
 
 ## 15. Known portability risks
 
-- **Entropy comparison**: `log2` and the summation are floating point. Engines may differ in the last unit
-  of precision; a value whose entropy lies within about 1e-9 of 3.4 can decide differently. The vectors and
-  the corpus avoid that band; an implementation SHOULD compute with IEEE 754 doubles in the order of 5.4.
+- **Entropy comparison**: floating point. `log2` differs between engines in the last bit (Node and Bun
+  already differ, so the TypeScript tests and production can disagree inside the band); section 5.4 fixes the
+  summation order and the `log2` (fdlibm). A value within about 1e-9 of 3.4 can decide differently on a
+  platform `log2`; the vectors and the corpus stay 1e-5 or more away from the threshold.
 - **Percent decoding**: UTF-8 decoding of `%XX` runs must reject exactly what ECMAScript
   `decodeURIComponent` rejects (overlong forms, surrogate code points, truncated sequences); then the value
   is left whole (4.9).
 - **Unicode letter guard** (upstream rules, later slice): needs one pinned Unicode version across languages.
 - **Unit counting** (section 1): the most likely source of drift (astral characters inside values and keys,
   lone surrogates, invalid UTF-8 in Go).
-- **Numbers** beyond double precision are not in the corpus.
+- **Numbers**: the double model of section 8 is the contract; big integers are rounded, not preserved.

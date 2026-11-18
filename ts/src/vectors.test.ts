@@ -35,7 +35,7 @@ type VectorFile = { description: string; cases: VectorCase[] };
 
 const VECTORS_DIR = join(import.meta.dir, '..', 'spec', 'vectors');
 const REQUIRED_FILES = [
-    'auth-headers', 'base64', 'false-positives', 'key-formats', 'key-names', 'keywords', 'modes',
+    'auth-headers', 'base64', 'entropy', 'false-positives', 'key-formats', 'key-names', 'keywords', 'modes',
     'nested-json', 'url-query',
 ];
 
