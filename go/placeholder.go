@@ -55,7 +55,7 @@ func (p *placeholders) read(ruleID string) string {
 }
 
 func (p *placeholders) readUnits(ruleID string) []uint16 {
-	return asUnits(p.read(ruleID))
+	return decodeUTF8(p.read(ruleID))
 }
 
 // endAt is the end of the placeholder that starts exactly at `at`, or -1.

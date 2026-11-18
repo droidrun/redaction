@@ -18,8 +18,8 @@ type queryValues struct {
 	e            *engine
 	search       *searcher
 	queryOnly    map[string]bool
-	valueEnd     *unitSet
-	nestedEnd    *unitSet
+	valueRun     *unitSet // units that do not end a value
+	nestedRun    *unitSet // units that do not end a nested value
 	nestedLimit  int
 	decodeBudget int
 	drop         bool
@@ -32,10 +32,10 @@ func (e *engine) newQueryValues(b *builder, raw json.RawMessage) (scanner, error
 	}
 	return &queryValues{
 		e:            e,
-		search:       b.searcher(spec.QueryKey, true),
+		search:       b.searcher(spec.QueryKey),
 		queryOnly:    toSet(spec.QueryOnlyKeys),
-		valueEnd:     b.class(spec.ValueEnd),
-		nestedEnd:    b.class(spec.NestedEnd),
+		valueRun:     b.class(spec.ValueEnd).negated(),
+		nestedRun:    b.class(spec.NestedEnd).negated(),
 		nestedLimit:  spec.NestedLimit,
 		decodeBudget: spec.DecodeBudget,
 		drop:         spec.DropPlaceholder,
@@ -86,7 +86,7 @@ func (q *queryValues) scan(t *text) []span {
 		valueStart := loc[1]
 		from = valueStart
 		if q.isSecretParam(paramKey(t, loc)) {
-			end := runEndNot(t.units, valueStart, q.valueEnd, unbounded)
+			end := runEnd(t.units, valueStart, q.valueRun, unbounded)
 			if end > valueStart {
 				found = append(found, span{valueStart, end})
 			}
@@ -96,7 +96,7 @@ func (q *queryValues) scan(t *text) []span {
 		if budget <= 0 {
 			continue
 		}
-		end := runEndNot(t.units, valueStart, q.nestedEnd, q.nestedLimit)
+		end := runEnd(t.units, valueStart, q.nestedRun, q.nestedLimit)
 		budget -= end - valueStart
 		if q.hidesSecretParam(t.units[valueStart:end]) {
 			found = append(found, span{valueStart, end})
@@ -116,13 +116,4 @@ func (q *queryValues) dropped(t *text, ranges []span) []span {
 		}
 	}
 	return kept
-}
-
-// runEndNot is the end of the run of units that are not in `stop`, at most `max` long.
-func runEndNot(units []uint16, from int, stop *unitSet, max int) int {
-	end := from
-	for end < len(units) && end-from < max && !stop.has(units[end]) {
-		end++
-	}
-	return end
 }

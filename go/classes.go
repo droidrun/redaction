@@ -21,6 +21,24 @@ func (s *unitSet) invert() {
 	}
 }
 
+// negated is a copy that holds exactly the units this set does not.
+func (s *unitSet) negated() *unitSet {
+	flipped := *s
+	flipped.invert()
+	return &flipped
+}
+
+// hasAt is true when the unit at `at` exists and is in the set.
+func (s *unitSet) hasAt(units []uint16, at int) bool {
+	return at >= 0 && at < len(units) && s.has(units[at])
+}
+
+func rangeSet(low rune, high rune) *unitSet {
+	set := &unitSet{}
+	set.add(low, high)
+	return set
+}
+
 func (s *unitSet) hasAnyIn(units []uint16) bool {
 	for _, unit := range units {
 		if s.has(unit) {

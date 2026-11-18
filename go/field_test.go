@@ -65,9 +65,12 @@ func TestRedactField(t *testing.T) {
 
 func TestRedactFieldAgreesWithRedactJSON(t *testing.T) {
 	members := map[string]string{
-		"password": `"hunter2xx"`, "max_tokens": `100`, "pin": `1234`, "note": `"password=` + secretValue + `"`,
+		"password": `"hunter2xx"`, "max_tokens": `100`, "pin": `1234`,
+		"note": `"password=` + secretValue + `"`,
 	}
-	values := map[string]any{"password": "hunter2xx", "max_tokens": 100, "pin": 1234, "note": "password=" + secretValue}
+	values := map[string]any{
+		"password": "hunter2xx", "max_tokens": 100, "pin": 1234, "note": "password=" + secretValue,
+	}
 	for key, literal := range members {
 		out, _, err := RedactJSON([]byte(`{"`+key+`":`+literal+`}`), Options{})
 		if err != nil {

@@ -15,7 +15,7 @@ type filters struct {
 
 func (e *engine) newFilters(b *builder, requireClass string, literal string, drop bool) filters {
 	found := filters{
-		requireLiteral:  asUnits(literal),
+		requireLiteral:  decodeUTF8(literal),
 		dropPlaceholder: drop,
 		placeholders:    e.placeholders,
 	}
@@ -61,7 +61,7 @@ func (e *engine) newRegexRule(b *builder, raw json.RawMessage) (scanner, error) 
 		return nil, err
 	}
 	rule := &regexRule{
-		search:  b.searcher(spec.Pattern, spec.Group > 0),
+		search:  b.searcher(spec.Pattern),
 		group:   spec.Group,
 		filters: e.newFilters(b, spec.RequireClass, spec.RequireLiteral, spec.DropPlaceholder),
 	}
@@ -135,8 +135,8 @@ func (e *engine) newDottedToken(b *builder, raw json.RawMessage) (scanner, error
 		return nil, err
 	}
 	return &dottedToken{
-		lead:       asUnits(spec.Lead),
-		separator:  asUnits(spec.Separator)[0],
+		lead:       decodeUTF8(spec.Lead),
+		separator:  decodeUTF8(spec.Separator)[0],
 		segment:    b.class(spec.SegmentClass),
 		word:       b.class(spec.WordClass),
 		minSegment: spec.MinSegment,
@@ -232,7 +232,7 @@ func (e *engine) newPemBlocks(b *builder, raw json.RawMessage) (scanner, error) 
 		return nil, err
 	}
 	return &pemBlocks{
-		header:    b.searcher(spec.Header, false),
+		header:    b.searcher(spec.Header),
 		footer:    b.anchored(spec.Footer),
 		marker:    textFromString(spec.FooterMarker).mapped,
 		body:      b.class(spec.BodyChar),
@@ -310,7 +310,7 @@ func (e *engine) newCookieLines(b *builder, raw json.RawMessage) (scanner, error
 		return nil, err
 	}
 	return &cookieLines{
-		search:  b.searcher(spec.Prefix, false),
+		search:  b.searcher(spec.Prefix),
 		run:     runClasses{plain: b.class(spec.PlainChar), stop: b.class(spec.EscapeStop)},
 		filters: e.newFilters(b, "", spec.RequireLiteral, spec.DropPlaceholder),
 	}, b.err

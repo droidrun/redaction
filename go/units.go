@@ -86,10 +86,6 @@ func equalUnits(a []uint16, b []uint16) bool {
 	return hasUnitsAt(a, b, 0)
 }
 
-func asUnits(s string) []uint16 {
-	return decodeUTF8(s)
-}
-
 // labelStart is the start of the identifier that holds the keyword at `keyword` (SPEC 5.2).
 func labelStart(units []uint16, keyword int, ident *unitSet, lookback int) int {
 	start := keyword

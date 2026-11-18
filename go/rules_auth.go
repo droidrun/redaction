@@ -33,8 +33,8 @@ func (e *engine) newAuthValues(b *builder, raw json.RawMessage) (scanner, error)
 		return nil, err
 	}
 	return &authValues{
-		bearer:       b.searcher(spec.Bearer, true),
-		scheme:       b.searcher(spec.Scheme, false),
+		bearer:       b.searcher(spec.Bearer),
+		scheme:       b.searcher(spec.Scheme),
 		value:        b.class(spec.ValueClass),
 		minValue:     spec.MinValueLength,
 		lower:        b.class(spec.LowerClass),

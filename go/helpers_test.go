@@ -43,7 +43,7 @@ func expandParts(t *testing.T, parts genParts) []uint16 {
 		if json.Unmarshal(part[0], &unit) != nil || json.Unmarshal(part[1], &times) != nil {
 			t.Fatal("bad generated input")
 		}
-		piece := asUnits(unit)
+		piece := decodeUTF8(unit)
 		if node := parseTree(t, part[0]); node.kind == kindString {
 			piece = node.str
 		}

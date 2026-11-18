@@ -46,7 +46,7 @@ func (e *engine) newKeywordPairs(b *builder, raw json.RawMessage) (scanner, erro
 		return nil, err
 	}
 	return &keywordPairs{
-		search:   b.searcher(spec.Prefix, false),
+		search:   b.searcher(spec.Prefix),
 		run:      runClasses{plain: b.class(spec.PlainChar), stop: b.class(spec.EscapeStop)},
 		minValue: spec.MinValueLength,
 		window:   spec.Window,
@@ -109,7 +109,7 @@ func (e *engine) newQuotedPairs(b *builder, raw json.RawMessage) (scanner, error
 	if err := decodeRule(raw, &spec); err != nil {
 		return nil, err
 	}
-	return &quotedPairs{e: e, search: b.searcher(spec.Label, true), valueLimit: spec.ValueLimit}, b.err
+	return &quotedPairs{e: e, search: b.searcher(spec.Label), valueLimit: spec.ValueLimit}, b.err
 }
 
 func backslashesBefore(units []uint16, at int, floor int) int {
@@ -183,7 +183,7 @@ func (e *engine) newUnquotedPairs(b *builder, raw json.RawMessage) (scanner, err
 	}
 	return &unquotedPairs{
 		e:      e,
-		search: b.searcher(spec.Prefix, false),
+		search: b.searcher(spec.Prefix),
 		run:    runClasses{plain: b.class(spec.PlainChar), stop: b.class(spec.EscapeStop)},
 	}, b.err
 }

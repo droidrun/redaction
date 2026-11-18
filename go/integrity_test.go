@@ -142,7 +142,7 @@ func TestClassTablesEqualTheRegexpEngine(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", template, err)
 		}
-		searcher, err := newSearcher("^"+expanded+"$", false)
+		searcher, err := newSearcher("^" + expanded + "$")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -25,6 +25,7 @@ type engine struct {
 	pipeline     []pipelineEntry
 	whitespace   *unitSet
 	skipKeys     [][]uint16
+	failureIDs   map[string]bool
 }
 
 // builder compiles spec text; the first failure sticks and every later call is a no-op.
@@ -56,8 +57,8 @@ func (b *builder) class(template string) *unitSet {
 	return set
 }
 
-func (b *builder) searcher(template string, groups bool) *searcher {
-	found, err := newSearcher(b.pattern(template), groups)
+func (b *builder) searcher(template string) *searcher {
+	found, err := newSearcher(b.pattern(template))
 	if b.err == nil {
 		b.fail(err)
 	}
@@ -97,12 +98,14 @@ func newEngine(spec *loadedSpec) (*engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	e := &engine{spec: spec, placeholders: found}
+	ids := spec.algorithms.RuleIDs
+	failures := []string{ids.SizeLimit, ids.DepthLimit, ids.Circular, ids.Failed, ids.Error}
+	e := &engine{spec: spec, placeholders: found, failureIDs: toSet(failures)}
 	e.whitespace = b.class("[{{WS}}]")
 	e.evidence = newEvidence(b, found, e.whitespace)
 	e.keys = newKeyNames(&spec.keys, found)
 	for _, key := range spec.keys.StructuralSkipKeys {
-		e.skipKeys = append(e.skipKeys, asUnits(key))
+		e.skipKeys = append(e.skipKeys, decodeUTF8(key))
 	}
 	for _, raw := range spec.rules.Pipeline {
 		entry, err := e.buildRule(b, raw)
@@ -117,27 +120,35 @@ func newEngine(spec *loadedSpec) (*engine, error) {
 	return e, nil
 }
 
+func asUnitLists(words []string) [][]uint16 {
+	lists := make([][]uint16, len(words))
+	for i, word := range words {
+		lists[i] = decodeUTF8(word)
+	}
+	return lists
+}
+
 func newEvidence(b *builder, found *placeholders, whitespace *unitSet) *evidence {
 	algorithms := &b.spec.algorithms
 	trivial := algorithms.Trivial
 	v := &evidence{
-		quotes:       asUnits(algorithms.Evidence.QuoteChars),
+		quotes:       decodeUTF8(algorithms.Evidence.QuoteChars),
 		classes:      b.classes(algorithms.Evidence.Classes),
 		minClasses:   algorithms.Evidence.MinClasses,
 		threshold:    algorithms.Evidence.EntropyThreshold,
 		trivialWords: toSet(trivial.Words),
 		wrapperInner: b.class(trivial.WrapperInner),
-		docPrefixes:  algorithms.DocPlaceholder.Prefixes,
-		docSuffixes:  algorithms.DocPlaceholder.Suffixes,
+		docPrefixes:  asUnitLists(algorithms.DocPlaceholder.Prefixes),
+		docSuffixes:  asUnitLists(algorithms.DocPlaceholder.Suffixes),
 		docSeparator: b.class(algorithms.DocPlaceholder.Separator),
 		whitespace:   whitespace,
 		placeholders: found,
 	}
 	for _, mask := range trivial.MaskChars {
-		v.maskChars = append(v.maskChars, asUnits(mask)[0])
+		v.maskChars = append(v.maskChars, decodeUTF8(mask)[0])
 	}
 	for _, pair := range trivial.Wrappers {
-		v.wrappers = append(v.wrappers, [2]uint16{asUnits(pair[0])[0], asUnits(pair[1])[0]})
+		v.wrappers = append(v.wrappers, [2]uint16{decodeUTF8(pair[0])[0], decodeUTF8(pair[1])[0]})
 	}
 	return v
 }

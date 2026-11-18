@@ -24,7 +24,6 @@ type keyNames struct {
 	prefixWords  []string
 	passLastWord string
 	countWords   map[string]bool
-	skipKeys     []string
 	placeholders *placeholders
 }
 
@@ -47,7 +46,6 @@ func newKeyNames(keys *keysFile, found *placeholders) *keyNames {
 		prefixWords:  keys.PrefixWords,
 		passLastWord: keys.PassLastWord,
 		countWords:   toSet(keys.CountWords),
-		skipKeys:     keys.StructuralSkipKeys,
 		placeholders: found,
 	}
 }
@@ -60,31 +58,17 @@ func toSet(words []string) map[string]bool {
 	return set
 }
 
-func isUpperUnit(units []uint16, at int) bool {
-	return at < len(units) && units[at] >= 'A' && units[at] <= 'Z'
-}
-
-func isLowerUnit(units []uint16, at int) bool {
-	return at < len(units) && units[at] >= 'a' && units[at] <= 'z'
-}
-
-func isDigitUnit(units []uint16, at int) bool {
-	return at < len(units) && units[at] >= '0' && units[at] <= '9'
-}
-
-func runWhile(units []uint16, from int, test func([]uint16, int) bool) int {
-	end := from
-	for test(units, end) {
-		end++
-	}
-	return end
-}
+var (
+	upperSet = rangeSet('A', 'Z')
+	lowerSet = rangeSet('a', 'z')
+	digitSet = rangeSet('0', '9')
+)
 
 // wordEnd is the end of the word that starts at `start`, or `start` when none does (SPEC 6).
 func wordEnd(key []uint16, start int) int {
-	if isUpperUnit(key, start) {
-		capitals := runWhile(key, start, isUpperUnit)
-		if !isLowerUnit(key, capitals) {
+	if upperSet.hasAt(key, start) {
+		capitals := runEnd(key, start, upperSet, unbounded)
+		if !lowerSet.hasAt(key, capitals) {
 			return capitals
 		}
 		if capitals-start >= 2 {
@@ -92,15 +76,15 @@ func wordEnd(key []uint16, start int) int {
 		}
 	}
 	lowerStart := start
-	if isUpperUnit(key, start) {
+	if upperSet.hasAt(key, start) {
 		lowerStart = start + 1
 	}
-	lowerEnd := runWhile(key, lowerStart, isLowerUnit)
+	lowerEnd := runEnd(key, lowerStart, lowerSet, unbounded)
 	if lowerEnd > lowerStart {
 		return lowerEnd
 	}
-	if isDigitUnit(key, start) {
-		return runWhile(key, start, isDigitUnit)
+	if digitSet.hasAt(key, start) {
+		return runEnd(key, start, digitSet, unbounded)
 	}
 	return start
 }
@@ -205,7 +189,7 @@ func (k *keyNames) isSecretKeyName(key []uint16) bool {
 	return k.matchKey(key, true)
 }
 
-var redactedOpen = asUnits("[REDACTED")
+var redactedOpen = decodeUTF8("[REDACTED")
 
 // keyVerdict is what a key makes of the values below it. A key that holds placeholders is
 // classified without them, so a second pass gives the first verdict.

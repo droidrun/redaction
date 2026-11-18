@@ -11,8 +11,8 @@ type evidence struct {
 	maskChars    []uint16
 	wrappers     [][2]uint16
 	wrapperInner *unitSet
-	docPrefixes  []string
-	docSuffixes  []string
+	docPrefixes  [][]uint16
+	docSuffixes  [][]uint16
 	docSeparator *unitSet
 	whitespace   *unitSet
 	placeholders *placeholders
@@ -109,47 +109,14 @@ func (v *evidence) hasOnlyInnerUnits(inner []uint16) bool {
 // isTrivialValue is true for deny-listed stand-ins: `null`, `changeme`, `xxxxxxxx`, `<secret>`.
 func (v *evidence) isTrivialValue(raw []uint16) bool {
 	value := v.lowerTrimmed(raw)
-	if v.trivialWords[string(utf16ToRunes(value))] {
+	if v.trivialWords[foldString(value)] {
 		return true
 	}
 	return v.isMask(value) || v.isWrapped(value)
 }
 
-func utf16ToRunes(units []uint16) []rune {
-	runes := make([]rune, len(units))
-	for i, unit := range units {
-		runes[i] = rune(unit)
-	}
-	return runes
-}
-
-func hasPrefixString(units []uint16, prefix string) bool {
-	if len(units) < len(prefix) {
-		return false
-	}
-	for i := 0; i < len(prefix); i++ {
-		if units[i] != uint16(prefix[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func hasSuffixString(units []uint16, suffix string) bool {
-	if len(units) < len(suffix) {
-		return false
-	}
-	offset := len(units) - len(suffix)
-	for i := 0; i < len(suffix); i++ {
-		if units[offset+i] != uint16(suffix[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func (v *evidence) hasSeparatorAfter(value []uint16, prefix string) bool {
-	if !hasPrefixString(value, prefix) || len(value) <= len(prefix) {
+func (v *evidence) hasSeparatorAfter(value []uint16, prefix []uint16) bool {
+	if !hasUnitsAt(value, prefix, 0) || len(value) <= len(prefix) {
 		return false
 	}
 	return v.docSeparator.has(value[len(prefix)])
@@ -167,7 +134,7 @@ func (v *evidence) startsWithDocPrefix(value []uint16) bool {
 func (v *evidence) endsWithDocSuffix(value []uint16) bool {
 	for _, suffix := range v.docSuffixes {
 		at := len(value) - len(suffix) - 1
-		if at >= 0 && hasSuffixString(value, suffix) && v.docSeparator.has(value[at]) {
+		if at >= 0 && hasUnitsAt(value, suffix, at+1) && v.docSeparator.has(value[at]) {
 			return true
 		}
 	}
@@ -224,11 +191,6 @@ func (v *evidence) hasValueEvidence(raw []uint16) bool {
 	return shannonEntropy(value) >= v.threshold
 }
 
-type symbolCount struct {
-	symbol uint32
-	count  int
-}
-
 // shannonEntropy is the entropy in bits per symbol (a code point; a lone surrogate is one
 // symbol), divided by the UTF-16 length, summed in first-occurrence order (SPEC 5.4).
 func shannonEntropy(units []uint16) float64 {
@@ -237,7 +199,7 @@ func shannonEntropy(units []uint16) float64 {
 		return 0
 	}
 	index := make(map[uint32]int)
-	var symbols []symbolCount
+	var counts []int
 	for i := 0; i < length; i++ {
 		symbol := uint32(units[i])
 		if isHighSurrogate(units[i]) && i+1 < length && isLowSurrogate(units[i+1]) {
@@ -246,15 +208,15 @@ func shannonEntropy(units []uint16) float64 {
 		}
 		at, seen := index[symbol]
 		if !seen {
-			at = len(symbols)
+			at = len(counts)
 			index[symbol] = at
-			symbols = append(symbols, symbolCount{symbol: symbol})
+			counts = append(counts, 0)
 		}
-		symbols[at].count++
+		counts[at]++
 	}
 	entropy := 0.0
-	for _, entry := range symbols {
-		probability := float64(entry.count) / float64(length)
+	for _, count := range counts {
+		probability := float64(count) / float64(length)
 		entropy -= float64(probability * log2fdlibm(probability))
 	}
 	return entropy

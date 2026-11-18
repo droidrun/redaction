@@ -56,7 +56,9 @@ func (c vectorCase) options() Options {
 		mode = Strict
 	}
 	limits := c.Opts
-	return Options{Mode: mode, MaxChars: limits.MaxChars, MaxDepth: limits.MaxDepth, MaxNodes: limits.MaxNodes}
+	return Options{
+		Mode: mode, MaxChars: limits.MaxChars, MaxDepth: limits.MaxDepth, MaxNodes: limits.MaxNodes,
+	}
 }
 
 // inputJSON is the case input as JSON text.

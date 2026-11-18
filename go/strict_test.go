@@ -243,7 +243,8 @@ func TestInvalidJSONObeysTheLimits(t *testing.T) {
 
 func TestInvalidJSONNeverReturnsTheInput(t *testing.T) {
 	inputs := []string{
-		`{"token":"` + injectedMarker + `"`, injectedMarker + " token", `[1,2,` + `"password=` + injectedMarker,
+		`{"token":"` + injectedMarker + `"`, injectedMarker + " token",
+		`[1,2,"password=` + injectedMarker,
 	}
 	for _, input := range inputs {
 		out, _, err := RedactJSON([]byte(input), Options{})

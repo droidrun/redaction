@@ -57,28 +57,29 @@ type Result struct {
 	Err string
 }
 
-// recorder counts hits per rule id.
+// recorder counts hits per rule id, in the order the ids first occurred, and keeps the class of
+// the first fail-closed event.
 type recorder struct {
-	failureIDs map[string]bool
-	order      []string
-	counts     map[string]int
-	failure    string
+	e       *engine
+	hits    []RuleCount
+	failure string
 }
 
 func newRecorder(e *engine) *recorder {
-	ids := e.spec.algorithms.RuleIDs
-	failures := []string{ids.SizeLimit, ids.DepthLimit, ids.Circular, ids.Failed, ids.Error}
-	return &recorder{failureIDs: toSet(failures), counts: make(map[string]int)}
+	return &recorder{e: e}
 }
 
 func (r *recorder) add(ruleID string) {
-	if r.counts[ruleID] == 0 {
-		r.order = append(r.order, ruleID)
-	}
-	r.counts[ruleID]++
-	if r.failure == "" && r.failureIDs[ruleID] {
+	if r.failure == "" && r.e.failureIDs[ruleID] {
 		r.failure = ruleID
 	}
+	for i := range r.hits {
+		if r.hits[i].RuleID == ruleID {
+			r.hits[i].Count++
+			return
+		}
+	}
+	r.hits = append(r.hits, RuleCount{RuleID: ruleID, Count: 1})
 }
 
 func (r *recorder) addHits(hits []hit) {
@@ -88,11 +89,7 @@ func (r *recorder) addHits(hits []hit) {
 }
 
 func (r *recorder) result() Result {
-	result := Result{Err: r.failure}
-	for _, ruleID := range r.order {
-		result.Hits = append(result.Hits, RuleCount{RuleID: ruleID, Count: r.counts[ruleID]})
-	}
-	return result
+	return Result{Hits: r.hits, Err: r.failure}
 }
 
 // redactUnits scans a text of units with the standard rules and returns it with the hits spliced.
@@ -154,7 +151,7 @@ func (e *engine) redactText(s string, maxChars int, rec *recorder) string {
 		return e.placeholders.read(sizeLimit)
 	}
 	out := e.redactUnits(units, rec)
-	if len(rec.order) == 0 && utf8.ValidString(s) {
+	if len(rec.hits) == 0 && utf8.ValidString(s) {
 		return s
 	}
 	return unitsToString(out)

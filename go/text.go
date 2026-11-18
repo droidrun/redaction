@@ -144,12 +144,11 @@ type searcher struct {
 	source string
 	plain  *regexp.Regexp
 	ctx    *regexp.Regexp
-	groups bool
 	// needs are literals of which every match holds one (lower-cased); empty when there are none.
 	needs []string
 }
 
-func newSearcher(source string, groups bool) (*searcher, error) {
+func newSearcher(source string) (*searcher, error) {
 	plain, err := regexp.Compile(source)
 	if err != nil {
 		return nil, errors.New("redaction: spec pattern does not compile")
@@ -162,18 +161,7 @@ func newSearcher(source string, groups bool) (*searcher, error) {
 	if err != nil {
 		return nil, errors.New("redaction: spec pattern does not parse")
 	}
-	return &searcher{source: source, plain: plain, ctx: ctx, groups: groups, needs: needs}, nil
-}
-
-func (s *searcher) withContext() *regexp.Regexp {
-	return s.ctx
-}
-
-func (s *searcher) run(re *regexp.Regexp, sub string) []int {
-	if s.groups {
-		return re.FindStringSubmatchIndex(sub)
-	}
-	return re.FindStringIndex(sub)
+	return &searcher{source: source, plain: plain, ctx: ctx, needs: needs}, nil
 }
 
 // find returns the leftmost-first match that starts at or after unit `from`, as unit offsets
@@ -189,10 +177,10 @@ func (s *searcher) find(t *text, from int) []int {
 	base := start
 	var loc []int
 	if from == 0 || !isWordByte(t.mapped[start-1]) {
-		loc = s.run(s.plain, t.mapped[start:])
+		loc = s.plain.FindStringSubmatchIndex(t.mapped[start:])
 	} else {
 		base = t.byteAt(from - 1)
-		loc = s.run(s.withContext(), t.mapped[base:])
+		loc = s.ctx.FindStringSubmatchIndex(t.mapped[base:])
 		if loc != nil {
 			_, width := utf8.DecodeRuneInString(t.mapped[base+loc[0]:])
 			loc[0] += width

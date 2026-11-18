@@ -98,7 +98,8 @@ func TestRequiredLiteralsHoldWhereverAPatternMatches(t *testing.T) {
 		content := newText(tree.str)
 		for id, list := range searchers {
 			for _, search := range list {
-				if search.plain.FindStringIndex(content.mapped) != nil && !holdsAny(content.foldedText(), search.needs) {
+				matches := search.plain.FindStringIndex(content.mapped) != nil
+				if matches && !holdsAny(content.foldedText(), search.needs) {
 					t.Fatalf("%s: a match without any of %v", id, search.needs)
 				}
 			}

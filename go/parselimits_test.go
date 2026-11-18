@@ -89,7 +89,8 @@ func TestLimitedParseStillChecksSyntaxPastTheLimits(t *testing.T) {
 	}
 	for _, input := range inputs {
 		for _, opts := range []Options{
-			{MaxNodes: Limit(2)}, {MaxDepth: Limit(1)}, {MaxChars: Limit(1)}, {Mode: Compat, MaxNodes: Limit(1)},
+			{MaxNodes: Limit(2)}, {MaxDepth: Limit(1)}, {MaxChars: Limit(1)},
+			{Mode: Compat, MaxNodes: Limit(1)},
 		} {
 			if _, _, err := RedactJSON([]byte(input), opts); err != ErrInvalidJSON {
 				t.Fatalf("%s with %+v: got %v", input, opts, err)
