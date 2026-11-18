@@ -2,10 +2,14 @@
  *  composite attack (`head`) starts with a short cluster and then repeats the unit: a long run behind many starts. */
 import type { SpecDir } from './spec-patterns.ts';
 
-export type Attack = { name: string; unit: string; head?: string };
+/** `texts` (by size, as a string key) are ready-made texts that replace the head-and-unit text: the attack string
+ *  of a recheck verdict, built at each size by `recheck-gate.ts`. */
+export type Attack = { name: string; unit: string; head?: string; texts?: Record<string, string> };
 
 /** The text of an attack at `size` units: the head, then the unit repeated up to `size`. */
 export function attackText(attack: Attack, size: number): string {
+    const exact = attack.texts?.[String(size)];
+    if (exact !== undefined) return exact;
     const head = attack.head ?? '';
     return (
         head +

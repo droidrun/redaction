@@ -3,7 +3,8 @@
  * lint-spec — checks the spec (SPEC.md section 11):
  *   1. JSON Schema validation of rules/keys/algorithms and every vector file;
  *   2. the portable grammar ban list and the rule-id pattern, on every expanded pattern;
- *   3. recheck (static ReDoS analysis): anything but "safe" fails;
+ *   3. recheck (static ReDoS analysis): anything but "safe" fails, unless the attack string it produced does not
+ *      grow super-linearly in the scaling harness (then it is a warning with the attack; lib/recheck-gate.ts);
  *   4. every pattern compiles in JS, Python (re.ASCII) and Go (regexp);
  *   5. scaling: attack strings at 100 KB and 1 MB run in JS and Python with near-linear time.
  *
@@ -18,6 +19,7 @@ import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { attacksFor } from './lib/attacks.ts';
+import { recheckGate } from './lib/recheck-gate.ts';
 import {
     classShapeViolation,
     emptyMatchViolation,
@@ -108,25 +110,12 @@ function grammarProblems(patterns: NamedPattern[]): Problem[] {
     });
 }
 
-/** Attempts per pattern: recheck's fuzz checker measures time, so one run under a loaded machine can call a safe
- *  pattern vulnerable. A pattern is reported only when every attempt (a different seed each) says it is not safe;
- *  a truly vulnerable pattern is found on every attempt. */
-const RECHECK_ATTEMPTS = 3;
-
-async function recheckStatus(source: string): Promise<string> {
-    let status = 'safe';
-    for (let seed = 0; seed < RECHECK_ATTEMPTS; seed++) {
-        status = (await check(source, '', { timeout: 60_000, seed } as never)).status;
-        if (status === 'safe') return status;
-    }
-    return status;
-}
-
 async function recheckProblems(patterns: NamedPattern[]): Promise<Problem[]> {
     const problems: Problem[] = [];
     for (const pattern of patterns.filter((item) => item.role === 'pattern')) {
-        const status = await recheckStatus(pattern.source);
-        if (status !== 'safe') problems.push(`${pattern.where}: recheck says ${status}`);
+        const gate = await recheckGate(pattern.where, pattern.source);
+        if (gate.warning !== undefined) console.warn(`WARNING ${gate.warning}`);
+        if (gate.problem !== undefined) problems.push(gate.problem);
     }
     return problems;
 }
@@ -511,6 +500,15 @@ async function selfTest(): Promise<Problem[]> {
     if (unplanted.length > 0) problems.push('self-test: the unmodified spec does not lint clean');
     const vulnerable = (await check('(a+)+b', '')).status === 'vulnerable';
     if (!vulnerable) problems.push('self-test: recheck did not flag (a+)+b');
+    // The gate: a real ReDoS without a nested group (grammar-clean) must fail with its attack; a safe pattern passes.
+    const real = await recheckGate('planted a*a*a*a*b', 'a*a*a*a*b');
+    if (!real.problem?.includes('confirms it') || !real.problem.includes('attack')) {
+        problems.push('self-test: a planted real ReDoS did not fail the recheck gate with its attack string');
+    }
+    const safe = await recheckGate('safe pattern', '[a-z]{1,8}x');
+    if (safe.problem !== undefined || safe.warning !== undefined) {
+        problems.push('self-test: a safe pattern did not pass the recheck gate');
+    }
     return problems;
 }
 

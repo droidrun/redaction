@@ -98,6 +98,8 @@ jobs:
         run: bun tools/lint-spec.ts
       - name: Lint self-test (planted non-portable patterns must fail)
         run: bun tools/lint-spec.ts --self-test
+      - name: Tools tests (the recheck gate's decisions)
+        run: bun test tools/lib
 
   ts:
     needs: changes
