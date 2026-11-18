@@ -32,6 +32,13 @@ function checkEscape(char: string | undefined, inClass: boolean, out: string[]):
     out.push(describeEscape(char));
 }
 
+/** Largest count of a `{n}`, `{n,}` or `{n,m}` bound; `null` when unbounded. */
+function upperBound(match: RegExpExecArray, min: number): number | null {
+    if (match[2] === undefined) return min;
+    if (match[3] === '') return null;
+    return Number(match[3]);
+}
+
 /** The quantifier that starts at `at` (`*`, `+`, `?` or a `{n,m}` bound): its largest count and end. */
 function readQuantifier(source: string, at: number, out: string[]): Quantifier {
     const char = source[at];
@@ -44,7 +51,7 @@ function readQuantifier(source: string, at: number, out: string[]): Quantifier {
         return { repeats: false, max: 1, end: at };
     }
     const min = Number(match[1]);
-    const max = match[2] === undefined ? min : match[3] === '' ? null : Number(match[3]);
+    const max = upperBound(match, min);
     for (const bound of [min, max]) {
         if (bound !== null && bound > MAX_BOUND) out.push(`repeat bound ${bound} above ${MAX_BOUND}`);
     }
