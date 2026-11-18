@@ -82,7 +82,8 @@ Every rule, word list, threshold and limit comes from the spec data embedded in 
   Figma, Cloudflare, Tailscale. Use `tier="full"` for content that leaves your system. The full-tier rules
   scan the first 2,000,000 units of a text (in windows of 100,000 that overlap by 10,240); the standard rules
   always scan the whole text. In `strict` mode what lies beyond the scan cap becomes
-  `[REDACTED:size-limit]`. Object keys are always scanned with the standard rules.
+  `[REDACTED:size-limit]`. Object keys are scanned with the rules of the tier too: in the full tier a key
+  that is itself a token (npm, Slack, 1Password, ...) is replaced by its placeholder.
 
 The letter guard in front of a key format uses the Unicode 15.0.0 letter table of the spec, never the
 interpreter's own `unicodedata`.
@@ -98,7 +99,8 @@ interpreter's own `unicodedata`.
 - `compat`: reproduces the TypeScript v0.2.0 behaviour of its sync entry (a string under a skip key is
   returned unscanned; keys do not count against `max_chars`; a node-exhausted object keeps its raw key at the
   cut). Use it only to compare with TypeScript output. In the full tier `compat` is TypeScript's async
-  behaviour: it has no length, depth or node limit (`max_chars`, `max_depth` and `max_nodes` are ignored), and
+  behaviour: it has no length, depth or node limit, so giving `max_chars`, `max_depth` or `max_nodes` with
+  it raises `ValueError`, and
   a failure of the full-tier rules falls back to the standard rules (and to `[REDACTED:error]` if those fail
   too).
 
