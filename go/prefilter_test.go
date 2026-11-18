@@ -7,31 +7,40 @@ import (
 	"testing"
 )
 
-// searchersOf lists the searcher of every rule of the pipeline by rule id (a rule with two, such
-// as auth-values, lists both).
+// searchersOf lists the searcher of every rule of the standard pipeline by rule id, and of every
+// full-tier rule by `full:` and its id (a rule with two, such as auth-values, lists both).
 func searchersOf(t *testing.T) map[string][]*searcher {
 	t.Helper()
 	found := make(map[string][]*searcher)
-	for _, entry := range theEngine.pipeline {
-		switch rule := entry.scanner.(type) {
-		case *regexRule:
-			found[entry.id] = append(found[entry.id], rule.search)
-		case *pemBlocks:
-			found[entry.id] = append(found[entry.id], rule.header)
-		case *cookieLines:
-			found[entry.id] = append(found[entry.id], rule.search)
-		case *authValues:
-			found[entry.id] = append(found[entry.id], rule.bearer, rule.scheme)
-		case *keywordPairs:
-			found[entry.id] = append(found[entry.id], rule.search)
-		case *quotedPairs:
-			found[entry.id] = append(found[entry.id], rule.search)
-		case *unquotedPairs:
-			found[entry.id] = append(found[entry.id], rule.search)
-		case *queryValues:
-			found[entry.id] = append(found[entry.id], rule.search)
+	collect := func(prefix string, entries []pipelineEntry) {
+		for _, entry := range entries {
+			id := prefix + entry.id
+			switch rule := entry.scanner.(type) {
+			case *regexRule:
+				found[id] = append(found[id], rule.search)
+			case *pemBlocks:
+				found[id] = append(found[id], rule.header)
+			case *pemKey:
+				found[id] = append(found[id], rule.header)
+			case *credentialURI:
+				found[id] = append(found[id], rule.search)
+			case *cookieLines:
+				found[id] = append(found[id], rule.search)
+			case *authValues:
+				found[id] = append(found[id], rule.bearer, rule.scheme)
+			case *keywordPairs:
+				found[id] = append(found[id], rule.search)
+			case *quotedPairs:
+				found[id] = append(found[id], rule.search)
+			case *unquotedPairs:
+				found[id] = append(found[id], rule.search)
+			case *queryValues:
+				found[id] = append(found[id], rule.search)
+			}
 		}
 	}
+	collect("", theEngine.pipeline)
+	collect("full:", theEngine.full)
 	return found
 }
 

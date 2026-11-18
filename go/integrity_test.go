@@ -89,8 +89,8 @@ func TestSpecFailuresNameTheFailureNotTheData(t *testing.T) {
 }
 
 func TestEngineIsBuiltFromTheEmbeddedSpec(t *testing.T) {
-	if theEngine == nil || len(theEngine.pipeline) != 18 {
-		t.Fatal("the engine does not hold the pipeline of the spec")
+	if theEngine == nil || len(theEngine.pipeline) != 18 || len(theEngine.full) != 36 {
+		t.Fatal("the engine does not hold the rules of the spec")
 	}
 }
 

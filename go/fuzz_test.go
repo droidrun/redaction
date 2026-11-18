@@ -24,6 +24,35 @@ var fuzzContexts = []string{
 	"https://user:%s@example.test/x",
 	"Cookie: sid=%s; theme=dark",
 	"?redirect=%%3Ftoken%%3D%s",
+	"postgres://svc:%s@db.test/app",
+	"mongodb+srv://svc:%s@cluster.test/db?retryWrites=true",
+}
+
+// tokenShapes are key formats of the full tier around a generated body of letters and digits (or
+// of letters only), each of which the full tier must redact.
+var tokenShapes = []struct {
+	prefix  string
+	length  int
+	letters bool
+}{
+	{"npm_", 36, false}, {"ghp_", 36, false}, {"glpat-", 20, false}, {"sk_live_", 24, false},
+	{"gsk_", 52, false}, {"hf_", 34, true}, {"shpat_", 32, false}, {"lin_api_", 32, false},
+	{"dckr_pat_", 27, false}, {"figd_", 40, false},
+}
+
+// tokenFor is a token of shape `index` (modulo the shapes) and its body.
+func tokenFor(index uint8, seed uint32) (token string, body string) {
+	shape := tokenShapes[int(index)%len(tokenShapes)]
+	alphabet := fuzzAlphabet
+	if shape.letters {
+		alphabet = fuzzAlphabet[:52]
+	}
+	bytes := make([]byte, shape.length)
+	for i := range bytes {
+		seed = seed*1664525 + 1013904223
+		bytes[i] = alphabet[int(seed>>16)%len(alphabet)]
+	}
+	return shape.prefix + string(bytes), string(bytes)
 }
 
 // tameText keeps only letters, digits and spaces, so random neighbours cannot change the
@@ -58,13 +87,17 @@ func survivingPart(text string, marker string) string {
 }
 
 func FuzzRedactText(f *testing.F) {
-	f.Add("prefix words", "suffix words", uint8(0), uint32(1), "free \xff text password=abc")
-	f.Add("", "", uint8(6), uint32(7), "[REDACTED:key-context] 日本語 😀")
-	f.Add("a", "b", uint8(12), uint32(99), strings.Repeat("password=", 30))
-	f.Fuzz(func(t *testing.T, prefix string, suffix string, context uint8, seed uint32, free string) {
+	f.Add("prefix words", "suffix words", uint8(0), uint32(1), "free \xff text password=abc", uint8(0))
+	f.Add("", "", uint8(6), uint32(7), "[REDACTED:key-context] 日本語 😀", uint8(1))
+	f.Add("a", "b", uint8(12), uint32(99), strings.Repeat("password=", 30), uint8(0))
+	f.Add("x", "", uint8(3), uint32(5), strings.Repeat("ghs_1_", 50)+"."+strings.Repeat("a", 50), uint8(1))
+	f.Fuzz(func(
+		t *testing.T, prefix string, suffix string, context uint8, seed uint32, free string, tier uint8,
+	) {
+		opts := Options{Tier: Tier(tier % 2)}
 		// Any input: never panics, valid UTF-8 out, same result twice.
-		out, _ := RedactText(free, Options{})
-		again, _ := RedactText(free, Options{})
+		out, _ := RedactText(free, opts)
+		again, _ := RedactText(free, opts)
 		if !utf8.ValidString(out) || out != again {
 			t.Fatal("output is not valid UTF-8 or not deterministic")
 		}
@@ -72,13 +105,21 @@ func FuzzRedactText(f *testing.F) {
 		shape := fuzzContexts[int(context)%len(fuzzContexts)]
 		input := tameText(prefix) + " " + strings.Replace(shape, "%s", marker, 1) + " " + tameText(suffix)
 		input = strings.ReplaceAll(input, "%%", "%")
-		redacted, _ := RedactText(input, Options{})
+		redacted, _ := RedactText(input, opts)
 		if survivingPart(redacted, marker) != "" {
 			t.Fatalf("part %q of the marker survives in %q", survivingPart(redacted, marker), redacted)
 		}
-		twice, _ := RedactText(redacted, Options{})
-		if twice != redacted {
-			t.Fatalf("not idempotent: %q then %q", redacted, twice)
+		if opts.Tier == TierStandard {
+			twice, _ := RedactText(redacted, opts)
+			if twice != redacted {
+				t.Fatalf("not idempotent: %q then %q", redacted, twice)
+			}
+		}
+		// A key format of the full tier never survives it, behind anything that is not a letter.
+		token, body := tokenFor(context, seed)
+		full, _ := RedactText(tameText(prefix)+" "+token+" "+tameText(suffix), Options{Tier: TierFull})
+		if survivingPart(full, body) != "" {
+			t.Fatalf("part %q of the token survives in %q", survivingPart(full, body), full)
 		}
 	})
 }
@@ -94,6 +135,7 @@ var fuzzDocuments = []string{
 	`{"api_key":["%s","other"]}`,
 	`{"id":"password=%s"}`,
 	`{"cfg":"{\"client_secret\":\"%s\"}"}`,
+	`{"db":"postgres://svc:%s@db.test/app"}`,
 }
 
 func fuzzLimit(selector uint8, value uint8) *int {
@@ -107,10 +149,16 @@ func FuzzRedactJSON(f *testing.F) {
 	f.Add(uint8(0), uint32(1), "noise", []byte(`{"a":[1,2,{"b":null}]}`), uint8(1), uint8(5))
 	f.Add(uint8(5), uint32(9), "", []byte(`[1,2,`), uint8(0), uint8(0))
 	f.Add(uint8(8), uint32(3), "x y", []byte("\xff\xfe{"), uint8(3), uint8(30))
-	f.Fuzz(func(t *testing.T, document uint8, seed uint32, noise string, free []byte, selector uint8, limit uint8) {
+	f.Fuzz(func(
+		t *testing.T, document uint8, seed uint32, noise string, free []byte, selector uint8, limit uint8,
+	) {
 		// Any bytes: never panics, an error comes with a non-nil text output, valid JSON comes back valid.
+		tier := Tier(selector / 3 % 2)
 		for _, mode := range []Mode{Strict, Compat} {
-			opts := Options{Mode: mode, MaxNodes: fuzzLimit(selector, limit), MaxChars: fuzzLimit(selector+1, limit)}
+			opts := Options{
+				Tier: tier, Mode: mode,
+				MaxNodes: fuzzLimit(selector, limit), MaxChars: fuzzLimit(selector+1, limit),
+			}
 			out, _, err := RedactJSON(free, opts)
 			if out == nil || (err == nil) != json.Valid(free) || (err == nil && !json.Valid(out)) {
 				t.Fatalf("%q: out %q, err %v", free, out, err)
@@ -121,7 +169,9 @@ func FuzzRedactJSON(f *testing.F) {
 		encoded, _ := json.Marshal(tameText(noise))
 		input := `{"k":` + strings.Replace(shape, "%s", marker, 1) + `,"n":` + string(encoded) + `}`
 		opts := Options{
-			MaxNodes: fuzzLimit(selector, limit), MaxDepth: fuzzLimit(selector+2, limit), MaxChars: fuzzLimit(selector+1, limit),
+			Tier:     tier,
+			MaxNodes: fuzzLimit(selector, limit), MaxDepth: fuzzLimit(selector+2, limit),
+			MaxChars: fuzzLimit(selector+1, limit),
 		}
 		out, _, err := RedactJSON([]byte(input), opts)
 		if err != nil {

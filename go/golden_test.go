@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 	"unicode/utf16"
 )
@@ -33,6 +34,7 @@ type goldenCase struct {
 	Gen    *genParts       `json:"gen"`
 	Opts   goldenOpts      `json:"opts"`
 	Sync   goldenOutcome   `json:"sync"`
+	Async  goldenOutcome   `json:"async"`
 }
 
 type goldenFile struct {
@@ -79,12 +81,27 @@ func (c goldenCase) options() Options {
 	return options
 }
 
-func (c goldenCase) recordedCounts() map[string]int {
+// legacyIDPrefix is the prefix of the 0.2.0 ids of the full-tier rules (`@secretlint/secretlint-rule-aws`);
+// the package reports the spec ids (`aws`).
+const legacyIDPrefix = "@secretlint/secretlint-rule-"
+
+// recordedCounts is the number of hits per rule id of a recorded outcome, with the 0.2.0 prefix removed.
+func recordedCounts(outcome goldenOutcome) map[string]int {
 	counts := make(map[string]int)
-	for _, entry := range c.Sync.Hits {
-		counts[entry[0].(string)]++
+	for _, entry := range outcome.Hits {
+		counts[strings.TrimPrefix(entry[0].(string), legacyIDPrefix)]++
 	}
 	return counts
+}
+
+// fullOptions are the options of the async side of the corpus: the full tier in compat mode, with the
+// skip keys of the case and no limits (the reference's async entry points take none).
+func (c goldenCase) fullOptions() Options {
+	options := Options{Tier: TierFull, Mode: Compat}
+	if c.Opts.SkipKeys != nil {
+		options.SkipKeys = c.Opts.SkipKeys
+	}
+	return options
 }
 
 // runWithResult is `run` that also returns the hit counts.
@@ -140,13 +157,54 @@ func TestGoldenReplay(t *testing.T) {
 	var differing []string
 	for _, c := range golden.Cases {
 		got, result := runWithResult(t, c.inputJSON(t), c.options())
-		same := matchesRecord(t, got, c.Sync.Out) && sameCounts(countsOf(result), c.recordedCounts())
+		same := matchesRecord(t, got, c.Sync.Out) && sameCounts(countsOf(result), recordedCounts(c.Sync))
 		if !same {
 			differing = append(differing, c.ID)
 		}
 	}
-	t.Logf("replayed %d cases, %d differ", len(golden.Cases), len(differing))
+	t.Logf("standard side: replayed %d cases, %d differ", len(golden.Cases), len(differing))
 	if len(differing) > 0 {
 		t.Fatalf("%d cases differ, first: %v", len(differing), differing[:min(len(differing), 20)])
+	}
+}
+
+// awsCorrection is the one case whose full-tier result differs from the recorded 0.2.0 output: the
+// AWS secret access key is reported over the secret (SPEC 4.17, decided 2026-11-18) where secretlint
+// reported from the key name, and the recorded output had redacted the whole text.
+var awsCorrection = struct {
+	id          string
+	input       string
+	recordedOut string
+	out         string
+}{
+	id:          "vector-109",
+	input:       "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYzzzzKEY9xxx1",
+	recordedOut: "[REDACTED:aws]",
+	out:         "AWS_SECRET_ACCESS_KEY=[REDACTED:aws]",
+}
+
+func TestGoldenReplayFullTier(t *testing.T) {
+	golden := loadGolden(t)
+	var differing []string
+	for _, c := range golden.Cases {
+		got, result := runWithResult(t, c.inputJSON(t), c.fullOptions())
+		same := matchesRecord(t, got, c.Async.Out) && sameCounts(countsOf(result), recordedCounts(c.Async))
+		if same {
+			continue
+		}
+		differing = append(differing, c.ID)
+		if c.ID != awsCorrection.id {
+			continue
+		}
+		if string(c.inputJSON(t)) != string(jsonString(decodeUTF8(awsCorrection.input))) ||
+			string(c.Async.Out) != string(jsonString(decodeUTF8(awsCorrection.recordedOut))) ||
+			string(got) != string(jsonString(decodeUTF8(awsCorrection.out))) ||
+			!sameCounts(countsOf(result), map[string]int{"aws": 1}) {
+			t.Errorf("%s differs in a way the AWS correction does not explain: %s", c.ID, got)
+		}
+	}
+	t.Logf("full side: replayed %d cases, differing: %v", len(golden.Cases), differing)
+	if len(differing) != 1 || differing[0] != awsCorrection.id {
+		t.Fatalf("expected only %s to differ, got %v", awsCorrection.id, differing[:min(len(differing), 20)])
 	}
 }
