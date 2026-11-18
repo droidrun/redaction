@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"unicode/utf8"
 )
 
@@ -17,6 +16,8 @@ import (
 type text struct {
 	units  []uint16
 	mapped string
+	// folded is mapped with ASCII letters lower-cased, made when a search first needs it.
+	folded string
 	// offs maps a unit index to its byte offset in mapped (length units+1). It is nil when mapped
 	// is ASCII, where a unit is one byte.
 	offs []int32
@@ -104,6 +105,13 @@ func textFromString(s string) *text {
 	return newText(decodeUTF8(s))
 }
 
+func (t *text) foldedText() string {
+	if t.folded == "" {
+		t.folded = lowerASCII(t.mapped)
+	}
+	return t.folded
+}
+
 func (t *text) length() int {
 	return len(t.units)
 }
@@ -135,9 +143,10 @@ func isWordByte(b byte) bool {
 type searcher struct {
 	source string
 	plain  *regexp.Regexp
-	once   sync.Once
 	ctx    *regexp.Regexp
 	groups bool
+	// needs are literals of which every match holds one (lower-cased); empty when there are none.
+	needs []string
 }
 
 func newSearcher(source string, groups bool) (*searcher, error) {
@@ -145,13 +154,18 @@ func newSearcher(source string, groups bool) (*searcher, error) {
 	if err != nil {
 		return nil, errors.New("redaction: spec pattern does not compile")
 	}
-	return &searcher{source: source, plain: plain, groups: groups}, nil
+	ctx, err := regexp.Compile(`(?s:.)(?:` + source + `)`)
+	if err != nil {
+		return nil, errors.New("redaction: spec pattern does not compile")
+	}
+	needs, err := requiredLiterals(source)
+	if err != nil {
+		return nil, errors.New("redaction: spec pattern does not parse")
+	}
+	return &searcher{source: source, plain: plain, ctx: ctx, groups: groups, needs: needs}, nil
 }
 
 func (s *searcher) withContext() *regexp.Regexp {
-	s.once.Do(func() {
-		s.ctx = regexp.MustCompile(`(?s:.)(?:` + s.source + `)`)
-	})
 	return s.ctx
 }
 
@@ -166,6 +180,9 @@ func (s *searcher) run(re *regexp.Regexp, sub string) []int {
 // (start and end of the match, then of each capture group; -1 for a group that did not take part).
 func (s *searcher) find(t *text, from int) []int {
 	if from >= t.length() {
+		return nil
+	}
+	if from == 0 && !holdsAny(t.foldedText(), s.needs) {
 		return nil
 	}
 	start := t.byteAt(from)
