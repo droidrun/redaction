@@ -584,7 +584,8 @@ State: `nodes = maxNodes` (default 500,000), `chars = maxChars` (4,000,000), `ma
    stop; else the element is `walk(element, depth + 1, verdict)`.
 6. An object: for each key in contract order: if `nodes <= 0`: set `out[key] = limit(size-limit)` (the key as
    it was) and stop. Else `outKey` = the key redacted (section 8, with its hits appended to `hits`). If the
-   key is a skip key and the value is a primitive: `nodes -= 1`, `out[outKey] = value` unchanged. Else
+   key is a skip key and the value is a primitive: `nodes -= 1`, `out[outKey] = value` unchanged (`compat`; strict
+   scans a string, 9.3). Else
    `out[outKey] = walk(value, depth + 1, strongerVerdict(verdict, keyVerdict(key)))`.
 7. The root call is `walk(value, 0, none)`. Any unexpected failure replaces the whole value by
    `[REDACTED:redaction-failed]`.
@@ -606,9 +607,14 @@ The walk is **iterative** (explicit stack; no recursion, no stack overflow) and 
   `[REDACTED:size-limit]` (the key of the first unscanned entry is raw text and is not returned). The
   container is then complete.
 - A leaf scan that fails gives `[REDACTED:redaction-failed]` for that leaf.
-- Skip keys keep their meaning: a primitive under `type` or `id` is the caller's declared exemption and is
-  returned unchanged. (This is the one way strict returns unscanned text; callers who want none pass an
-  empty skip set.)
+- **Skip keys exempt a value only from the key-context replacement.** A string under a skip key (default `type`,
+  `id`) is scanned as a text like any other leaf (a token under `id` is redacted) and is not replaced by
+  `[REDACTED:key-context]` even when an ancestor key is secret; a number, boolean or `null` under a skip key is
+  returned unchanged (there is nothing in it to scan). Strict therefore **never returns text that was not
+  scanned, without exception**. `compat` is unchanged (9.2: the skip-key string is returned as it is).
+- **Decided by Lutz, 2026-11-18:** the strict details above are accepted as written: a `Date` or class instance
+  (anything that is not a plain object, array or primitive) becomes `[REDACTED:redaction-failed]`, keys count
+  against `maxChars`, and the rest of a node-exhausted object collapses into one `[REDACTED:size-limit]` key.
 
 Everything else (order, verdicts, number handling, key redaction) is as in 9.2.
 
