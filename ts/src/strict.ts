@@ -2,8 +2,8 @@
  * strict.ts — the strict-mode JSON walker: iterative (no recursion, so no stack
  * overflow on deep input), bounded by depth, node and total-character limits, and
  * it never returns text it did not scan (also under skip keys: they only exempt a
- * string from the key-context replacement, the leaf scanner still runs on it). Whatever it cannot scan becomes a
- * placeholder: `[REDACTED:size-limit]` past a node/character limit or for an over-long
+ * string from the key-context replacement, the leaf scanner still runs on it).
+ * Whatever it cannot scan becomes a placeholder: `[REDACTED:size-limit]` past a node/character limit or for an over-long
  * key, `[REDACTED:depth-limit]` past the depth limit, `[REDACTED:circular]` for a
  * cycle, `[REDACTED:redaction-failed]` for a value outside the JSON model.
  *
