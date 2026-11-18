@@ -13,6 +13,7 @@ export type SpecDir = {
         macros: Record<string, Macro>;
         patterns: Record<string, string>;
         pipeline: Array<Record<string, unknown>>;
+        full: Array<Record<string, unknown>>;
     };
     keys: Record<string, unknown>;
     algorithms: Record<string, unknown>;
@@ -45,8 +46,30 @@ export function expand(template: string, spec: SpecDir, depth = 0): string {
     return out === template ? out : expand(out, spec, depth + 1);
 }
 
-/** String fields of a pipeline entry that hold literal text, not a regular expression. */
-const LITERAL_FIELDS = new Set(['id', 'kind', 'lead', 'separator', 'footerMarker', 'requireLiteral']);
+/** String fields of a rule that hold literal text, not a regular expression. */
+const LITERAL_FIELDS = new Set([
+    'id',
+    'kind',
+    'lead',
+    'leads',
+    'separator',
+    'footerMarker',
+    'requireLiteral',
+    'lit',
+    'alt',
+    'tails',
+    'magic',
+    'ignoreEquals',
+    'userIgnoreContains',
+    'passwordIgnoreContains',
+    'passwordIgnoreEquals',
+    'stripLiteral',
+    'newline',
+    'dash',
+    'check',
+    'plainWords',
+    'queryOnlyKeys',
+]);
 /** Fields that hold a pattern (the other regex-bearing fields hold one character class). */
 const PATTERN_FIELDS = new Set([
     'pattern',
@@ -57,45 +80,65 @@ const PATTERN_FIELDS = new Set([
     'scheme',
     'label',
     'queryKey',
+    'variablePatterns',
 ]);
 const CLASS_FIELD = /(?:Class|Char|Stop|End)$|^notBefore$|^notAfter$/;
 
 export type FieldRole = 'literal' | 'pattern' | 'class' | 'unknown';
 
-/** What a string field of a pipeline entry holds, decided by its name. */
+/** What a string field of a rule holds, decided by its name. */
 export function fieldRole(name: string): FieldRole {
     if (LITERAL_FIELDS.has(name)) return 'literal';
     if (PATTERN_FIELDS.has(name)) return 'pattern';
     return CLASS_FIELD.test(name) ? 'class' : 'unknown';
 }
 
+export type RuleList = 'pipeline' | 'full';
+export const RULE_LISTS: RuleList[] = ['pipeline', 'full'];
+type StringField = { path: string; name: string; value: string };
+
+/** Every string of a rule (also inside nested parts and lists of strings), with the name of its field. */
+function stringFields(value: unknown, path: string, name: string, out: StringField[]): void {
+    if (typeof value === 'string') out.push({ path, name, value });
+    else if (Array.isArray(value))
+        value.forEach((item, index) => stringFields(item, `${path}[${index}]`, name, out));
+    else if (value !== null && typeof value === 'object') {
+        for (const [key, item] of Object.entries(value)) stringFields(item, `${path}.${key}`, key, out);
+    }
+}
+
+function ruleStrings(rule: Record<string, unknown>, path: string): StringField[] {
+    const out: StringField[] = [];
+    for (const [key, item] of Object.entries(rule)) stringFields(item, `${path}.${key}`, key, out);
+    return out;
+}
+
 /** String fields no rule of the linter knows: they would escape every check, so they are a problem. */
 export function unclassifiedFields(spec: SpecDir): string[] {
-    return spec.rules.pipeline.flatMap((rule, index) => {
-        return Object.entries(rule)
-            .filter(([name, value]) => typeof value === 'string' && fieldRole(name) === 'unknown')
-            .map(
-                ([name]) =>
-                    `pipeline[${index}] ${String(rule.id)}.${name}: ` +
-                    'a string field the linter cannot classify',
-            );
-    });
+    return RULE_LISTS.flatMap((list) =>
+        spec.rules[list].flatMap((rule, index) =>
+            ruleStrings(rule, `${list}[${index}] ${String(rule.id)}`)
+                .filter((field) => fieldRole(field.name) === 'unknown')
+                .map((field) => `${field.path}: a string field the linter cannot classify`),
+        ),
+    );
 }
 
 /** Every expanded pattern of the spec with a label saying where it came from. */
 export function collectPatterns(spec: SpecDir): NamedPattern[] {
     const found: NamedPattern[] = [];
-    spec.rules.pipeline.forEach((rule, index) => {
-        for (const [field, value] of Object.entries(rule)) {
-            const role = fieldRole(field);
-            if (typeof value !== 'string' || role === 'literal' || role === 'unknown') continue;
-            found.push({
-                where: `pipeline[${index}] ${String(rule.id)} (${String(rule.kind)}).${field}`,
-                role,
-                source: expand(value, spec),
-            });
-        }
-    });
+    for (const list of RULE_LISTS) {
+        spec.rules[list].forEach((rule, index) => {
+            for (const field of ruleStrings(
+                rule,
+                `${list}[${index}] ${String(rule.id)} (${String(rule.kind)})`,
+            )) {
+                const role = fieldRole(field.name);
+                if (role === 'literal' || role === 'unknown') continue;
+                found.push({ where: field.path, role, source: expand(field.value, spec) });
+            }
+        });
+    }
     found.push({
         where: 'patterns.placeholder',
         role: 'pattern',

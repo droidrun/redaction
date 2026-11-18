@@ -1,8 +1,10 @@
 # secretlint preset inventory
 
 Classification of every rule of `@secretlint/secretlint-rule-preset-recommend` **13.0.4**
-(28 rules, in preset order) for the later port of the full tier into the spec. Nothing is
-ported in this slice; this file is the input for that decision.
+(28 rules, in preset order) and the outcome of the port of the full tier into the spec
+(decided and done 2026-11-18, see *Port outcome* below). The classification columns are the
+input of that port; the rule data is `spec/rules.json` `full`, the algorithms are SPEC.md 4.11
+to 4.17.
 
 - **portable-regex**: the rule is one pattern in the portable grammar (SPEC.md section 2),
   plus at most literal allow-list entries.
@@ -73,12 +75,37 @@ Decided by Lutz, 2026-11-18:
    inert here anyway). Accepted.
 2. **filter-comments**: stays out by design. Accepted.
 
-Still open before the port (S4):
+Decided by Lutz, 2026-11-18 (S4):
 
-3. **letter-guard**: pin the Unicode version (proposal: the version of the Python 3.11 and
-   Go 1.26 tables that agree on every code point of category L; the golden corpus then holds
-   a case per script boundary).
-4. **aws range quirk**: the upstream hit for the secret access key does not cover the secret.
-   Parity means copying it; the sync keyword rule happens to cover most of these values.
-   Proposal: do not copy the quirk, report the correct range, and record the one deviation.
+3. **letter-guard**: a fixed Unicode 15.0.0 letter table (Lu, Ll, Lt, Lm, Lo) generated into the
+   spec (`algorithms.json` `letters`, `tools/gen-letters.ts`), never the runtime's `\p{L}` (SPEC 5.6).
+4. **aws range quirk**: the ported rule reports the whole secret value, not
+   `[match start, match start + 40]`; the one documented deviation from the preset (SPEC 4.17).
 5. The rules not ported stay listed here; nothing is dropped silently.
+
+## Port outcome
+
+All 26 rules other than `gcp` and `filter-comments` are `full`-tier rules in `spec/rules.json`
+(rule ids unchanged), checked by an exact (rule id, range) parity test against `@secretlint/core`
+13.0.4 (`ts/src/secretlint-parity.test.ts`; the upstream fixtures are in
+`spec/corpus/secretlint-13.0.4/`). Ported 2026-11-18:
+
+| rule | kind in `full` | note |
+|---|---|---|
+| aws | `regex` x3 (key id, account id, secret access key) | key id: example value ignored; secret: range is the secret (L-K) |
+| gcp | not ported | decided by Lutz 2026-11-18 |
+| privatekey | `pem-key` | 4.14 |
+| npm | `token` | only the `npm_` token; the `x-oauth-basic` URL and `_authToken` branches need a `package.json` / `.npmrc` file name the package never gives (inert upstream here) |
+| basicauth | `credential-uri` | 4.15 |
+| slack | `dash-chain` (token), `regex` (webhook) | 4.12 |
+| sendgrid | `sendgrid-key` | 4.13 |
+| shopify, stripe, gitlab, huggingface, linear, notion, groq, vercel, docker, figma, cloudflare, tailscale, npm | `token` | 4.11 |
+| github | `token` x3 | classic, fine-grained, app installation token (long middle segment) |
+| grafana | `token` x2 | cloud token (padding run), service account token |
+| hashicorp-vault | `token` x3 | service, batch, recovery |
+| databricks | `token` | optional `-N` suffix tried first, guard decides |
+| openai | `regex` | |
+| anthropic | `token` | run with literal tail `AA` |
+| 1password | `token` with `check: base64-json` | 5.7 |
+| database-connection-string | `credential-uri` x3 | MongoDB, MySQL, PostgreSQL |
+| filter-comments | not ported (by design) | decided by Lutz 2026-11-18 |
