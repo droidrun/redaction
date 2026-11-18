@@ -30,7 +30,7 @@ jobs:
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" "$GITHUB_SHA")
-          if printf '%s\n' "$changed" | grep -Eq '^(spec/|tools/|\.github/workflows/ci\.yml$)'; then
+          if printf '%s\n' "$changed" | grep -Eq '^(spec/|tools/|ts/spec/|ts/src/spec-hash\.generated\.ts$|\.github/workflows/ci\.yml$)'; then
             echo "spec=true" >> "$GITHUB_OUTPUT"
           else
             echo "spec=false" >> "$GITHUB_OUTPUT"
@@ -93,6 +93,9 @@ jobs:
           bun-version: '1.4.4'
       - name: Setup pnpm
         run: corepack enable && corepack prepare pnpm@10.18.1 --activate
+      - name: Spec copies and hash are up to date
+        working-directory: .
+        run: tools/sync-spec --check
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm test

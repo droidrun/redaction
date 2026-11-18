@@ -67,7 +67,7 @@ try {
         console.error('the tarball holds no spec/vectors');
         process.exit(1);
     }
-    run(process.execPath, ['--input-type=module', '--eval', CONSUMER], consumer);
+    run('node', ['--input-type=module', '--eval', CONSUMER], consumer);
     console.log(`check-pack: ok (${filename}, ${vectorFiles.length} vector files)`);
 } finally {
     rmSync(work, { recursive: true, force: true });
