@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -183,6 +184,36 @@ var awsCorrection = struct {
 	out:         "AWS_SECRET_ACCESS_KEY=[REDACTED:aws]",
 }
 
+// keyCases are the cases whose full-tier result differs from the recorded 0.2.0 output because an
+// object key is scanned with the full rules (decided 2026-11-18, L-N): the key holds a full-tier-only
+// secret (a connection string, an npm, SendGrid, Slack webhook, Linear, Shopify or GitLab token) and is
+// now replaced by the placeholder of that rule; a connection string used to read `url-credentials`.
+// More redaction only: every other part of the output is the recorded one.
+var keyCases = []string{
+	"sample-68", "sample-119", "sample-122", "sample-125", "sample-128", "sample-131", "sample-137",
+	"sample-140", "fuzz-key-39", "fuzz-key-57", "fuzz-key-82", "fuzz-key-127", "fuzz-key-167",
+	"fuzz-key-189", "fuzz-key-193", "fuzz-key-198", "fuzz-key-201", "fuzz-key-211", "fuzz-key-214",
+	"fuzz-key-236", "fuzz-key-266", "fuzz-key-274", "fuzz-key-280", "fuzz-key-284",
+}
+
+// sameValuesIgnoringKeys: both trees have the same shape and the same leaves, the keys may differ.
+func sameValuesIgnoringKeys(a *node, b *node) bool {
+	if a.kind != b.kind || len(a.items) != len(b.items) || len(a.members) != len(b.members) {
+		return false
+	}
+	for i := range a.items {
+		if !sameValuesIgnoringKeys(a.items[i], b.items[i]) {
+			return false
+		}
+	}
+	for i := range a.members {
+		if !sameValuesIgnoringKeys(a.members[i].val, b.members[i].val) {
+			return false
+		}
+	}
+	return a.kind != kindString || equalUnits(a.str, b.str)
+}
+
 func TestGoldenReplayFullTier(t *testing.T) {
 	golden := loadGolden(t)
 	var differing []string
@@ -193,18 +224,25 @@ func TestGoldenReplayFullTier(t *testing.T) {
 			continue
 		}
 		differing = append(differing, c.ID)
-		if c.ID != awsCorrection.id {
-			continue
-		}
-		if string(c.inputJSON(t)) != string(jsonString(decodeUTF8(awsCorrection.input))) ||
-			string(c.Async.Out) != string(jsonString(decodeUTF8(awsCorrection.recordedOut))) ||
-			string(got) != string(jsonString(decodeUTF8(awsCorrection.out))) ||
-			!sameCounts(countsOf(result), map[string]int{"aws": 1}) {
-			t.Errorf("%s differs in a way the AWS correction does not explain: %s", c.ID, got)
+		switch {
+		case c.ID == awsCorrection.id:
+			if string(c.inputJSON(t)) != string(jsonString(decodeUTF8(awsCorrection.input))) ||
+				string(c.Async.Out) != string(jsonString(decodeUTF8(awsCorrection.recordedOut))) ||
+				string(got) != string(jsonString(decodeUTF8(awsCorrection.out))) ||
+				!sameCounts(countsOf(result), map[string]int{"aws": 1}) {
+				t.Errorf("%s differs in a way the AWS correction does not explain: %s", c.ID, got)
+			}
+		case slices.Contains(keyCases, c.ID):
+			if !sameValuesIgnoringKeys(parseTree(t, got), parseTree(t, c.Async.Out)) {
+				t.Errorf("%s differs in more than its object keys: %s", c.ID, got)
+			}
 		}
 	}
-	t.Logf("full side: replayed %d cases, differing: %v", len(golden.Cases), differing)
-	if len(differing) != 1 || differing[0] != awsCorrection.id {
-		t.Fatalf("expected only %s to differ, got %v", awsCorrection.id, differing[:min(len(differing), 20)])
+	t.Logf("full side: replayed %d cases, %d differ: %v", len(golden.Cases), len(differing), differing)
+	want := append([]string{awsCorrection.id}, keyCases...)
+	slices.Sort(want)
+	slices.Sort(differing)
+	if !slices.Equal(differing, want) {
+		t.Fatalf("expected exactly the AWS correction and the key cases to differ, got %v", differing)
 	}
 }

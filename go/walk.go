@@ -168,13 +168,15 @@ func (w *walker) isSkipKey(key []uint16) bool {
 	return false
 }
 
-// redactKey is the key as written, or its placeholder form when the key text holds a secret.
+// redactKey is the key as written, or its placeholder form when the key text holds a secret. A key
+// is scanned with the rules of the tier (in the full tier a key that is itself a token is replaced),
+// when its length is within the key bounds.
 func (w *walker) redactKey(key []uint16) []uint16 {
 	limits := w.e.spec.algorithms
 	if len(key) < limits.Text.MinScanLength || len(key) > limits.Sync.MaxKeyChars {
 		return key
 	}
-	return w.e.redactUnits(key, w.rec)
+	return w.e.scan(key, w.mode, w.rec)
 }
 
 // strictKey scans a key against the character budget; one that does not fit becomes a placeholder.

@@ -96,8 +96,10 @@ replaced; `example_test.go` runs this.
   by 10,240 (each window is a text of its own); the standard rules always see the whole text. Compat
   scans a longer text with the standard rules beyond that cap; Strict replaces the units beyond the cap
   by `[REDACTED:size-limit]`.
-- `RedactField` and the key rules (`IsSecretKeyName`, `KeyVerdict`) are the same in both tiers, and
-  object keys of a JSON value are scanned with the standard rules in both.
+- `RedactField` and the key rules (`IsSecretKeyName`, `KeyVerdict`) are the same in both tiers. In
+  `RedactJSON` an object key (from 8 up to 4,096 units) is scanned with the rules of the tier: in the
+  full tier a key that is itself a token (npm, Slack, 1Password, ...) is replaced by its placeholder,
+  in both modes.
 
 ## Modes
 

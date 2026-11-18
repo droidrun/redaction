@@ -236,18 +236,83 @@ func TestFullTierCompatHasNoLimitsAndStrictDoes(t *testing.T) {
 	}
 }
 
-func TestFullTierJSONScansValuesAndKeepsKeysToTheStandardRules(t *testing.T) {
+func TestFullTierJSONScansValuesAndKeys(t *testing.T) {
 	input := `{"` + npmToken + `":"` + npmToken + `","list":["` + npmToken + `","x"],"type":"` + npmToken +
 		`","id":"` + npmToken + `","n":1}`
-	compat := `{"` + npmToken + `":"[REDACTED:npm]","list":["[REDACTED:npm]","x"],"type":"` + npmToken +
+	compat := `{"[REDACTED:npm]":"[REDACTED:npm]","list":["[REDACTED:npm]","x"],"type":"` + npmToken +
 		`","id":"` + npmToken + `","n":1}`
-	strict := `{"` + npmToken + `":"[REDACTED:npm]","list":["[REDACTED:npm]","x"],"type":"[REDACTED:npm]",` +
+	strict := `{"[REDACTED:npm]":"[REDACTED:npm]","list":["[REDACTED:npm]","x"],"type":"[REDACTED:npm]",` +
 		`"id":"[REDACTED:npm]","n":1}`
 	for mode, want := range map[Mode]string{Compat: compat, Strict: strict} {
-		out, _, err := RedactJSON([]byte(input), Options{Tier: TierFull, Mode: mode})
+		out, result, err := RedactJSON([]byte(input), Options{Tier: TierFull, Mode: mode})
 		if err != nil || string(out) != want {
 			t.Errorf("mode %d:\n got  %s\n want %s", mode, out, want)
 		}
+		if got := countsOf(result)["npm"]; got < 3 {
+			t.Errorf("mode %d: %d npm hits, want the key among them", mode, got)
+		}
+	}
+	// The standard tier does not know the format: the key stays.
+	out, _, _ := RedactJSON([]byte(`{"`+npmToken+`":1}`), Options{})
+	if string(out) != `{"`+npmToken+`":1}` {
+		t.Errorf("the standard tier changed the key: %s", out)
+	}
+}
+
+// slackToken and onePasswordToken are tokens of full-tier rules of other kinds than `token`.
+const (
+	slackToken       = "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx"
+	onePasswordToken = "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFB" +
+		"QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ=="
+)
+
+func TestFullTierKeysThatAreTokensAreReplaced(t *testing.T) {
+	cases := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{"npm", npmToken, "[REDACTED:npm]"},
+		{"Slack", slackToken, "[REDACTED:slack]"},
+		{"a token inside a longer key", "prefix " + npmToken + " suffix", "prefix [REDACTED:npm] suffix"},
+		{"a key under 8 units is not scanned", "ghp_abcd", "ghp_abcd"},
+	}
+	for _, c := range cases {
+		for _, mode := range []Mode{Compat, Strict} {
+			out, _, err := RedactJSON([]byte(`{"`+c.key+`":1}`), Options{Tier: TierFull, Mode: mode})
+			if err != nil || string(out) != `{"`+c.want+`":1}` {
+				t.Errorf("%s, mode %d: got %s, %v", c.name, mode, out, err)
+			}
+		}
+	}
+	// A 1Password token is only a token when its body is base64 of a JSON object.
+	out, _, _ := RedactJSON([]byte(`{"`+onePasswordToken+`":1}`), Options{Tier: TierFull})
+	if string(out) != `{"[REDACTED:1password]":1}` {
+		t.Errorf("a 1Password token as a key: %s", out)
+	}
+}
+
+func TestFullTierKeysThatCollideAfterRedactionKeepTheFirstPosition(t *testing.T) {
+	other := "npm_" + strings.Repeat("B", 36)
+	input := `{"` + npmToken + `":1,"mid":2,"` + other + `":3}`
+	want := `{"[REDACTED:npm]":3,"mid":2}`
+	for _, mode := range []Mode{Compat, Strict} {
+		out, _, err := RedactJSON([]byte(input), Options{Tier: TierFull, Mode: mode})
+		if err != nil || string(out) != want {
+			t.Errorf("mode %d: got %s, %v", mode, out, err)
+		}
+	}
+}
+
+func TestFullTierKeyLimitsAreTheStandardOnes(t *testing.T) {
+	long := strings.Repeat("a", 4097)
+	compat, _, _ := RedactJSON([]byte(`{"`+long+`":1}`), Options{Tier: TierFull, Mode: Compat})
+	if string(compat) != `{"`+long+`":1}` {
+		t.Errorf("compat changed an over-long key")
+	}
+	strict, _, _ := RedactJSON([]byte(`{"`+long+`":1}`), Options{Tier: TierFull, Mode: Strict})
+	if string(strict) != `{"[REDACTED:size-limit]":1}` {
+		t.Errorf("strict did not replace an over-long key: %s", strict)
 	}
 }
 
