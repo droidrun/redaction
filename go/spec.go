@@ -37,6 +37,7 @@ type rulesFile struct {
 		Placeholder string `json:"placeholder"`
 	} `json:"patterns"`
 	Pipeline []json.RawMessage `json:"pipeline"`
+	Full     []json.RawMessage `json:"full"`
 }
 
 type keysFile struct {
@@ -68,6 +69,7 @@ type algorithmsFile struct {
 	Placeholder struct {
 		Open          string   `json:"open"`
 		Close         string   `json:"close"`
+		NumberMark    string   `json:"numberMark"`
 		StripPrefixes []string `json:"stripPrefixes"`
 	} `json:"placeholder"`
 	Evidence struct {
@@ -93,11 +95,20 @@ type algorithmsFile struct {
 		MaxNodes    int `json:"maxNodes"`
 		MaxKeyChars int `json:"maxKeyChars"`
 	} `json:"sync"`
+	Full struct {
+		ScanWindow  int `json:"scanWindow"`
+		ScanOverlap int `json:"scanOverlap"`
+		ScanCap     int `json:"scanCap"`
+	} `json:"full"`
 	Strict struct {
 		MaxChars int `json:"maxChars"`
 		MaxDepth int `json:"maxDepth"`
 		MaxNodes int `json:"maxNodes"`
 	} `json:"strict"`
+	Letters struct {
+		UnicodeVersion string `json:"unicodeVersion"`
+		Ranges         string `json:"ranges"`
+	} `json:"letters"`
 }
 
 type specFileSet struct {
@@ -153,6 +164,13 @@ type loadedSpec struct {
 	macros     map[string]string
 }
 
+// hasValidScanWindows: the windows overlap by less than their size (so the scan moves forward) and
+// the cap holds at least one window.
+func hasValidScanWindows(window int, overlap int, scanCap int) bool {
+	movesForward := overlap >= 0 && overlap < window
+	return movesForward && scanCap >= window
+}
+
 func decodeSpec(files specFileSet) (*loadedSpec, error) {
 	spec := &loadedSpec{}
 	if err := json.Unmarshal(files.rules, &spec.rules); err != nil {
@@ -170,7 +188,12 @@ func decodeSpec(files specFileSet) (*loadedSpec, error) {
 			return nil, errSpecRejected
 		}
 	}
-	if len(spec.rules.Pipeline) == 0 || len(spec.keys.SecretWords) == 0 {
+	hasRules := len(spec.rules.Pipeline) > 0 && len(spec.rules.Full) > 0
+	if !hasRules || len(spec.keys.SecretWords) == 0 || spec.algorithms.Letters.Ranges == "" {
+		return nil, errSpecRejected
+	}
+	if !hasValidScanWindows(spec.algorithms.Full.ScanWindow, spec.algorithms.Full.ScanOverlap,
+		spec.algorithms.Full.ScanCap) {
 		return nil, errSpecRejected
 	}
 	macros, err := spec.expandMacros()

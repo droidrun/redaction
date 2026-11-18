@@ -162,3 +162,18 @@ func TestEntropyUsesTheFdlibmLog2(t *testing.T) {
 		}
 	}
 }
+
+// A hit boundary can fall between the two units of a valid surrogate pair (a bounded run of the spec
+// cuts it): the reference keeps the lone half. A Go string cannot hold a lone surrogate, so RedactText
+// gives U+FFFD for it, while RedactJSON writes it as an escape and so keeps it (README, per-language notes).
+func TestASplitSurrogatePairIsAReplacementCharacterInTextAndKeptInJSON(t *testing.T) {
+	input := "mongodb://svc:Zq9abcdefgh@host.test/db?" + strings.Repeat("a", 499) + "\U0001F600tail"
+	text, result := RedactText(input, Options{Tier: TierFull})
+	if text != "[REDACTED:database-connection-string]�tail" || len(result.Hits) != 1 {
+		t.Fatalf("RedactText: got %q, %+v", text, result)
+	}
+	out, _, err := RedactJSON([]byte(`{"k":"`+input+`"}`), Options{Tier: TierFull})
+	if err != nil || string(out) != `{"k":"[REDACTED:database-connection-string]\ude00tail"}` {
+		t.Fatalf("RedactJSON: got %s, %v", out, err)
+	}
+}

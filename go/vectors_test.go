@@ -17,6 +17,7 @@ type vectorCase struct {
 	Opts             vectorOpts      `json:"opts"`
 	Expected         json.RawMessage `json:"expected"`
 	ExpectedSync     json.RawMessage `json:"expectedSync"`
+	ExpectedAsync    json.RawMessage `json:"expectedAsync"`
 	ExpectedGenSync  *genParts       `json:"expectedGenSync"`
 	ExpectedGenAsync *genParts       `json:"expectedGenAsync"`
 }
@@ -30,7 +31,6 @@ type vectorOpts struct {
 type vectorFile struct {
 	Description string       `json:"description"`
 	Tier        string       `json:"tier"`
-	Pending     string       `json:"pending"`
 	Cases       []vectorCase `json:"cases"`
 }
 
@@ -47,25 +47,25 @@ func loadVectors(t *testing.T) map[string]vectorFile {
 		if err := json.Unmarshal(readFile(t, path), &file); err != nil {
 			t.Fatal(err)
 		}
-		if file.Tier == "full" {
-			continue // needs the full tier, which this package does not have yet
-		}
-		if file.Pending != "" {
-			continue // a spec change this package has not implemented yet
-		}
 		loaded[strings.TrimSuffix(filepath.Base(path), ".json")] = file
 	}
 	return loaded
 }
 
-func (c vectorCase) options() Options {
+func (c vectorCase) options(tier Tier) Options {
 	mode := Compat
 	if c.Mode == "strict" {
 		mode = Strict
 	}
 	limits := c.Opts
+	if tier == TierFull && mode == Compat {
+		// The full tier in compat mode has no limits (SPEC 9.4) and refuses an explicit one: the
+		// vectors that set a limit ask for the limit of the other side only.
+		return Options{Tier: tier, Mode: mode}
+	}
 	return Options{
-		Mode: mode, MaxChars: limits.MaxChars, MaxDepth: limits.MaxDepth, MaxNodes: limits.MaxNodes,
+		Tier: tier, Mode: mode,
+		MaxChars: limits.MaxChars, MaxDepth: limits.MaxDepth, MaxNodes: limits.MaxNodes,
 	}
 }
 
@@ -78,11 +78,18 @@ func (c vectorCase) inputJSON(t *testing.T) []byte {
 	return c.Input
 }
 
-// expectedJSON is the expected output of the standard tier (the sync side) as JSON text.
-func (c vectorCase) expectedJSON(t *testing.T) []byte {
+// expectedJSON is the expected output of a tier as JSON text: the sync side is the standard tier,
+// the async side the full tier.
+func (c vectorCase) expectedJSON(t *testing.T, tier Tier) []byte {
 	t.Helper()
 	if len(c.Expected) > 0 {
 		return c.Expected
+	}
+	if tier == TierFull {
+		if c.ExpectedGenAsync != nil {
+			return jsonString(expandParts(t, *c.ExpectedGenAsync))
+		}
+		return c.ExpectedAsync
 	}
 	if c.ExpectedGenSync != nil {
 		return jsonString(expandParts(t, *c.ExpectedGenSync))
@@ -107,11 +114,21 @@ func run(t *testing.T, input []byte, opts Options) []byte {
 }
 
 func TestVectorsStandardTier(t *testing.T) {
+	runVectors(t, TierStandard)
+}
+
+// The async side of every vector file (and `expected`) is the full tier.
+func TestVectorsFullTier(t *testing.T) {
+	runVectors(t, TierFull)
+}
+
+func runVectors(t *testing.T, tier Tier) {
+	t.Helper()
 	for name, file := range loadVectors(t) {
 		for _, c := range file.Cases {
 			t.Run(name+"/"+c.Name, func(t *testing.T) {
-				got := run(t, c.inputJSON(t), c.options())
-				if !sameJSONText(t, got, c.expectedJSON(t)) {
+				got := run(t, c.inputJSON(t), c.options(tier))
+				if !sameJSONText(t, got, c.expectedJSON(t, tier)) {
 					t.Fatalf("output differs from the vector (%d bytes)", len(got))
 				}
 			})
@@ -120,23 +137,25 @@ func TestVectorsStandardTier(t *testing.T) {
 }
 
 func TestVectorsAreIdempotent(t *testing.T) {
-	for name, file := range loadVectors(t) {
-		for _, c := range file.Cases {
-			t.Run(name+"/"+c.Name, func(t *testing.T) {
-				want := c.expectedJSON(t)
-				got := run(t, want, Options{Mode: c.options().Mode})
-				if !sameJSONText(t, got, want) {
-					t.Fatal("redacting the expected output changed it")
-				}
-			})
+	for _, tier := range []Tier{TierStandard, TierFull} {
+		for name, file := range loadVectors(t) {
+			for _, c := range file.Cases {
+				t.Run(name+"/"+c.Name, func(t *testing.T) {
+					want := c.expectedJSON(t, tier)
+					got := run(t, want, Options{Tier: tier, Mode: c.options(tier).Mode})
+					if !sameJSONText(t, got, want) {
+						t.Fatal("redacting the expected output changed it")
+					}
+				})
+			}
 		}
 	}
 }
 
 func TestVectorFilesAreAllPresent(t *testing.T) {
 	want := []string{
-		"auth-headers", "base64", "entropy", "false-positives", "key-formats", "key-names",
-		"keywords", "modes", "nested-json", "url-query",
+		"auth-headers", "base64", "entropy", "false-positives", "full", "full-keys", "key-collisions",
+		"key-formats", "key-names", "keywords", "modes", "nested-json", "url-query",
 	}
 	loaded := loadVectors(t)
 	if len(loaded) != len(want) {

@@ -3,6 +3,7 @@ package redaction
 import (
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -13,7 +14,9 @@ type placeholders struct {
 	all    *regexp.Regexp
 	open   string
 	close  string
-	strip  []string
+	// numberMark is the text before the number of a numbered key (`#` in `[REDACTED:npm#2]`).
+	numberMark string
+	strip      []string
 }
 
 func newPlaceholders(spec *loadedSpec, grammar string) (*placeholders, error) {
@@ -30,13 +33,17 @@ func newPlaceholders(spec *loadedSpec, grammar string) (*placeholders, error) {
 		return nil, errors.New("redaction: spec pattern does not compile")
 	}
 	format := spec.algorithms.Placeholder
+	if format.NumberMark == "" {
+		return nil, errSpecRejected
+	}
 	return &placeholders{
-		prefix: prefix,
-		whole:  whole,
-		all:    all,
-		open:   format.Open,
-		close:  format.Close,
-		strip:  format.StripPrefixes,
+		prefix:     prefix,
+		whole:      whole,
+		all:        all,
+		open:       format.Open,
+		close:      format.Close,
+		numberMark: format.NumberMark,
+		strip:      format.StripPrefixes,
 	}, nil
 }
 
@@ -83,4 +90,48 @@ func (p *placeholders) literalSegments(t *text) [][]uint16 {
 		cursor = t.unitAt(loc[1])
 	}
 	return append(segments, t.units[cursor:])
+}
+
+// numberAt is where the number goes in a changed key (SPEC 8, key collisions): just before the `]` of its
+// last placeholder, when that is exactly `[REDACTED:<rule>]` with a rule that has no `:suffix` and does not
+// itself end with the number mark and digits (`[REDACTED:npm#2]`). A key without a placeholder, with the bare
+// `[REDACTED]`, with a suffix, or with a numbered last placeholder has no place for a number.
+func (p *placeholders) numberAt(key []uint16) (int, bool) {
+	t := newText(key)
+	found := p.all.FindAllStringIndex(t.mapped, -1)
+	if len(found) == 0 {
+		return 0, false
+	}
+	start, end := t.unitAt(found[len(found)-1][0]), t.unitAt(found[len(found)-1][1])
+	if !hasUnitsAt(key, decodeUTF8(p.open), start) {
+		return 0, false // the bare `[REDACTED]`
+	}
+	rule := unitsToString(key[start+len(p.open) : end-len(p.close)])
+	if strings.Contains(rule, ":") || p.endsWithNumber(rule) {
+		return 0, false
+	}
+	return end - len(p.close), true
+}
+
+// endsWithNumber: the rule ends with the number mark and one or more digits.
+func (p *placeholders) endsWithNumber(rule string) bool {
+	at := strings.LastIndex(rule, p.numberMark)
+	if at < 0 || at == len(rule)-len(p.numberMark) {
+		return false
+	}
+	for _, digit := range rule[at+len(p.numberMark):] {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// numbered is the key with the number mark and `n` inserted at `at`.
+func (p *placeholders) numbered(key []uint16, at int, n int) []uint16 {
+	number := decodeUTF8(p.numberMark + strconv.Itoa(n))
+	numbered := make([]uint16, 0, len(key)+len(number))
+	numbered = append(numbered, key[:at]...)
+	numbered = append(numbered, number...)
+	return append(numbered, key[at:]...)
 }

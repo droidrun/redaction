@@ -18,15 +18,14 @@ func parseTree(t *testing.T, raw []byte) *node {
 	return tree
 }
 
-// sameJSONText compares bytes. The expected value of a vector is pretty-printed in its file, so it
-// is compacted first (which keeps key order, number text and string escapes as written).
+// sameJSONText compares bytes. The expected value of a vector is pretty-printed in its file, and
+// its strings may be written with \u escapes, so it is parsed and written once more in the compact
+// form of the package: key order and number text are kept as written, and what is compared is the
+// output bytes. (The exact escape style of the writer is pinned by the golden replay, which compares
+// against the text the reference wrote.)
 func sameJSONText(t *testing.T, got []byte, pretty []byte) bool {
 	t.Helper()
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, pretty); err != nil {
-		t.Fatal(err)
-	}
-	return bytes.Equal(got, compact.Bytes())
+	return bytes.Equal(got, marshal(parseTree(t, pretty)))
 }
 
 type genParts struct {

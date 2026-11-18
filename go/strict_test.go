@@ -77,7 +77,8 @@ func TestStrictNeverReturnsUnscannedText(t *testing.T) {
 func TestExplicitZeroLimitsAreLimits(t *testing.T) {
 	for _, mode := range []Mode{Strict, Compat} {
 		chars := map[Mode]string{
-			Strict: `{"[REDACTED:size-limit]":""}`,
+			// both keys exceed the exhausted budget and read the same: no value is lost (L-P)
+			Strict: `{"[REDACTED:size-limit]":"[REDACTED:size-limit]","[REDACTED:size-limit#2]":""}`,
 			Compat: `{"x":"[REDACTED:size-limit]","y":""}`,
 		}
 		runJSONCases(t, []jsonCase{

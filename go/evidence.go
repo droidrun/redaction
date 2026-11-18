@@ -57,9 +57,13 @@ func (v *evidence) trim(units []uint16) []uint16 {
 }
 
 func (v *evidence) lowerTrimmed(raw []uint16) []uint16 {
-	trimmed := v.trim(raw)
-	lowered := make([]uint16, len(trimmed))
-	for i, unit := range trimmed {
+	return lowerUnits(v.trim(raw))
+}
+
+// lowerUnits is a lower-cased copy (the spec's `lower`).
+func lowerUnits(units []uint16) []uint16 {
+	lowered := make([]uint16, len(units))
+	for i, unit := range units {
 		lowered[i] = lowerUnit(unit)
 	}
 	return lowered

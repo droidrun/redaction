@@ -3,47 +3,60 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 
 	redaction "github.com/droidrun/redaction/go"
 )
 
 type vector struct {
-	Name         string                                      `json:"name"`
-	Input        json.RawMessage                             `json:"input"`
-	Mode         string                                      `json:"mode"`
-	Opts         struct{ MaxChars, MaxDepth, MaxNodes *int } `json:"opts"`
-	Expected     json.RawMessage                             `json:"expected"`
-	ExpectedSync json.RawMessage                             `json:"expectedSync"`
+	Name          string                                      `json:"name"`
+	Input         json.RawMessage                             `json:"input"`
+	Mode          string                                      `json:"mode"`
+	Opts          struct{ MaxChars, MaxDepth, MaxNodes *int } `json:"opts"`
+	Expected      json.RawMessage                             `json:"expected"`
+	ExpectedSync  json.RawMessage                             `json:"expectedSync"`
+	ExpectedAsync json.RawMessage                             `json:"expectedAsync"`
 }
 
-func (v vector) options() redaction.Options {
+func (v vector) options(tier redaction.Tier) redaction.Options {
 	opts := redaction.Options{
-		Mode: redaction.Compat, MaxChars: v.Opts.MaxChars, MaxDepth: v.Opts.MaxDepth, MaxNodes: v.Opts.MaxNodes,
+		Tier: tier, Mode: redaction.Compat,
+		MaxChars: v.Opts.MaxChars, MaxDepth: v.Opts.MaxDepth, MaxNodes: v.Opts.MaxNodes,
 	}
 	if v.Mode == "strict" {
 		opts.Mode = redaction.Strict
 	}
+	if tier == redaction.TierFull && opts.Mode == redaction.Compat {
+		// no limits in the full tier in compat mode, and an explicit one is an error
+		opts.MaxChars, opts.MaxDepth, opts.MaxNodes = nil, nil, nil
+	}
 	return opts
 }
 
-func (v vector) expected() []byte {
-	if v.Expected != nil {
+// expected is the expected output of a tier: the sync side is the standard tier, the async side the
+// full tier.
+func (v vector) expected(tier redaction.Tier) []byte {
+	switch {
+	case v.Expected != nil:
 		return v.Expected
+	case tier == redaction.TierFull:
+		return v.ExpectedAsync
 	}
 	return v.ExpectedSync
 }
 
-func compact(pretty []byte) []byte {
-	var out bytes.Buffer
-	if err := json.Compact(&out, pretty); err != nil {
-		panic(err)
+// sameValue compares two JSON texts as values (the vectors write strings with \u escapes).
+func sameValue(a []byte, b []byte) bool {
+	var left, right any
+	if json.Unmarshal(a, &left) != nil || json.Unmarshal(b, &right) != nil {
+		return false
 	}
-	return out.Bytes()
+	return reflect.DeepEqual(left, right)
 }
 
 func main() {
@@ -58,32 +71,30 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		var file struct {
-			Tier    string
-			Pending string
-			Cases   []vector
-		}
+		var file struct{ Cases []vector }
 		if err := json.Unmarshal(raw, &file); err != nil {
 			panic(err)
-		}
-		if file.Tier == "full" || file.Pending != "" {
-			continue // needs the full tier, which this package does not have yet
 		}
 		for _, c := range file.Cases {
 			if c.Input == nil {
 				continue // generated inputs are covered by the package tests
 			}
-			got, _, err := redaction.RedactJSON(c.Input, c.options())
-			total++
-			if err != nil || !bytes.Equal(got, compact(c.expected())) {
-				differing++
-				fmt.Println("DIFF", c.Name)
+			for _, tier := range []redaction.Tier{redaction.TierStandard, redaction.TierFull} {
+				got, _, err := redaction.RedactJSON(c.Input, c.options(tier))
+				total++
+				if err != nil || !sameValue(got, c.expected(tier)) {
+					differing++
+					fmt.Println("DIFF", c.Name)
+				}
 			}
 		}
 	}
 	text, _ := redaction.RedactText("password=Zq9abcDEF123ghi_x", redaction.Options{})
-	fmt.Printf("public API: %d vector cases, %d differ; %s\n", total, differing, text)
-	if differing > 0 || total < 100 || text != "password=[REDACTED:generic-keyword]" {
+	token := "npm_" + strings.Repeat("A", 36)
+	full, _ := redaction.RedactText(token, redaction.Options{Tier: redaction.TierFull})
+	fmt.Printf("public API: %d vector runs (both tiers), %d differ; %s %s\n", total, differing, text, full)
+	isRight := text == "password=[REDACTED:generic-keyword]" && full == "[REDACTED:npm]"
+	if differing > 0 || total < 300 || !isRight {
 		os.Exit(1)
 	}
 }

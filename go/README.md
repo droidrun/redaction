@@ -3,7 +3,8 @@
 `github.com/droidrun/redaction/go` finds secrets in text and JSON values and replaces them with
 placeholders such as `[REDACTED:generic-keyword]`. It is the Go interpreter of the
 language-neutral [spec](../spec) and gives the same output as the TypeScript package
-(`@droidrun/redaction`). Standard library only, no cgo, no dependencies.
+(`@droidrun/redaction`), in both tiers (see [Tiers](#tiers)). Standard library only, no cgo, no
+dependencies.
 
 ## Install
 
@@ -27,13 +28,21 @@ text, result := redaction.RedactText(line, redaction.Options{})
 out, result, err := redaction.RedactJSON(body, redaction.Options{}) // compact JSON; err is ErrInvalidJSON
 
 redaction.IsSecretKeyName("x-auth-token") // true
+
+// the full tier: the standard rules plus key formats, connection strings, private keys, ...
+text, result = redaction.RedactText(line, redaction.Options{Tier: redaction.TierFull})
 ```
 
 - `RedactText(s string, opts Options) (string, Result)` redacts one text.
 - `RedactJSON(data []byte, opts Options) ([]byte, Result, error)` redacts one JSON value. A string
   leaf is scanned; a string under a secret-named key (`password`, `apiKey`, `x-auth-token`, ...)
   is replaced whole; so is a number under a singular secret key (`pin`, not `max_tokens`).
-  Object keys that hold a secret are redacted too. Output is compact JSON, object keys in
+  Object keys that hold a secret are redacted too; when two different keys of one object end up with
+  the same key (two connection strings, two tokens, two keys over the limit, two `password=...` keys),
+  no value is lost: a key that redaction leaves unchanged keeps its own name (reserved, wherever it
+  stands in the object); a changed key whose name is taken gets a number inside its last placeholder,
+  `[REDACTED:npm]`, `[REDACTED:npm#2]`, `#3`, ... (`token [REDACTED:npm#2]`), in the order of the object,
+  skipping names that are taken. Output is compact JSON, object keys in
   ECMAScript order (integer-like keys first), a repeated key keeps its last value, numbers that are
   not replaced are written back exactly as they appeared (`1.0` stays `1.0`; the spec compares
   numbers as doubles, so the other languages may write `1`). Input that is not one JSON value gives `ErrInvalidJSON` and, as the output,
@@ -47,14 +56,15 @@ redaction.IsSecretKeyName("x-auth-token") // true
   span handlers: a string under a secret key becomes `[REDACTED:key-context]`, any other string is
   scanned, a number is replaced only under `VerdictAny` (counts such as `max_tokens` stay), every
   other type is returned as it is.
-- `Options{Mode, SkipKeys, MaxDepth, MaxNodes, MaxChars}`; a nil limit is the spec default and an
+- `Options{Tier, Mode, SkipKeys, MaxDepth, MaxNodes, MaxChars}`; `Tier` is `TierStandard` (the zero
+  value) or `TierFull`; a nil limit is the spec default and an
   explicit one is used as given, so `redaction.Limit(0)` is a limit of zero (as in the TypeScript
   package). `SkipKeys` replaces the default skip keys (`type`, `id`); nil keeps them, an empty
   slice skips nothing.
 - `Result{Hits []RuleCount; Err string}` with `RuleCount{RuleID string; Count int}`. It holds rule
   ids and counts only; ranges are not exposed because they reveal lengths. `Err` is the class of
-  the first fail-closed event of the call (`size-limit`, `depth-limit`, `redaction-failed`) or
-  empty; the output is safe either way.
+  the first fail-closed event of the call (`size-limit`, `depth-limit`, `redaction-failed`,
+  `error`) or empty; the output is safe either way.
 
 Redacted output keeps the text around the hits byte for byte. Input that is not valid UTF-8 is
 read with each invalid byte as one U+FFFD (never skipped), and the output holds that U+FFFD.
@@ -74,15 +84,41 @@ slog.New(handler).Info("login", "password", "hunter2xx", "max_tokens", 100)
 `ReplaceAttr` runs on every non-group attribute, so strings are scanned and secret keys are
 replaced; `example_test.go` runs this.
 
+## Tiers
+
+- `TierStandard` (the zero value): the rules of the standard tier (generic keyword pairs, auth
+  headers, cookies, URL credentials and query values, JWTs, PEM blocks, a few key formats).
+- `TierFull`: the standard rules plus the **full-tier rules**, the ported secretlint preset
+  (`@secretlint/secretlint-rule-preset-recommend` 13.0.4): AWS keys, private keys, npm, basic-auth
+  URLs, Slack, SendGrid, Shopify, Stripe, GitHub, GitLab, Grafana, OpenAI, Anthropic, Groq, Hugging
+  Face, Linear, Notion, 1Password, database connection strings (MongoDB, MySQL, PostgreSQL), HashiCorp
+  Vault, Vercel, Databricks, Docker, Figma, Cloudflare, Tailscale. The hit of a full-tier rule is named
+  by its rule id (`npm`, `privatekey`, ...). It is the same output as the TypeScript async entry points.
+  What is not ported (`gcp`, `filter-comments`, the two npm branches that need a file name) is listed in
+  [`spec/INVENTORY.md`](../spec/INVENTORY.md). The AWS secret access key is reported over the secret
+  itself (SPEC 4.17).
+- The full-tier rules see the first 2,000,000 units of a text, in windows of 100,000 units that overlap
+  by 10,240 (each window is a text of its own); the standard rules always see the whole text. Compat
+  scans a longer text with the standard rules beyond that cap; Strict replaces the units beyond the cap
+  by `[REDACTED:size-limit]`.
+- `RedactField` and the key rules (`IsSecretKeyName`, `KeyVerdict`) are the same in both tiers. In
+  `RedactJSON` an object key (from 8 up to 4,096 units) is scanned with the rules of the tier: in the
+  full tier a key that is itself a token (npm, Slack, 1Password, ...) is replaced by its placeholder,
+  in both modes.
+
 ## Modes
 
 - `Strict` (the zero value, the default): no path returns text that was not scanned. A text over
   `MaxChars`, a value beyond `MaxDepth` or `MaxNodes`, an over-long key or an internal failure
   gives `[REDACTED:size-limit]`, `[REDACTED:depth-limit]` or `[REDACTED:redaction-failed]`. A
   string under a skip key is scanned like any other. The JSON walk is iterative: nesting costs no
-  stack.
-- `Compat` reproduces the TypeScript package v0.2.0 for the standard tier (a skip-key value is
-  kept as it is, an over-long key is left as it is). Use it only to match old output.
+  stack. In the full tier a failing scanner replaces the whole text (or the leaf) by
+  `[REDACTED:error]`.
+- `Compat` reproduces the TypeScript package v0.2.0 (a skip-key value is kept as it is, an
+  over-long key is left as it is). In the full tier it has **no length, depth or node limit**
+  (SPEC 9.4, as in the TypeScript package: `MaxChars`, `MaxDepth` and `MaxNodes` are not used), and a
+  failing scanner falls back to the standard rules, then to `[REDACTED:error]`. Use Compat only to
+  match old output.
 
 ## Limits
 
@@ -102,10 +138,19 @@ package does.
 Matching uses Go's `regexp` (RE2, linear time). The spec patterns are written in a portable
 grammar that RE2 reads the same way as JavaScript and Python.
 
+## Differences from the TypeScript package
+
+- **Lone surrogates in text.** A Go string cannot hold a lone surrogate. When a hit boundary falls between the
+  two units of a valid surrogate pair (a bounded run of a rule cuts an astral character in half, for example the
+  query part of a connection string at its 500th unit), the TypeScript package keeps the lone half in the
+  output; `RedactText` gives U+FFFD for it. `RedactJSON` writes a lone surrogate as an escape (`\ude00`) and so
+  keeps it, as TypeScript does. Input that is not valid UTF-8 is read with each invalid byte as U+FFFD.
+- **Numbers.** Numbers that are not replaced are written as they appeared; TypeScript writes the double.
+- **An out-of-range `Options.Tier`** is read as `TierFull`.
+- The strict character limit is charged while the JSON is read (see Limits).
+
 ## Not supported yet
 
-- The `full` tier (the secretlint preset); `Options` has no tier and only the standard tier runs.
-  A full-tier port follows in a later slice and plugs into the same interpreter.
 - `restoreRedacted` (restoring values from a stored copy).
 
 ## Integrity
@@ -122,14 +167,18 @@ input from a broken copy. `tools/sync-spec` writes the copy and the constant fro
 cd go
 go vet ./... && gofmt -l .
 go test -race ./...                      # vectors, golden replay, unicode, strict, integrity
-go test -run TestAttackStrings ./...     # scaling at 100 KB and 1 MB (not under -race)
+go test -run TestAttackStrings ./...     # scaling at 100 KB and 1 MB, and the per-part run memory (not under -race)
 go test -run XXX -fuzz FuzzRedactText -fuzztime 60s
 go test -run XXX -fuzz FuzzRedactJSON -fuzztime 60s
-go test -run XXX -bench . ./...          # a 2 KB log line and a 4 MB text
+go test -run XXX -bench . ./...          # a 2 KB log line and a 4 MB text, both tiers
 (cd testdata/consumer && go run .)       # build from outside the module, public API only
 ```
 
-`vectors_test.go` runs every case of `spec/vectors/*.json` on the standard tier; `golden_test.go`
-replays `spec/corpus/golden-b12879a.json.gz` against the recorded output of the TypeScript
-package. `testdata/attacks.json` is written by `bun go/testdata/gen-attacks.ts` from
-`tools/lib/attacks.ts`.
+`vectors_test.go` runs every case of `spec/vectors/*.json` on both tiers (the sync side is the
+standard tier, the async side the full tier); `golden_test.go` replays
+`spec/corpus/golden-b12879a.json.gz` against the recorded output of the TypeScript package, both
+sides, but for the cases of three decisions: the AWS secret access key (reported over the secret), object
+keys that are full-tier secrets (replaced by their placeholder in the full tier), and object keys that end up
+with the same key (numbered, so no value is lost: 120 recorded cases on each side). The tests name every such
+case and check that nothing else differs. `testdata/attacks.json` is written by `bun go/testdata/gen-attacks.ts` from
+`tools/lib/attacks.ts` (plain and composite attacks).
