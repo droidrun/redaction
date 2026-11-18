@@ -15,3 +15,4 @@ export {
 export { restoreRedacted, type RestoreOpts, type RestoreResult } from './restore.js';
 export { isSecretKeyName } from './key-names.js';
 export { buildPlaceholder, buildReadPlaceholder, shortenRuleId, PLACEHOLDER_RE } from './placeholder.js';
+export type { RedactMode } from './mode.js';

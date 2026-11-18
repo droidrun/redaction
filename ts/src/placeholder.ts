@@ -10,55 +10,57 @@
  * module could have produced (regardless of ruleId/last4 content), so the
  * keyword rules can deny-list "the value IS already a placeholder" without the
  * placeholder's own bracket/colon punctuation re-triggering them on re-scan.
+ * The grammar and the format parameters are the spec's (`placeholder`).
  */
+import { compile } from './portable.js';
+import { ALGORITHMS_SPEC, RULES_SPEC } from './spec.js';
 
-const LAST4_THRESHOLD = 16;
+const FORMAT = ALGORITHMS_SPEC.placeholder;
 
 /** Strip the `@secretlint/secretlint-rule-` / `mobilerun-redaction/` noise so
  *  the marker stays compact — e.g. `@secretlint/secretlint-rule-aws` -> `aws`. */
 export function shortenRuleId(ruleId: string): string {
-    return ruleId.replace(/^@secretlint\/secretlint-rule-/, '').replace(/^mobilerun-redaction\//, '');
+    return FORMAT.stripPrefixes.reduce(
+        (id, prefix) => (id.startsWith(prefix) ? id.slice(prefix.length) : id),
+        ruleId,
+    );
 }
 
 /** Brackets would end a placeholder early, so they are masked in the last4. */
 function safeLast4(matched: string): string {
-    return matched.slice(-4).replace(/[[\]]/g, '*');
+    return [...matched.slice(-4)].map((char) => (FORMAT.tsLast4Mask.includes(char) ? '*' : char)).join('');
 }
 
 export function buildPlaceholder(ruleId: string, matched: string): string {
     const shortId = shortenRuleId(ruleId);
-    if (matched.length >= LAST4_THRESHOLD) {
-        return `[REDACTED:${shortId}:${safeLast4(matched)}]`;
+    if (matched.length >= FORMAT.tsLast4Threshold) {
+        return `${FORMAT.open}${shortId}:${safeLast4(matched)}${FORMAT.close}`;
     }
-    return `[REDACTED:${shortId}]`;
+    return `${FORMAT.open}${shortId}${FORMAT.close}`;
 }
 
 /** The read/log form: `[REDACTED:<ruleId>]`, never a `:last4` suffix, so no
  *  character of a stored secret is exposed. This is what the sync path, the
  *  default async path and every read route emit. */
 export function buildReadPlaceholder(ruleId: string): string {
-    return `[REDACTED:${shortenRuleId(ruleId)}]`;
+    return `${FORMAT.open}${shortenRuleId(ruleId)}${FORMAT.close}`;
 }
 
-// One grammar for every check. Forms: the bare legacy `[REDACTED]`,
-// `[REDACTED:<rule>]`, `[REDACTED:<rule>:<last4>]`. The rule has no brackets,
-// colons or whitespace; the suffix is whatever `buildPlaceholder` can emit
-// (any four characters except brackets, spaces included).
-const PLACEHOLDER_SOURCE = String.raw`\[REDACTED(?::[^[\]:\s]+(?::[^[\]]*)?)?\]`;
+const PLACEHOLDER_PATTERN = RULES_SPEC.patterns.placeholder;
+const ANCHORED = compile(PLACEHOLDER_PATTERN, 'y');
 
 /** Matches a string that IS one placeholder (anchored): any of the three forms. */
-export const PLACEHOLDER_RE = new RegExp(`^${PLACEHOLDER_SOURCE}$`);
+export const PLACEHOLDER_RE = new RegExp(`^${compile(PLACEHOLDER_PATTERN).source}$`);
 
 /** A placeholder anywhere in a string (not anchored, not global). Internal. */
-export const PLACEHOLDER_ANYWHERE_RE = new RegExp(PLACEHOLDER_SOURCE);
+export const PLACEHOLDER_ANYWHERE_RE = compile(PLACEHOLDER_PATTERN);
 
-const PLACEHOLDER_STICKY_RE = new RegExp(PLACEHOLDER_SOURCE, 'y');
-const PLACEHOLDER_GLOBAL_RE = new RegExp(PLACEHOLDER_SOURCE, 'g');
+const PLACEHOLDER_GLOBAL_RE = compile(PLACEHOLDER_PATTERN, 'g');
 
 /** End index of the placeholder starting exactly at `start`, or -1. */
 export function placeholderEndAt(text: string, start: number): number {
-    PLACEHOLDER_STICKY_RE.lastIndex = start;
-    const match = PLACEHOLDER_STICKY_RE.exec(text);
+    ANCHORED.lastIndex = start;
+    const match = ANCHORED.exec(text);
     return match ? start + match[0].length : -1;
 }
 

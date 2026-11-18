@@ -22,7 +22,9 @@
  *     secret-shaped content.
  */
 import { redactText, type Hit, type RedactTextOpts } from './redact-text.js';
-import { buildPlaceholder } from './placeholder.js';
+import { buildPlaceholder, buildReadPlaceholder } from './placeholder.js';
+import { ALGORITHMS_SPEC } from './spec.js';
+import { runStrictAsync, strictLimits, strictWalk } from './strict.js';
 import {
     CREDENTIAL_KEY_RE,
     KEY_CONTEXT_RULE_ID,
@@ -33,13 +35,19 @@ import {
     type KeyVerdict,
 } from './key-names.js';
 import { setOwnKey } from './own-key.js';
-import { redactKey } from './redact-sync.js';
+import { redactKey } from './redact-key.js';
 
 export { CREDENTIAL_KEY_RE, STRUCTURAL_SKIP_KEYS };
 
 export type RedactValueStats = { hits: Hit[] };
 
-export type RedactValueOpts = RedactTextOpts & { skipKeys?: ReadonlySet<string> };
+export type RedactValueOpts = RedactTextOpts & {
+    skipKeys?: ReadonlySet<string>;
+    /** Limits of `mode: 'strict'` (ignored in `compat`): total characters, container depth, values. */
+    maxChars?: number;
+    maxDepth?: number;
+    maxNodes?: number;
+};
 
 /** Recursively redact a JSON value. `opts.skipKeys` replaces the default
  *  structural skip set at every depth. */
@@ -48,7 +56,24 @@ export async function redactJsonValue(
     stats: RedactValueStats,
     opts: RedactValueOpts = {},
 ): Promise<unknown> {
+    if (opts.mode === 'strict') return redactJsonValueStrict(value, stats, opts);
     return visit(value, stats, opts, 'none');
+}
+
+async function redactJsonValueStrict(
+    value: unknown,
+    stats: RedactValueStats,
+    opts: RedactValueOpts,
+): Promise<unknown> {
+    const hits: Hit[] = [];
+    try {
+        const walk = strictWalk(value, strictLimits(opts), opts.skipKeys ?? STRUCTURAL_SKIP_KEYS, hits);
+        const out = await runStrictAsync(walk, (text) => redactText(text, opts));
+        stats.hits.push(...hits);
+        return out;
+    } catch {
+        return buildReadPlaceholder(ALGORITHMS_SPEC.ruleIds.failed);
+    }
 }
 
 function isPrimitive(value: unknown): boolean {

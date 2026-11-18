@@ -9,7 +9,12 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { CORPUS_SEED, generateCorpus } from './generate.ts';
 import {
-    caseInput, type CorpusCase, type Digest, type GoldenFile, type Outcome, type RecordedCase,
+    caseInput,
+    type CorpusCase,
+    type Digest,
+    type GoldenFile,
+    type Outcome,
+    type RecordedCase,
     type RecordedHit,
 } from './types.ts';
 
@@ -23,12 +28,20 @@ type HitLike = { ruleId: string; range: readonly [number, number] };
 
 const DIGEST_ABOVE = 20_000;
 
+type VectorCase = { input?: unknown; mode?: string; opts?: object; inputGen?: object };
+
 export function vectorInputs(vectorsDir: string): unknown[] {
-    const files = readdirSync(vectorsDir).filter((name) => name.endsWith('.json')).sort();
+    const files = readdirSync(vectorsDir)
+        .filter((name) => name.endsWith('.json'))
+        .sort();
     return files.flatMap((name) => {
         const text = readFileSync(join(vectorsDir, name), 'utf8');
-        const parsed = JSON.parse(text) as { cases: Array<{ input: unknown }> };
-        return parsed.cases.map((item) => item.input);
+        const parsed = JSON.parse(text) as { cases: VectorCase[] };
+        // Cases that set a mode, limits or a generated input are not plain inputs of the corpus.
+        const plain = parsed.cases.filter((item) => {
+            return item.mode === undefined && item.opts === undefined && item.inputGen === undefined;
+        });
+        return plain.map((item) => item.input);
     });
 }
 

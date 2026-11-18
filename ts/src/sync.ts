@@ -18,3 +18,4 @@ export {
 export { isSecretKeyName, STRUCTURAL_SKIP_KEYS } from './key-names.js';
 export type { Hit } from './hits.js';
 export { buildPlaceholder, buildReadPlaceholder, shortenRuleId, PLACEHOLDER_RE } from './placeholder.js';
+export type { RedactMode } from './mode.js';

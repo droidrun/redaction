@@ -16,75 +16,33 @@
  *     words): `pin: 1234` yes, `max_tokens: 100`, `prompt_tokens: 12` no.
  * Containers under a secret key are walked, never replaced wholesale.
  */
+import { splitKeyWords } from './algorithms/key-words.js';
+import { foldLower } from './portable.js';
 import { buildReadPlaceholder, literalSegments, PLACEHOLDER_RE } from './placeholder.js';
+import { ALGORITHMS_SPEC, KEYS_SPEC } from './spec.js';
 
 /** Keys whose primitive values are structural identifiers: never scanned.
  *  Containers under these keys are still walked. Shared by both walkers. */
-export const STRUCTURAL_SKIP_KEYS: ReadonlySet<string> = new Set(['type', 'id']);
+export const STRUCTURAL_SKIP_KEYS: ReadonlySet<string> = new Set(KEYS_SPEC.structuralSkipKeys);
 
 /**
  * @deprecated Substring matcher of 0.1.1; it also hits `secretary` and
  * `tokenizer` and misses `x-auth-token` and `Set-Cookie`. Use
  * `isSecretKeyName`. Kept exported unchanged for existing consumers.
  */
-export const CREDENTIAL_KEY_RE = new RegExp(
-    'password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|' +
-    'private[_-]?key|client[_-]?secret|credential',
-    'i',
-);
+const LEGACY = KEYS_SPEC.tsExtensions.credentialKeyRegex;
+export const CREDENTIAL_KEY_RE = new RegExp(LEGACY.source, LEGACY.flags);
 
 /** Rule id of every placeholder that was decided by a key name. */
-export const KEY_CONTEXT_RULE_ID = 'key-context';
+export const KEY_CONTEXT_RULE_ID = ALGORITHMS_SPEC.ruleIds.keyContext;
 
-/** The words the keyword rules mask in free text (`password=…`). */
-export const SECRET_WORDS = [
-    ['api', 'key'], ['access', 'token'], ['auth', 'token'], ['password'], ['secret'],
-];
-
-const SECRET_KEY_SEQUENCES = [
-    ...SECRET_WORDS,
-    ['token'], ['authorization'], ['cookie'], ['credential'], ['private', 'key'], ['client', 'key'],
-    ['access', 'key'], ['passwd'], ['passphrase'], ['signature'], ['card', 'number'],
-    ['basic', 'auth'], ['priv', 'key'], ['signing', 'key'], ['encryption', 'key'], ['master', 'key'],
-    ['ssh', 'key'], ['service', 'account', 'key'], ['dsn'], ['connection', 'string'],
-    ['recovery', 'code'],
-];
-
-// Short or common as words (`pin`, `spin`, `auth`, `passThrough`), so only the
-// whole key counts. `sid` is NOT here (Twilio ids); `code` and `sid` are
-// secret in a URL query only (`sync-rules.ts`).
-const EXACT_SECRET_KEYS = new Set([
-    'pwd', 'otp', 'totp', 'pin', 'cvv', 'cvc', 'sig', 'jwt', 'pass', 'auth',
-]);
-
-// The same sequences written as one lower-case run (`apikey`, `privatekey`), and a few more.
+const SECRET_KEY_SEQUENCES = [...KEYS_SPEC.secretWords, ...KEYS_SPEC.extraSequences];
+const EXACT_SECRET_KEYS = new Set(KEYS_SPEC.exactKeys);
 const JOINED_SECRET_WORDS = new Set([
     ...SECRET_KEY_SEQUENCES.filter((parts) => parts.length > 1).map((parts) => parts.join('')),
-    'clientsecret', 'refreshtoken', 'idtoken', 'sessiontoken', 'apitoken', 'setcookie', 'privkey',
+    ...KEYS_SPEC.joinedExtra,
 ]);
-
-// A lower-case run that ENDS in one of these is a compound (`userpassword`,
-// `csrftoken`); one that merely starts with the word is not (`secretary`).
-const SUFFIX_SECRET_WORDS = [
-    'password', 'passwd', 'passphrase', 'secret', 'token', 'apikey', 'accesskey', 'privatekey', 'credential',
-    'pwd',
-];
-
-// A lower-case run that STARTS with one of these is a compound (`secretkeybase`,
-// `accesskeyid`, `privatekeypem`, `apikeyvalue`).
-const PREFIX_SECRET_WORDS = [
-    'secretkey', 'accesskey', 'privatekey', 'apikey', 'clientsecret', 'authtoken', 'accesstoken',
-    'refreshtoken', 'signingkey', 'encryptionkey', 'masterkey', 'sshkey', 'serviceaccountkey',
-    'connectionstring', 'recoverycodes', 'basicauth', 'privkey',
-];
-
-// Words that make a number a count or a setting, never the secret itself.
-const COUNT_WORDS = new Set([
-    'count', 'limit', 'max', 'min', 'total', 'usage', 'used', 'budget', 'num', 'size', 'length', 'ttl',
-    'expires', 'expiry', 'age', 'rate', 'quota', 'remaining',
-]);
-
-const WORD_RE = /[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+/g;
+const COUNT_WORDS = new Set(KEYS_SPEC.countWords);
 
 function matchesWord(word: string | undefined, expected: string, plural: boolean): boolean {
     return word === expected || (plural && word === `${expected}s`);
@@ -97,15 +55,19 @@ function startsSequence(words: string[], start: number, sequence: string[], plur
 function isSecretWord(word: string, plural: boolean): boolean {
     const base = plural ? word.replace(/s$/, '') : word;
     if (JOINED_SECRET_WORDS.has(word) || JOINED_SECRET_WORDS.has(base)) return true;
-    if (SUFFIX_SECRET_WORDS.some((suffix) => base.endsWith(suffix))) return true;
-    return PREFIX_SECRET_WORDS.some((prefix) => word.startsWith(prefix));
+    if (KEYS_SPEC.suffixWords.some((suffix) => base.endsWith(suffix))) return true;
+    return KEYS_SPEC.prefixWords.some((prefix) => word.startsWith(prefix));
+}
+
+/** The key lower-cased with everything but `a-z0-9` dropped (U+0130 lower-cases to `i` + a mark). */
+function compactKey(key: string): string {
+    return foldLower(key).replace(/\u0130/g, 'i').replace(/[^a-z0-9]/g, '');
 }
 
 function matchKey(key: string, plural: boolean): boolean {
-    const words = (key.match(WORD_RE) ?? []).map((word) => word.toLowerCase());
-    if (EXACT_SECRET_KEYS.has(key.toLowerCase().replace(/[^a-z0-9]/g, ''))) return true;
-    const last = words[words.length - 1];
-    if (last === 'pass') return true;
+    const words = splitKeyWords(key);
+    if (EXACT_SECRET_KEYS.has(compactKey(key))) return true;
+    if (words[words.length - 1] === KEYS_SPEC.passLastWord) return true;
     if (words.some((word) => isSecretWord(word, plural))) return true;
     return SECRET_KEY_SEQUENCES.some((sequence) => {
         return words.some((_, start) => startsSequence(words, start, sequence, plural));
@@ -127,8 +89,7 @@ export function keyVerdict(rawKey: string): KeyVerdict {
     const key = rawKey.includes('[REDACTED') ? literalSegments(rawKey).join(' ') : rawKey;
     if (!matchKey(key, true)) return 'none';
     if (!matchKey(key, false)) return 'string';
-    const words = (key.match(WORD_RE) ?? []).map((word) => word.toLowerCase());
-    return words.some((word) => COUNT_WORDS.has(word)) ? 'string' : 'any';
+    return splitKeyWords(key).some((word) => COUNT_WORDS.has(word)) ? 'string' : 'any';
 }
 
 /** The stronger of two verdicts: a nested secret key never weakens the context. */

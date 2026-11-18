@@ -8,42 +8,127 @@ export type AddGen = (family: string, gen: GenSpec, opts?: CaseOpts) => void;
 export type Sinks = { add: Add; addGen: AddGen };
 
 export const WORDS = [
-    'the', 'deploy', 'failed', 'user', 'login', 'ok', 'retry', 'secretary', 'passwordless', 'tokenizer',
-    'Token', 'expired', 'Basic', 'information', 'bearer', 'auth', 'key', 'id', 'status', 'name', 'value',
-    'https://example.test/path?page=2&sort=asc', 'a-b-c', 'x_y_z', 'ünïcödé', '日本語', '😀',
-    '{}', '[]', '[REDACTED]', '[REDACTED:key-context]', '[REDACTED:generic-keyword:4dor]', '"', "'",
-    '\\', '\n', ':', '=', ',', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
+    'the',
+    'deploy',
+    'failed',
+    'user',
+    'login',
+    'ok',
+    'retry',
+    'secretary',
+    'passwordless',
+    'tokenizer',
+    'Token',
+    'expired',
+    'Basic',
+    'information',
+    'bearer',
+    'auth',
+    'key',
+    'id',
+    'status',
+    'name',
+    'value',
+    'https://example.test/path?page=2&sort=asc',
+    'a-b-c',
+    'x_y_z',
+    'ünïcödé',
+    '日本語',
+    '😀',
+    '{}',
+    '[]',
+    '[REDACTED]',
+    '[REDACTED:key-context]',
+    '[REDACTED:generic-keyword:4dor]',
+    '"',
+    "'",
+    '\\',
+    '\n',
+    ':',
+    '=',
+    ',',
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
     '3fa85f64-5717-4562-b3fc-2c963f66afa6',
 ];
 const SEPARATORS = [' ', ' ', '\n', ', ', '; ', '\t', ' | '] as const;
 
 export const SECRET_KEYS = [
-    'password', 'apiKey', 'api_key', 'client_secret', 'x-auth-token', 'Authorization', 'Set-Cookie',
-    'accessToken', 'refresh_token', 'privateKey', 'DB_PASSWORD', 'sessionToken', 'secret', 'token',
-    'cookie', 'passphrase', 'pin', 'pwd', 'max_tokens', 'prompt_tokens', 'cardNumber', 'APIKey',
+    'password',
+    'apiKey',
+    'api_key',
+    'client_secret',
+    'x-auth-token',
+    'Authorization',
+    'Set-Cookie',
+    'accessToken',
+    'refresh_token',
+    'privateKey',
+    'DB_PASSWORD',
+    'sessionToken',
+    'secret',
+    'token',
+    'cookie',
+    'passphrase',
+    'pin',
+    'pwd',
+    'max_tokens',
+    'prompt_tokens',
+    'cardNumber',
+    'APIKey',
     'userpassword',
-    'tokens', 'secretary', 'tokenizer', 'passwordless', 'sid', 'code', 'otp', 'auth', 'pass', 'signature',
+    'tokens',
+    'secretary',
+    'tokenizer',
+    'passwordless',
+    'sid',
+    'code',
+    'otp',
+    'auth',
+    'pass',
+    'signature',
 ];
 export const NEUTRAL_KEYS = [
-    'name', 'url', 'prompt', 'items', 'body', 'headers', 'status', 'note', 'type', 'id', '__proto__',
+    'name',
+    'url',
+    'prompt',
+    'items',
+    'body',
+    'headers',
+    'status',
+    'note',
+    'type',
+    'id',
+    '__proto__',
     'constructor',
 ];
 
 export const CONTEXTS: ReadonlyArray<(m: string) => string> = [
-    (m) => `password=${m}`, (m) => `password: ${m}`, (m) => `password="${m}"`,
-    (m) => `api_key=${m},next=2`, (m) => `{"client_secret":"${m}","ok":true}`,
-    (m) => `session_token: ${m}`, (m) => `Authorization: Bearer ${m}`,
-    (m) => `Authorization: Basic ${m}`, (m) => `Authorization: Token ${m}`,
-    (m) => `https://example.test/cb?token=${m}&x=1`, (m) => `https://example.test/v1?x=1&sig=${m}`,
-    (m) => `AWS_SECRET_ACCESS_KEY=${m}`, (m) => `{"access_token": "${m}"}`,
+    (m) => `password=${m}`,
+    (m) => `password: ${m}`,
+    (m) => `password="${m}"`,
+    (m) => `api_key=${m},next=2`,
+    (m) => `{"client_secret":"${m}","ok":true}`,
+    (m) => `session_token: ${m}`,
+    (m) => `Authorization: Bearer ${m}`,
+    (m) => `Authorization: Basic ${m}`,
+    (m) => `Authorization: Token ${m}`,
+    (m) => `https://example.test/cb?token=${m}&x=1`,
+    (m) => `https://example.test/v1?x=1&sig=${m}`,
+    (m) => `AWS_SECRET_ACCESS_KEY=${m}`,
+    (m) => `{"access_token": "${m}"}`,
     (m) => `{\\"password\\":\\"${m}\\",\\"ok\\":1}`,
     (m) => `{\\\\\\"client_secret\\\\\\":\\\\\\"${m}\\\\\\"}`,
     (m) => `postgres://user:${m}@db.example.test:5432/app`,
     (m) => `https://x.test/cb?redirect=https://y.test/?token=${m}&z=1`,
     (m) => `https://x.test/cb?redirect=https%3A%2F%2Fy.test%2F%3Ftoken%3D${m}&z=1`,
-    (m) => `Cookie: sid=${m}; theme=dark`, (m) => `key dr_sk_${m} used`,
-    (m) => `clientSecret: ${m}`, (m) => `secret='${m} with spaces'`, (m) => `credentials=${m}`,
-    (m) => `private-key = ${m}`, (m) => `bearer:${m}`, (m) => `token=${m}&token=${m}`,
+    (m) => `Cookie: sid=${m}; theme=dark`,
+    (m) => `key dr_sk_${m} used`,
+    (m) => `clientSecret: ${m}`,
+    (m) => `secret='${m} with spaces'`,
+    (m) => `credentials=${m}`,
+    (m) => `private-key = ${m}`,
+    (m) => `bearer:${m}`,
+    (m) => `token=${m}&token=${m}`,
 ];
 
 export function marker(rng: Rng): string {
@@ -70,8 +155,15 @@ function textCase(rng: Rng): string {
 
 function leaf(rng: Rng): unknown {
     const makers = [
-        () => pick(rng, WORDS), () => Math.floor(rng() * 1e6), () => rng() < 0.5, () => null, () => '',
-        () => join(rng, noise(rng, 3)), () => Math.floor(rng() * 1e6) / 100, () => 1e21, () => -7,
+        () => pick(rng, WORDS),
+        () => Math.floor(rng() * 1e6),
+        () => rng() < 0.5,
+        () => null,
+        () => '',
+        () => join(rng, noise(rng, 3)),
+        () => Math.floor(rng() * 1e6) / 100,
+        () => 1e21,
+        () => -7,
     ];
     return pick(rng, makers)();
 }
@@ -83,7 +175,10 @@ function setKey(target: Record<string, unknown>, key: string, value: unknown): v
 function records(rng: Rng): unknown[] {
     const length = 1 + Math.floor(rng() * 4);
     return Array.from({ length }, (_, n) => ({
-        id: `rec-${n}`, url: `https://h${n}.example.test/hook`, token: marker(rng), note: `n${n}`,
+        id: `rec-${n}`,
+        url: `https://h${n}.example.test/hook`,
+        token: marker(rng),
+        note: `n${n}`,
     }));
 }
 
@@ -119,9 +214,34 @@ export function fuzzFamilies({ add }: Sinks, rng: Rng): void {
 }
 
 const JS_WHITESPACE = [
-    '\t', '\n', '\v', '\f', '\r', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-    ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-    '　', '﻿', '᠎', '\u0085', '​',
+    '\t',
+    '\n',
+    '\v',
+    '\f',
+    '\r',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    '　',
+    '﻿',
+    '᠎',
+    '\u0085',
+    '​',
 ];
 
 export function separatorFamilies({ add }: Sinks, rng: Rng): void {
@@ -146,9 +266,40 @@ export function separatorFamilies({ add }: Sinks, rng: Rng): void {
 }
 
 const PREFIXES = [
-    '', 'a', '_', '-', '0', 'Z', '😀', '\ud800', '\udc00', 'AIza', 'xai-', 'eyJ', 'ghp_', 'sk-', 'sk-ant-',
-    ':', '"', '=', ' ', ' ', '﻿', 'Bearer ', 'password=', 'token: ', '?', '&', '/', '@', '\\',
-    '[REDACTED:x]', 'ab.', 'x-', 'srt1.', 'dr_sk_',
+    '',
+    'a',
+    '_',
+    '-',
+    '0',
+    'Z',
+    '😀',
+    '\ud800',
+    '\udc00',
+    'AIza',
+    'xai-',
+    'eyJ',
+    'ghp_',
+    'sk-',
+    'sk-ant-',
+    ':',
+    '"',
+    '=',
+    ' ',
+    ' ',
+    '﻿',
+    'Bearer ',
+    'password=',
+    'token: ',
+    '?',
+    '&',
+    '/',
+    '@',
+    '\\',
+    '[REDACTED:x]',
+    'ab.',
+    'x-',
+    'srt1.',
+    'dr_sk_',
 ];
 const SUFFIXES = ['', '-', '_', 'a', '.', ' ', '=', ',', '😀', '\ud800', '"', '\\', '&x=1', '\n'];
 
@@ -317,14 +468,674 @@ export function boundaryFamilies({ add }: Sinks, rng: Rng): void {
 export function largeFamilies({ addGen }: Sinks): void {
     const secret = 'password=Zq9abcDEF123ghi_x';
     const jwt = FORMAT_SAMPLES[1] as string;
-    addGen('large', { parts: [['lorem ipsum ', 8000], [secret, 1], [' tail ', 3]] });
-    addGen('large-window', { parts: [['abcdefghi ', 8976], [' ', 0], [jwt, 1], ['xyz ', 4]] });
-    addGen('large-window', { parts: [['abcdefghi ', 9975], [`${SCANNER_SAMPLES[0]}`, 1], [' z', 1]] });
-    addGen('large-window', { parts: [['abcdefghi ', 8970], [`${SCANNER_SAMPLES[1]}`, 1], [' z', 1]] });
-    addGen('large-window', { parts: [['ab ', 33300], [`${SCANNER_SAMPLES[3]}`, 1], [' z', 1]] });
-    addGen('large-pem', { parts: [['-----BEGIN PRIVATE KEY-----', 1], ['ab cd ', 20000]] });
-    addGen('large-cap', { parts: [['ab ', 666700], [`${SCANNER_SAMPLES[0]}`, 1], [' ', 1], [secret, 1]] });
+    addGen('large', {
+        parts: [
+            ['lorem ipsum ', 8000],
+            [secret, 1],
+            [' tail ', 3],
+        ],
+    });
+    addGen('large-window', {
+        parts: [
+            ['abcdefghi ', 8976],
+            [' ', 0],
+            [jwt, 1],
+            ['xyz ', 4],
+        ],
+    });
+    addGen('large-window', {
+        parts: [
+            ['abcdefghi ', 9975],
+            [`${SCANNER_SAMPLES[0]}`, 1],
+            [' z', 1],
+        ],
+    });
+    addGen('large-window', {
+        parts: [
+            ['abcdefghi ', 8970],
+            [`${SCANNER_SAMPLES[1]}`, 1],
+            [' z', 1],
+        ],
+    });
+    addGen('large-window', {
+        parts: [
+            ['ab ', 33300],
+            [`${SCANNER_SAMPLES[3]}`, 1],
+            [' z', 1],
+        ],
+    });
+    addGen('large-pem', {
+        parts: [
+            ['-----BEGIN PRIVATE KEY-----', 1],
+            ['ab cd ', 20000],
+        ],
+    });
+    addGen('large-cap', {
+        parts: [
+            ['ab ', 666700],
+            [`${SCANNER_SAMPLES[0]}`, 1],
+            [' ', 1],
+            [secret, 1],
+        ],
+    });
     const npm = `${SCANNER_SAMPLES[0]}`;
-    addGen('large-cap', { parts: [['ab ', 666663], [' ', 1], [npm, 1], [' ', 1], [secret, 1]] });
-    addGen('large-default-cap', { parts: [['ab ', 1333334], [secret, 1]] });
+    addGen('large-cap', {
+        parts: [
+            ['ab ', 666663],
+            [' ', 1],
+            [npm, 1],
+            [' ', 1],
+            [secret, 1],
+        ],
+    });
+    addGen('large-default-cap', {
+        parts: [
+            ['ab ', 1333334],
+            [secret, 1],
+        ],
+    });
+}
+
+const KEYWORD_WORDS = [
+    'password',
+    'passwd',
+    'pwd',
+    'secret',
+    'token',
+    'api_key',
+    'api-key',
+    'apikey',
+    'access_key',
+    'client_secret',
+    'private_key',
+    'privatekey',
+    'credentials',
+    'credential',
+    'authorization',
+    'bearer',
+    'access_token',
+    'auth_token',
+    'TOKEN',
+    'Password',
+    'API_KEY',
+    'sessionToken',
+    'x-auth-token',
+];
+
+export function keywordMatrixFamilies({ add }: Sinks, rng: Rng): void {
+    const value = (length: number): string =>
+        `Zq9${chars(rng, BASE62, Math.max(0, length - 3))}`.slice(0, length);
+    for (const word of KEYWORD_WORDS) {
+        for (const length of [7, 8, 9, 20, 255, 256, 257, 300]) {
+            add('kw-matrix', `${word}=${value(length)}`);
+            add('kw-matrix', `${word}: ${value(length)} tail`);
+            add('kw-matrix', `?${word}=${value(length)}&b=1`);
+            add('kw-matrix', `{"${word}":"${value(length)}"}`);
+        }
+        for (const shape of [
+            'abcdefgh',
+            'ABCDEFGH',
+            '12345678',
+            'abcd1234',
+            'aB3$xYz9',
+            'Zq9-x',
+            'aaaaaaaaaaaaaaaa',
+            'abcdefghijklmnopqrstuvwxyz',
+            'correct-horse-battery-staple',
+            'your_api_key_here',
+            'xxxxxxxx',
+            '********',
+            '<placeholder>',
+            '{{secret}}',
+            'undefined',
+            'changeme',
+            'REPLACE_ME_TOKEN',
+            '"quoted1A"',
+        ]) {
+            add('kw-shape', `${word}=${shape}`);
+            add('kw-shape', `${word}: ${shape}`);
+            add('kw-shape', `${word}="${shape}"`);
+        }
+    }
+}
+
+const KEY_WORD_LISTS = {
+    sequences: [
+        ['api', 'key'],
+        ['access', 'token'],
+        ['auth', 'token'],
+        ['password'],
+        ['secret'],
+        ['token'],
+        ['authorization'],
+        ['cookie'],
+        ['credential'],
+        ['private', 'key'],
+        ['client', 'key'],
+        ['access', 'key'],
+        ['passwd'],
+        ['passphrase'],
+        ['signature'],
+        ['card', 'number'],
+        ['basic', 'auth'],
+        ['priv', 'key'],
+        ['signing', 'key'],
+        ['encryption', 'key'],
+        ['master', 'key'],
+        ['ssh', 'key'],
+        ['service', 'account', 'key'],
+        ['dsn'],
+        ['connection', 'string'],
+        ['recovery', 'code'],
+    ],
+    exact: [
+        'pwd',
+        'otp',
+        'totp',
+        'pin',
+        'cvv',
+        'cvc',
+        'sig',
+        'jwt',
+        'pass',
+        'auth',
+        'sid',
+        'code',
+        'session',
+    ],
+    joined: ['clientsecret', 'refreshtoken', 'idtoken', 'sessiontoken', 'apitoken', 'setcookie', 'privkey'],
+    suffix: [
+        'password',
+        'passwd',
+        'passphrase',
+        'secret',
+        'token',
+        'apikey',
+        'accesskey',
+        'privatekey',
+        'credential',
+        'pwd',
+    ],
+    prefix: [
+        'secretkey',
+        'accesskey',
+        'privatekey',
+        'apikey',
+        'clientsecret',
+        'authtoken',
+        'accesstoken',
+        'refreshtoken',
+        'signingkey',
+        'encryptionkey',
+        'masterkey',
+        'sshkey',
+        'serviceaccountkey',
+        'connectionstring',
+        'recoverycodes',
+        'basicauth',
+        'privkey',
+    ],
+    count: [
+        'count',
+        'limit',
+        'max',
+        'min',
+        'total',
+        'usage',
+        'used',
+        'budget',
+        'num',
+        'size',
+        'length',
+        'ttl',
+        'expires',
+        'expiry',
+        'age',
+        'rate',
+        'quota',
+        'remaining',
+    ],
+};
+
+function keyForms(parts: string[]): string[] {
+    const cap = (word: string): string => word.charAt(0).toUpperCase() + word.slice(1);
+    const [first = ''] = parts;
+    return [
+        parts.join('_'),
+        parts.join('-'),
+        parts.join(''),
+        parts.map(cap).join(''),
+        first + parts.slice(1).map(cap).join(''),
+        parts.join('.'),
+        parts.join('_').toUpperCase(),
+        `my_${parts.join('_')}`,
+        `${parts.join('_')}_x`,
+        `x${parts.join('')}`,
+        `${parts.join('')}s`,
+        `${parts.join('_')}s`,
+        `${parts.join('')}x`,
+        `${parts.join('')}_id`,
+    ];
+}
+
+export function keyListFamilies({ add }: Sinks): void {
+    const probe = (key: string): void => {
+        add('key-probe', { [key]: 'Zq9secretvalue', n: { [key]: 1234 }, list: [{ [key]: [1, 'a b'] }] });
+    };
+    for (const parts of KEY_WORD_LISTS.sequences) for (const key of keyForms(parts)) probe(key);
+    for (const word of [...KEY_WORD_LISTS.exact, ...KEY_WORD_LISTS.joined])
+        for (const key of keyForms([word])) probe(key);
+    for (const word of [...KEY_WORD_LISTS.suffix, ...KEY_WORD_LISTS.prefix]) {
+        for (const key of [
+            word,
+            `user${word}`,
+            `${word}key`,
+            `${word}id`,
+            `${word}s`,
+            `x_${word}`,
+            `${word}Value`,
+        ]) {
+            probe(key);
+        }
+    }
+    for (const count of KEY_WORD_LISTS.count) {
+        for (const base of ['token', 'password', 'api_key', 'secret']) {
+            probe(`${count}_${base}`);
+            probe(`${base}_${count}`);
+            probe(`${base}${count.charAt(0).toUpperCase()}${count.slice(1)}`);
+        }
+    }
+    for (const key of [
+        'APIKey',
+        'APIkey',
+        'aPIKey',
+        'ABc',
+        'AB',
+        'A1b',
+        'a1B2',
+        'ÜberToken',
+        'tokén',
+        'pİn',
+        'p\u212An',
+        '',
+        ' ',
+        '__token__',
+        'Token-',
+        '-token',
+        'tOKEN',
+        'TOKen',
+        'sessionTOKEN',
+        'x-API-KEY',
+        'X_Auth-Token',
+    ]) {
+        probe(key);
+    }
+}
+
+const QUERY_KEYS = [
+    'code',
+    'sid',
+    'session',
+    'otp',
+    'pwd',
+    'CODE',
+    'Sid',
+    'SESSION',
+    'token',
+    'sig',
+    'page',
+    'q',
+];
+
+export function queryFamilies({ add, addGen }: Sinks, rng: Rng): void {
+    const m = (): string => marker(rng);
+    for (const key of QUERY_KEYS) {
+        add('query-key', `https://x.test/cb?${key}=${m()}&z=1`);
+        add('query-key', `https://x.test/cb?a=1&${key}=${m()}#frag`);
+        add('query-key', `https://x.test/cb?r=a%3F${key}%3D${m()}%26z%3D1`);
+        add('query-key', `https://x.test/cb?%${key.length > 0 ? '63' : '00'}ode=${m()}`);
+    }
+    for (const [name, wrap] of [
+        ['dq', '"'],
+        ['sq', "'"],
+        ['lt', '<'],
+        ['gt', '>'],
+        ['hash', '#'],
+        ['amp', '&'],
+        ['sp', ' '],
+        ['nl', '\n'],
+    ] as const) {
+        add('query-end', `https://x.test/?token=${m()}${wrap}rest`);
+        add('query-end', `https://x.test/?r=a%3Ftoken%3D${m()}${wrap}rest`);
+        add('query-end', `https://x.test/?r=a%3Ftoken%3D${m()}${wrap}rest&${name}=1`);
+    }
+    for (const length of [4094, 4095, 4096, 4097]) {
+        add('query-nested', `?r=${'a'.repeat(length - 40)}%3Ftoken%3D${m()}&z=1`);
+        add('query-nested', `?r=%3Ftoken%3D${'a'.repeat(length)}&z=1`);
+    }
+    const piece = `?r=${'a'.repeat(3900)}%3Ftoken%3D1&z=1`;
+    addGen('query-budget', {
+        parts: [
+            [piece, 255],
+            [`?r=%3Ftoken%3D${marker(rng)}`, 1],
+        ],
+    });
+    addGen('query-budget', {
+        parts: [
+            [piece, 257],
+            [`?r=%3Ftoken%3D${marker(rng)}`, 1],
+        ],
+    });
+    addGen('query-budget', {
+        parts: [
+            [piece, 300],
+            [`?token=${marker(rng)}`, 1],
+        ],
+    });
+}
+
+export function schemeFamilies({ add }: Sinks, rng: Rng): void {
+    const values = [
+        'abcdefgh',
+        'ABCDEFGH',
+        'Abcdefgh',
+        'Abcdefgh1',
+        'abcdefg',
+        'abcdefghi.',
+        'abcdefghi-x',
+        'abcdefgh_',
+        'abcdefgh=',
+        'Abcdefgh=',
+        'Abc',
+        'aB3d5F7h',
+        'dXNlcjpwYXNz',
+        'ABCDEFGH1',
+        '12345678',
+        'x1y2z3w4',
+        'a.b.c.d.e.f',
+        'Missing',
+        'tokens',
+        'required',
+        'header',
+        'authentication',
+        'Zq9abcDEF123',
+    ];
+    for (const scheme of [
+        'Basic',
+        'basic',
+        'BASIC',
+        'Token',
+        'token',
+        'TOKEN',
+        'bAsic',
+        'Bearer',
+        'bearer',
+        'BEARER',
+    ]) {
+        for (const value of values) {
+            add('scheme', `Authorization: ${scheme} ${value}`);
+            add('scheme', `${scheme} ${value} and more`);
+            add('scheme', `${scheme}\t${value}`);
+        }
+    }
+    add('scheme', `Authorization: Basic ${'a1'.repeat(300)}`);
+    add('scheme', `Basic  ${marker(rng)}`);
+}
+
+export function wordFamilies({ add }: Sinks, rng: Rng): void {
+    const stands = [
+        'undefined',
+        'null',
+        'changeme',
+        'example',
+        'placeholder',
+        'password',
+        'secret',
+        'token',
+        'Undefined',
+        'NULL',
+        'to\u212Aen',
+        'x',
+        'xX',
+        'XXXXXXXX',
+        '*',
+        '*****',
+        '<>',
+        '<a>',
+        '< >',
+        '<a\nb>',
+        '<a\u2028b>',
+        '{}',
+        '{a}',
+        '{{x}}',
+        '{a\rb}',
+        '  null  ',
+        '\u00a0null\u00a0',
+        'your_x',
+        'my-x',
+        'the_x',
+        'replace_me',
+        'insert-here',
+        'example_x',
+        'dummy_value',
+        'sample-key',
+        'x_here',
+        'x-here',
+        'HERE',
+        'a_HERE',
+        'your',
+        'your_',
+        'yourx',
+        'Your_Key',
+        'URL_here',
+        'a_here_b',
+        'k_Here',
+        'Zq9-correct-horse-battery-staple',
+        'correct-horse-battery-staple',
+        'aaaaaaaabbbbbbbbccccccccdddddddd',
+        'abababababababab',
+        'abcdefghijklmnop',
+        'abcdefghijklmnopqrstuvwxyz0123456789',
+        'The quick brown',
+        'zxcvbnmasdfghjkl',
+        "'abcdefgh'",
+        '"x"',
+        '"',
+        "'",
+        '""',
+        'ab"',
+        '"abc',
+        '[REDACTED]',
+        '[REDACTED:x]',
+        '[REDACTED:x:ab12]',
+        '[REDACTED:a b]',
+    ];
+    for (const stand of stands) {
+        add('stand-in', `password=${stand}`);
+        add('stand-in', `password: "${stand}"`);
+        add('stand-in', `session_token=${stand}${stand}`);
+        add('stand-in', `api_key = '${stand} '`);
+        add('stand-in', { password: stand, nested: { text: `token=${stand}` } });
+    }
+    for (let n = 0; n < 40; n++)
+        add('stand-in', `secret=${chars(rng, 'abcdefghijklmnopqrstuvwxyz_-', 16 + n)}`);
+}
+
+function entropyOf(text: string): number {
+    const frequencies = new Map<string, number>();
+    for (const char of text) frequencies.set(char, (frequencies.get(char) ?? 0) + 1);
+    let entropy = 0;
+    for (const count of frequencies.values()) {
+        const p = count / text.length;
+        entropy -= p * Math.log2(p);
+    }
+    return entropy;
+}
+
+/** Two-class values whose entropy lies just below and just above the evidence threshold. */
+function entropyValues(rng: Rng): string[] {
+    const found: string[] = [];
+    const windows: Array<[number, number]> = [
+        [3.3, 3.35],
+        [3.35, 3.4],
+        [3.4, 3.45],
+        [3.45, 3.5],
+    ];
+    for (const [low, high] of windows) {
+        for (
+            let attempts = 0;
+            attempts < 200000 && found.filter((v) => entropyOf(v) >= low && entropyOf(v) < high).length < 3;
+            attempts++
+        ) {
+            const alphabet = 'abcdefghijklmnopqrstuvwxyz'.slice(0, 8 + Math.floor(rng() * 6));
+            const candidate = chars(rng, alphabet, 14 + Math.floor(rng() * 14));
+            if (entropyOf(candidate) >= low && entropyOf(candidate) < high) found.push(candidate);
+        }
+    }
+    return found;
+}
+
+export function thresholdFamilies({ add, addGen }: Sinks, rng: Rng): void {
+    for (const value of entropyValues(rng)) {
+        add('entropy', `password=${value}`);
+        add('entropy', `secret: ${value}`);
+        add('entropy', `session_token=${value}`);
+    }
+    for (const word of [
+        'api',
+        'apikey',
+        'access',
+        'accessx',
+        'client',
+        'private',
+        'privatex',
+        'credentialx',
+        'credentialsx',
+        'authorizationx',
+        'bearerx',
+        'key',
+        'tok',
+        'pass',
+        'passw',
+        'secre',
+        'pw',
+    ]) {
+        add('kw-near', `${word}=Zq9abcdefgh1`);
+        add('kw-near', `${word}_value: Zq9abcdefgh1`);
+        add('kw-near', `${word}: Zq9abcdefgh1`);
+    }
+    for (const word of [
+        'token',
+        'tokens',
+        'auth',
+        'authentication',
+        'header',
+        'scheme',
+        'missing',
+        'invalid',
+        'required',
+        'Token',
+        'TOKEN',
+        'Invalid',
+    ]) {
+        add('auth-plain', `Bearer ${word}`);
+        add('auth-plain', `Authorization: Bearer ${word} for user`);
+        add('auth-plain', `bearer ${word}.`);
+    }
+    for (const text of ['Bearer x', 'bearer xy', 'BEARER z', 'Bearer  ', 'Bearer\tq', 'Bearer a1']) {
+        add('min-scan', text);
+        add('min-scan', { [text]: 1 });
+    }
+    for (const prefix of [
+        'your',
+        'my',
+        'the',
+        'replace',
+        'insert',
+        'example',
+        'dummy',
+        'sample',
+        'yourk',
+        'mine',
+    ]) {
+        for (const separator of ['_', '-', '.', ''])
+            add('doc-prefix', `secret=${prefix}${separator}abcdefghijkl`);
+        add('doc-prefix', `secret=${prefix.toUpperCase()}_Abcdefghijkl`);
+    }
+    const piece = `?r=${'a'.repeat(1000)}&`;
+    addGen('query-budget', {
+        parts: [
+            [piece, 1000],
+            ['?r=%3Ftoken%3DZq9abcdefgh1', 1],
+        ],
+    });
+    addGen('query-budget', {
+        parts: [
+            [piece, 999],
+            ['?r=%3Ftoken%3DZq9abcdefgh1', 1],
+        ],
+    });
+    addGen('large-default-cap', {
+        parts: [
+            ['ab ', 1333333],
+            ['a', 1],
+            ['password=Zq9abcDEF123ghi_x', 0],
+        ],
+    });
+    addGen('large-default-cap', {
+        parts: [
+            ['ab ', 1333333],
+            ['a', 2],
+        ],
+    });
+    addGen('large-default-cap', {
+        parts: [
+            ['ab ', 1333333],
+            ['a', 1],
+            [' ', 0],
+        ],
+    });
+    const npm = `${SCANNER_SAMPLES[0]}`;
+    for (const lead of [1999959, 1999960, 1999961, 1999962]) {
+        addGen('large-cap', {
+            parts: [
+                [' ', lead],
+                [npm, 1],
+                [' tail', 1],
+            ],
+        });
+    }
+    for (const end of [99999, 100000, 100001, 189758, 189759, 189760, 189761]) {
+        addGen('large-window', {
+            parts: [
+                [' ', end - npm.length],
+                [npm, 1],
+                [' tail ', 20000],
+            ],
+        });
+    }
+    for (const comment of [
+        '# secretlint-disable',
+        '// secretlint-disable-next-line',
+        '<!-- secretlint-disable -->',
+        '/* secretlint-disable */',
+        '# secretlint-disable-line',
+    ]) {
+        add('comment-filter', `${comment}\n${SCANNER_SAMPLES[0]}\n${SCANNER_SAMPLES[1]}`);
+        add('comment-filter', `${SCANNER_SAMPLES[2]} ${comment}\n${SCANNER_SAMPLES[3]}`);
+    }
+}
+
+export function subsequenceKeyFamilies({ add }: Sinks): void {
+    for (const parts of KEY_WORD_LISTS.sequences) {
+        for (let from = 0; from < parts.length; from++) {
+            for (let to = from + 1; to <= parts.length; to++) {
+                if (to - from === parts.length) continue;
+                const sub = parts.slice(from, to);
+                for (const key of [sub.join('_'), `x_${sub.join('_')}`, sub.join('')]) {
+                    add('key-sub', { [key]: 'Zq9secretvalue', n: { [key]: 1234 } });
+                }
+            }
+        }
+    }
 }

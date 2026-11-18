@@ -1,7 +1,20 @@
 /** The deterministic golden corpus: the same seed gives the same inputs, byte for byte. */
 import {
-    astralFamilies, boundaryFamilies, capFamilies, fuzzFamilies, jsonShapeFamilies, largeFamilies,
-    prefixFamilies, separatorFamilies,
+    astralFamilies,
+    boundaryFamilies,
+    capFamilies,
+    fuzzFamilies,
+    jsonShapeFamilies,
+    keyListFamilies,
+    keywordMatrixFamilies,
+    largeFamilies,
+    prefixFamilies,
+    queryFamilies,
+    schemeFamilies,
+    separatorFamilies,
+    subsequenceKeyFamilies,
+    thresholdFamilies,
+    wordFamilies,
 } from './families.ts';
 import { mulberry32 } from './rng.ts';
 import type { CaseOpts, CorpusCase, GenSpec } from './types.ts';
@@ -31,6 +44,13 @@ export function generateCorpus(vectorInputs: readonly unknown[]): CorpusCase[] {
     jsonShapeFamilies(sinks, rng);
     capFamilies(sinks, rng);
     boundaryFamilies(sinks, rng);
+    keywordMatrixFamilies(sinks, rng);
+    keyListFamilies(sinks);
+    queryFamilies(sinks, rng);
+    schemeFamilies(sinks, rng);
+    wordFamilies(sinks, rng);
+    thresholdFamilies(sinks, rng);
+    subsequenceKeyFamilies(sinks);
     fuzzFamilies(sinks, rng);
     largeFamilies(sinks);
     return cases;

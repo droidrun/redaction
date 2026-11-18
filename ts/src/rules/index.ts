@@ -3,25 +3,21 @@
  * upstream secretlint scanners: the JWT, Google, xAI and keyword rules are the
  * sync rules (`../sync-rules.ts`), which the async path runs as well.
  *
- * 1. Exclude filter-comments so `secretlint-disable` comments in supplied
- *    content cannot suppress detection.
- * 2. Enable AWS ID scanning because the preset default leaves Access Key
- *    IDs and Account IDs unreported. Secret Access Key scanning is always on.
+ * The spec (`upstream`) decides which rules are left out and their options:
+ * filter-comments is excluded so `secretlint-disable` comments in supplied
+ * content cannot suppress detection, and AWS ID scanning is enabled because the
+ * preset default leaves Access Key IDs and Account IDs unreported.
  */
 import { creator as presetRecommend } from '@secretlint/secretlint-rule-preset-recommend';
 import type { SecretLintCoreConfigRule } from '@secretlint/types';
+import { ALGORITHMS_SPEC } from '../spec.js';
 
-const FILTER_COMMENTS_RULE_ID = '@secretlint/secretlint-rule-filter-comments';
-const AWS_RULE_ID = '@secretlint/secretlint-rule-aws';
+const { excludeRules, ruleOptions } = ALGORITHMS_SPEC.upstream;
 
 function buildRules(): SecretLintCoreConfigRule[] {
     const upstream: SecretLintCoreConfigRule[] = presetRecommend.rules
-        .filter((rule) => rule.meta.id !== FILTER_COMMENTS_RULE_ID)
-        .map((rule) => ({
-            id: rule.meta.id,
-            rule,
-            options: rule.meta.id === AWS_RULE_ID ? { enableIDScanRule: true } : {},
-        }));
+        .filter((rule) => !excludeRules.includes(rule.meta.id))
+        .map((rule) => ({ id: rule.meta.id, rule, options: ruleOptions[rule.meta.id] ?? {} }));
     return upstream;
 }
 

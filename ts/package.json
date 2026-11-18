@@ -16,11 +16,11 @@
       "import": "./dist/sync.js",
       "default": "./dist/sync.js"
     },
-    "./vectors/*.json": "./vectors/*.json"
+    "./vectors/*.json": "./spec/vectors/*.json"
   },
   "files": [
     "dist",
-    "vectors"
+    "spec"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

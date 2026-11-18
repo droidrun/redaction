@@ -17,19 +17,25 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { redactJsonValue, redactJsonValueSync, redactText, redactTextSync } from './index.js';
 
+type Parts = { parts: Array<[string, number]> };
 type VectorCase = {
     name: string;
-    input: unknown;
+    input?: unknown;
+    inputGen?: Parts;
+    mode?: 'compat' | 'strict';
+    opts?: { maxChars?: number; maxDepth?: number; maxNodes?: number };
     expected?: unknown;
     expectedSync?: unknown;
     expectedAsync?: unknown;
+    expectedGenSync?: Parts;
+    expectedGenAsync?: Parts;
 };
 type VectorFile = { description: string; cases: VectorCase[] };
 
-const VECTORS_DIR = join(import.meta.dir, '..', 'vectors');
+const VECTORS_DIR = join(import.meta.dir, '..', 'spec', 'vectors');
 const REQUIRED_FILES = [
-    'auth-headers', 'base64', 'false-positives', 'key-formats', 'key-names', 'keywords', 'nested-json',
-    'url-query',
+    'auth-headers', 'base64', 'false-positives', 'key-formats', 'key-names', 'keywords', 'modes',
+    'nested-json', 'url-query',
 ];
 
 function loadVectors(): Array<[string, VectorFile]> {
@@ -42,20 +48,34 @@ function loadVectors(): Array<[string, VectorFile]> {
         });
 }
 
-async function runAsync(input: unknown): Promise<unknown> {
-    if (typeof input === 'string') return (await redactText(input)).text;
-    return redactJsonValue(input, { hits: [] });
+function expand(parts: Parts): string {
+    return parts.parts.map(([unit, times]) => unit.repeat(times)).join('');
 }
 
-function runSync(input: unknown): unknown {
-    if (typeof input === 'string') return redactTextSync(input).text;
-    return redactJsonValueSync(input);
+function inputOf(vector: VectorCase): unknown {
+    return vector.inputGen === undefined ? vector.input : expand(vector.inputGen);
+}
+
+async function runAsync(vector: VectorCase): Promise<unknown> {
+    const input = inputOf(vector);
+    const limits = { mode: vector.mode, ...vector.opts };
+    if (typeof input === 'string') return (await redactText(input, limits)).text;
+    return redactJsonValue(input, { hits: [] }, limits);
+}
+
+function runSync(vector: VectorCase): unknown {
+    const input = inputOf(vector);
+    const limits = { mode: vector.mode, ...vector.opts };
+    if (typeof input === 'string') return redactTextSync(input, limits).text;
+    return redactJsonValueSync(input, limits);
 }
 
 const vectors = loadVectors();
 
 function expectedFor(vector: VectorCase, entry: 'sync' | 'async'): unknown {
     if (Object.hasOwn(vector, 'expected')) return vector.expected;
+    const generated = entry === 'sync' ? vector.expectedGenSync : vector.expectedGenAsync;
+    if (generated !== undefined) return expand(generated);
     return entry === 'sync' ? vector.expectedSync : vector.expectedAsync;
 }
 
@@ -63,8 +83,9 @@ test('every case has `expected` or both `expectedSync` and `expectedAsync`, neve
     for (const [, file] of vectors) {
         for (const vector of file.cases) {
             const shorthand = Object.hasOwn(vector, 'expected');
+            const generated = vector.expectedGenSync !== undefined && vector.expectedGenAsync !== undefined;
             const pair = Object.hasOwn(vector, 'expectedSync') && Object.hasOwn(vector, 'expectedAsync');
-            expect(shorthand !== pair).toBe(true);
+            expect([shorthand, generated, pair].filter(Boolean)).toHaveLength(1);
             if (pair) expect(vector.expectedSync).not.toEqual(vector.expectedAsync);
         }
     }
@@ -88,18 +109,18 @@ for (const [fileName, file] of vectors) {
     describe(`vectors/${fileName}`, () => {
         for (const vector of file.cases) {
             test(`sync: ${vector.name}`, () => {
-                expect(runSync(vector.input)).toEqual(expectedFor(vector, 'sync'));
+                expect(runSync(vector)).toEqual(expectedFor(vector, 'sync'));
             });
 
             test(`async: ${vector.name}`, async () => {
-                expect(await runAsync(vector.input)).toEqual(expectedFor(vector, 'async'));
+                expect(await runAsync(vector)).toEqual(expectedFor(vector, 'async'));
             });
 
             test(`idempotent on both entry points: ${vector.name}`, async () => {
                 const sync = expectedFor(vector, 'sync');
                 const async = expectedFor(vector, 'async');
-                expect(runSync(sync)).toEqual(sync);
-                expect(await runAsync(async)).toEqual(async);
+                expect(runSync({ name: vector.name, input: sync, mode: vector.mode })).toEqual(sync);
+                expect(await runAsync({ name: vector.name, input: async, mode: vector.mode })).toEqual(async);
             });
         }
     });

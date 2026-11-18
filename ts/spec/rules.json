@@ -1,0 +1,236 @@
+{
+  "specVersion": 1,
+  "description": "Standard-tier rules of the redaction spec. Patterns use the portable grammar (SPEC.md section 2); {{NAME}} references a macro, {{ci:NAME}} a case-insensitive word macro.",
+  "macros": {
+    "WS": "\t\n\u000b\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff",
+    "ESCAPED_QUOTE": "(?:\\\\*[\"'])",
+    "UUID": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+    "SECRET_WORDS": {
+      "fromKeys": "secretWords",
+      "join": "[_-]?"
+    },
+    "KEYWORDS": {
+      "join": "[_-]?",
+      "words": [
+        [
+          "password"
+        ],
+        [
+          "passwd"
+        ],
+        [
+          "pwd"
+        ],
+        [
+          "secret"
+        ],
+        [
+          "token"
+        ],
+        [
+          "api",
+          "key"
+        ],
+        [
+          "access",
+          "key"
+        ],
+        [
+          "client",
+          "secret"
+        ],
+        [
+          "private",
+          "key"
+        ],
+        [
+          "credentials"
+        ],
+        [
+          "credential"
+        ],
+        [
+          "authorization"
+        ],
+        [
+          "bearer"
+        ]
+      ]
+    },
+    "BEARER": {
+      "join": "[_-]?",
+      "words": [
+        [
+          "bearer"
+        ]
+      ]
+    },
+    "COOKIE": {
+      "join": "[_-]?",
+      "words": [
+        [
+          "cookie"
+        ]
+      ]
+    },
+    "SET": {
+      "join": "[_-]?",
+      "words": [
+        [
+          "set"
+        ]
+      ]
+    }
+  },
+  "patterns": {
+    "placeholder": "\\[REDACTED(?::[^\\[\\]:{{WS}}]+(?::[^\\[\\]]*)?)?\\]"
+  },
+  "pipeline": [
+    {
+      "id": "jwt",
+      "kind": "dotted-token",
+      "lead": "eyJ",
+      "separator": ".",
+      "segmentClass": "[A-Za-z0-9_-]",
+      "wordClass": "[A-Za-z0-9_]",
+      "minSegment": 10,
+      "segments": 3
+    },
+    {
+      "id": "gcp-api-key",
+      "kind": "regex",
+      "pattern": "AIza[0-9A-Za-z_-]{35}",
+      "notBefore": "[0-9A-Za-z_-]",
+      "notAfter": "[0-9A-Za-z_-]"
+    },
+    {
+      "id": "xai-api-key",
+      "kind": "regex",
+      "pattern": "\\bxai-[0-9a-zA-Z_]{80}\\b"
+    },
+    {
+      "id": "platform-token",
+      "kind": "regex",
+      "pattern": "srt1\\.{{UUID}}\\.[0-9]+\\.[A-Za-z0-9_-]{43}|srt2\\.{{UUID}}\\.{{UUID}}\\.(?:kilo|script)\\.[0-9]+\\.[0-9a-fA-F]{64}"
+    },
+    {
+      "id": "platform-key",
+      "kind": "regex",
+      "pattern": "\\bdr_sk_[A-Za-z0-9_-]{8,}"
+    },
+    {
+      "id": "github",
+      "kind": "regex",
+      "pattern": "\\b(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{22,255})\\b"
+    },
+    {
+      "id": "aws",
+      "kind": "regex",
+      "pattern": "\\b(?:AKIA|ASIA)[0-9A-Z]{16}\\b"
+    },
+    {
+      "id": "slack",
+      "kind": "regex",
+      "pattern": "\\bxox[abposr]-[0-9A-Za-z-]{10,200}\\b"
+    },
+    {
+      "id": "stripe",
+      "kind": "regex",
+      "pattern": "\\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}"
+    },
+    {
+      "id": "private-key",
+      "kind": "pem-blocks",
+      "header": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----",
+      "footer": "-----END [A-Z0-9 ]{0,40}PRIVATE KEY-----",
+      "footerMarker": "-----END",
+      "bodyChar": "[A-Za-z0-9+/={{WS}}\\\\:,.-]",
+      "bodyLimit": 8192
+    },
+    {
+      "id": "openai",
+      "kind": "regex",
+      "pattern": "\\bsk-(?:proj-|ant-[A-Za-z0-9]{1,16}-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}",
+      "requireClass": "[0-9]"
+    },
+    {
+      "id": "url-credentials",
+      "kind": "regex",
+      "pattern": "\\b[A-Za-z][A-Za-z0-9+.-]{1,31}://[^{{WS}}/?#@:\"'<>]{1,128}:([^{{WS}}/?#@\"'<>]+)@",
+      "group": 1,
+      "dropPlaceholder": true
+    },
+    {
+      "id": "cookie",
+      "kind": "cookie-lines",
+      "prefix": "\\b(?:{{SET}}-)?{{COOKIE}}[{{WS}}]*:[{{WS}}]*",
+      "plainChar": "[^\r\n\\\\\"]",
+      "escapeStop": "[nr\"']",
+      "requireLiteral": "=",
+      "dropPlaceholder": true
+    },
+    {
+      "id": "auth-header",
+      "kind": "auth-values",
+      "bearer": "\\b{{BEARER}}[{{WS}}]+([A-Za-z0-9._~+/=-]+)",
+      "scheme": "\\b(?:[Bb]asic|BASIC|[Tt]oken|TOKEN)[{{WS}}]+",
+      "valueClass": "[A-Za-z0-9+/=._~-]",
+      "minValueLength": 8,
+      "lowerClass": "[a-z]",
+      "upperClass": "[A-Z]",
+      "wordClass": "[A-Za-z0-9_]",
+      "plainWords": [
+        "token",
+        "tokens",
+        "auth",
+        "authentication",
+        "header",
+        "scheme",
+        "missing",
+        "invalid",
+        "required"
+      ]
+    },
+    {
+      "id": "generic-keyword",
+      "kind": "keyword-pairs",
+      "prefix": "{{KEYWORDS}}[A-Za-z0-9_-]{0,64}?{{ESCAPED_QUOTE}}?[{{WS}}]*[:=][{{WS}}]*{{ESCAPED_QUOTE}}?",
+      "plainChar": "[^{{WS}}\"',;\\\\]",
+      "escapeStop": "[\\\\\"']",
+      "minValueLength": 8,
+      "window": 256,
+      "identChar": "[A-Za-z0-9_%-]",
+      "labelLookback": 64
+    },
+    {
+      "id": "generic-keyword",
+      "kind": "quoted-pairs",
+      "label": "\\b{{SECRET_WORDS}}\\b{{ESCAPED_QUOTE}}?[{{WS}}]*[:=][{{WS}}]*(\\\\*)([\"'])",
+      "valueLimit": 1024
+    },
+    {
+      "id": "generic-keyword",
+      "kind": "unquoted-pairs",
+      "prefix": "\\b{{SECRET_WORDS}}\\b{{ESCAPED_QUOTE}}?[{{WS}}]*[:=][{{WS}}]*{{ESCAPED_QUOTE}}?",
+      "plainChar": "[^{{WS}},\"';}\\\\]",
+      "escapeStop": "[\\\\\"']"
+    },
+    {
+      "id": "key-context",
+      "kind": "query-values",
+      "queryKey": "[?&]([^{{WS}}=&#?]{1,128})=",
+      "queryOnlyKeys": [
+        "code",
+        "sid",
+        "session",
+        "otp",
+        "pwd"
+      ],
+      "valueEnd": "[{{WS}}&#\"'<>]",
+      "nestedEnd": "[{{WS}}&#\"'<>?]",
+      "nestedLimit": 4096,
+      "decodeBudget": 1000000,
+      "dropPlaceholder": true
+    }
+  ]
+}

@@ -16,6 +16,7 @@
  * an object with `toJSON` as its `toJSON()` result, then scanned.
  */
 import { applyHits, type Hit } from './hits.js';
+import type { RedactMode } from './mode.js';
 import {
     KEY_CONTEXT_RULE_ID,
     keyVerdict,
@@ -25,28 +26,33 @@ import {
     type KeyVerdict,
 } from './key-names.js';
 import { setOwnKey } from './own-key.js';
+import { redactKey } from './redact-key.js';
 import { buildReadPlaceholder } from './placeholder.js';
+import { ALGORITHMS_SPEC } from './spec.js';
+import { runStrictSync, spliceHits, strictLimits, strictWalk, type LeafResult } from './strict.js';
 import { detectSyncHits } from './sync-rules.js';
 
-const SYNC_DEFAULT_MAX_CHARS = 4_000_000;
-const SYNC_DEFAULT_MAX_DEPTH = 64;
-const SYNC_DEFAULT_MAX_NODES = 500_000;
-const SYNC_DEFAULT_MAX_KEY_CHARS = 4096;
-
-const SIZE_LIMIT = 'size-limit';
-const DEPTH_LIMIT = 'depth-limit';
-const CIRCULAR = 'circular';
-const FAILED = 'redaction-failed';
+const { sync: SYNC_LIMITS, ruleIds: RULE_IDS, text: TEXT_SPEC } = ALGORITHMS_SPEC;
+const SIZE_LIMIT = RULE_IDS.sizeLimit;
+const DEPTH_LIMIT = RULE_IDS.depthLimit;
+const CIRCULAR = RULE_IDS.circular;
+const FAILED = RULE_IDS.failed;
 
 /** Below this no rule can match (`Bearer x` is the shortest secret context). */
-const MIN_SCAN_LEN = 8;
+const MIN_SCAN_LEN = TEXT_SPEC.minScanLength;
 
-export type RedactTextSyncOpts = { maxChars?: number };
+export type RedactTextSyncOpts = {
+    maxChars?: number;
+    /** `strict` additionally never passes an unscanned value (see `mode.ts`); default `compat`. */
+    mode?: RedactMode;
+};
 
 export type RedactJsonSyncOpts = {
     maxChars?: number;
     maxDepth?: number;
     maxNodes?: number;
+    /** `strict` walks iteratively and keeps to the limits (see `strict.ts`); default `compat`. */
+    mode?: RedactMode;
     /** Replaces the default structural skip set (`type`, `id`): primitive values under
      *  these keys are kept as they are; containers under them are still walked. */
     skipKeys?: ReadonlySet<string>;
@@ -72,7 +78,7 @@ export function redactTextSync(
 ): { text: string; hits: Hit[] } {
     try {
         const source = typeof text === 'string' ? text : String(text);
-        return scanText(source, opts.maxChars ?? SYNC_DEFAULT_MAX_CHARS);
+        return scanText(source, opts.maxChars ?? SYNC_LIMITS.maxChars);
     } catch {
         return { text: buildReadPlaceholder(FAILED), hits: [{ ruleId: FAILED, range: [0, 0] }] };
     }
@@ -115,16 +121,6 @@ function walkPrimitive(value: unknown, verdict: KeyVerdict, state: Walk): unknow
     if (keyed === undefined) return value;
     state.hits.push({ ruleId: KEY_CONTEXT_RULE_ID, range: [0, 0] });
     return keyed;
-}
-
-/** The key as written, or its placeholder when the key text itself holds a secret.
- *  Shared with the async walker (keys are scanned by the deterministic rules). */
-export function redactKey(key: string, hits: Hit[]): string {
-    if (key.length < MIN_SCAN_LEN || key.length > SYNC_DEFAULT_MAX_KEY_CHARS) return key;
-    const found = detectSyncHits(key);
-    if (found.length === 0) return key;
-    hits.push(...found);
-    return applyHits(key, found);
 }
 
 function isPrimitive(value: unknown): boolean {
@@ -200,16 +196,39 @@ function walk(value: unknown, depth: number, verdict: KeyVerdict, state: Walk): 
     return walkContainer(value, depth, verdict, state);
 }
 
+/** The strict leaf scan: the sync rules, and a placeholder for the whole leaf when they fail. */
+function strictLeaf(text: string): LeafResult {
+    try {
+        return text.length < MIN_SCAN_LEN ? { text, hits: [] } : spliceHits(text, detectSyncHits(text));
+    } catch {
+        return { text: buildReadPlaceholder(FAILED), hits: [{ ruleId: FAILED, range: [0, 0] }] };
+    }
+}
+
+function redactJsonValueStrictSync(value: unknown, opts: RedactJsonSyncOpts): unknown {
+    const hits: Hit[] = [];
+    try {
+        const limits = strictLimits(opts);
+        const skip = opts.skipKeys ?? STRUCTURAL_SKIP_KEYS;
+        const out = runStrictSync(strictWalk(value, limits, skip, hits), strictLeaf);
+        opts.stats?.hits.push(...hits);
+        return out;
+    } catch {
+        return buildReadPlaceholder(FAILED);
+    }
+}
+
 /** Redact a JSON-shaped value with the sync rules and the key-name rule: any
  *  string leaf is scanned; a string under a secret-named key is replaced, and
  *  so is a number under a singular secret key (`pin`, `password`; not
  *  `max_tokens`). Containers under a secret key are walked. Never throws; on
  *  an internal failure the whole value is replaced. */
 export function redactJsonValueSync(value: unknown, opts: RedactJsonSyncOpts = {}): unknown {
+    if (opts.mode === 'strict') return redactJsonValueStrictSync(value, opts);
     const state: Walk = {
-        nodes: opts.maxNodes ?? SYNC_DEFAULT_MAX_NODES,
-        chars: opts.maxChars ?? SYNC_DEFAULT_MAX_CHARS,
-        maxDepth: opts.maxDepth ?? SYNC_DEFAULT_MAX_DEPTH,
+        nodes: opts.maxNodes ?? SYNC_LIMITS.maxNodes,
+        chars: opts.maxChars ?? SYNC_LIMITS.maxChars,
+        maxDepth: opts.maxDepth ?? SYNC_LIMITS.maxDepth,
         skip: opts.skipKeys ?? STRUCTURAL_SKIP_KEYS,
         hits: [],
         ancestors: new WeakSet(),

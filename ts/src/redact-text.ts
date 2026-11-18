@@ -5,55 +5,37 @@
  */
 import { scanText } from './engine.js';
 import { applyHits, dedupeRanges, type Hit } from './hits.js';
+import type { RedactMode } from './mode.js';
 import { buildReadPlaceholder } from './placeholder.js';
+import { ALGORITHMS_SPEC } from './spec.js';
 import { detectSyncHits } from './sync-rules.js';
 
 export type { Hit };
 
-const ERROR_RULE_ID = 'error';
+const ERROR_RULE_ID = ALGORITHMS_SPEC.ruleIds.error;
 
-/** Below this, not worth invoking the engine — no real secret is <8 chars. */
-const MIN_SCAN_LEN = 8;
+/** Below this, not worth invoking the engine — no real secret is shorter. */
+const MIN_SCAN_LEN = ALGORITHMS_SPEC.text.minScanLength;
 
 /**
  * Scan window size — a single string this long or shorter is scanned in one
- * `scanText` call. Longer strings are walked in overlapping windows of this size (see
- * `detectSecrets`) rather than truncated, so a secret anywhere in the
- * string — not just its first 100k chars — gets caught.
+ * `scanText` call. Longer strings are walked in overlapping windows (see
+ * `detectSecrets`) rather than truncated, so a secret anywhere in the string
+ * gets caught. The overlap must be at least as large as the biggest contiguous
+ * secret the upstream scanners can match (the widest is the PEM body of the
+ * privatekey rule, about 10k). The cap is the ceiling on how much of one string
+ * is ever scanned by them; the sync rules run over the whole text, and a text
+ * beyond the cap is reported as the `redaction.scan.capped` event. Values: spec `full`.
  */
-const MAX_SCAN_LEN = 100_000;
-
-/**
- * Overlap between consecutive scan windows. Must be at least as large as the
- * biggest contiguous secret the ruleset can match — a secret straddling a
- * window boundary needs the FULL match to fall within at least one window's
- * contiguous text; the regex can't be satisfied by unioning a partial match
- * from each side, and `dedupeRanges` can only merge two ranges that were
- * each already a complete hit.
- *
- * `10_240` covers every BOUNDED match in the ruleset: the widest is
- * `@secretlint/secretlint-rule-privatekey`'s PEM body pattern (`{100,10000}`
- * for the base64 body, plus header/footer/newline slack), so a full PEM
- * block can be ~10k+ chars — every custom rule here and every provider-key
- * shape from the upstream preset is far shorter than that.
- *
- * The custom rules (JWT, keywords, Google, xAI) are the sync rules now and run
- * over the whole text, so only the upstream scanners are windowed.
- */
-const SCAN_OVERLAP = 10_240;
-
-/**
- * Absolute ceiling on how much of one string leaf is ever scanned, even with
- * chunking — a screenshot/base64 blob pasted into a tool-output string can
- * be multi-MB, and secretlint's regex rules would otherwise re-run their
- * full match sweep over an unbounded amount of content per message. A real
- * pasted credential is never anywhere near this long; anything beyond the
- * cap simply isn't scanned (documented trade-off, not a bug). The cap is
- * reported as the `redaction.scan.capped` event.
- */
-const MAX_TOTAL_SCAN_LEN = 2_000_000;
+const FULL = ALGORITHMS_SPEC.full;
+const MAX_SCAN_LEN = FULL.scanWindow;
+const SCAN_OVERLAP = FULL.scanOverlap;
+const MAX_TOTAL_SCAN_LEN = FULL.scanCap;
 
 export type RedactTextOpts = {
+    /** `strict` never passes an unscanned text: a scanner failure replaces the whole text and the
+     *  part beyond the scan cap becomes `[REDACTED:size-limit]`. Default `compat`. */
+    mode?: RedactMode;
     /** Use the 0.1.1 placeholder `[REDACTED:<rule>:<last4>]` for matches of at least
      *  16 characters. Default: `[REDACTED:<rule>]`, which exposes nothing of the secret. */
     last4?: boolean;
@@ -125,6 +107,7 @@ export async function redactText(
     text: string,
     opts: RedactTextOpts = {},
 ): Promise<{ text: string; hits: Hit[] }> {
+    if (opts.mode === 'strict') return redactTextStrict(text, opts);
     try {
         const hits = opts.detect ? await opts.detect(text) : await detectSecrets(text, opts);
         if (hits.length === 0) return { text, hits: [] };
@@ -145,6 +128,26 @@ function degradedRedaction(text: string): { text: string; hits: Hit[] } {
         const hits = detectSyncHits(text);
         return { text: applyHits(text, hits), hits };
     } catch {
+        const hit: Hit = { ruleId: ERROR_RULE_ID, range: [0, 0] };
+        return { text: buildReadPlaceholder(ERROR_RULE_ID), hits: [hit] };
+    }
+}
+
+/** Strict: no fallback and no unscanned rest. A failure replaces the whole text; what lies beyond
+ *  the scan cap is replaced by `[REDACTED:size-limit]` (merged with any hit it overlaps). */
+async function redactTextStrict(text: string, opts: RedactTextOpts): Promise<{ text: string; hits: Hit[] }> {
+    try {
+        const found = opts.detect ? await opts.detect(text) : await detectSecrets(text, opts);
+        const rest: Hit[] = text.length > MAX_TOTAL_SCAN_LEN
+            ? [{ ruleId: ALGORITHMS_SPEC.ruleIds.sizeLimit, range: [MAX_TOTAL_SCAN_LEN, text.length] }]
+            : [];
+        const hits = dedupeRanges([...found, ...rest]);
+        if (hits.length === 0) return { text, hits: [] };
+        return { text: applyHits(text, hits, opts.last4 === true), hits };
+    } catch (err) {
+        emitEvent(opts, 'redaction.detect.failed', {
+            errorName: err instanceof Error ? err.constructor.name : typeof err,
+        });
         const hit: Hit = { ruleId: ERROR_RULE_ID, range: [0, 0] };
         return { text: buildReadPlaceholder(ERROR_RULE_ID), hits: [hit] };
     }

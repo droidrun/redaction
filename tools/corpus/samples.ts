@@ -50,7 +50,7 @@ export const FORMAT_SAMPLES: readonly string[] = [
     'https://x.test/cb?token=Zq9abcDEF123ghi&x=1',
     'https://x.test/cb?redirect=https%3A%2F%2Fy.test%2F%3Ftoken%3DZq9abcDEF123ghi&z=1',
     'https://x.test/cb?code=Zq9abcDEF123ghi',
-    'secret = \'Zq9 abc DEF, 123\'',
+    "secret = 'Zq9 abc DEF, 123'",
 ];
 
 /** Shapes only the full tier (the upstream scanners) is expected to find. */

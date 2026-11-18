@@ -226,8 +226,9 @@ if (conflicts.length > 0) throw badRequest('re-enter these values', conflicts);
 
 ## Conformance vectors
 
-`vectors/*.json` hold the cases every implementation must agree on, so the Go and Python ports (and
-each consumer's tests) can run the same file:
+`spec/vectors/*.json` (in the repo root; `ts/spec/vectors/` is the copy this package reads and ships)
+hold the cases every implementation must agree on, so the Go and Python ports (and each consumer's
+tests) can run the same file:
 
 ```json
 { "description": "…", "cases": [
@@ -242,8 +243,19 @@ A string `input` runs through the text entry point, anything else through the JS
 `expected` is the output of both entries; a case where the async path is more specific carries
 `expectedSync` and `expectedAsync` instead. Files: `keywords`, `auth-headers`, `key-names`,
 `key-formats`, `nested-json`, `url-query`, `base64`, `false-positives` (ordinary text that must stay
-unchanged). The files are published with the package and importable as
-`@droidrun/redaction/vectors/<name>.json`. `src/vectors.test.ts` is the loader.
+unchanged), `modes` (the `compat` and `strict` failure modes with the `maxChars`, `maxDepth` and
+`maxNodes` limits). A case may set `mode` and `opts`. The files are published with the package and
+importable as `@droidrun/redaction/vectors/<name>.json`. `src/vectors.test.ts` is the loader.
+
+## Modes
+
+`mode: 'compat'` (the default) is what 0.2.0 does. `mode: 'strict'` is an additive option on
+`redactTextSync`, `redactJsonValueSync`, `redactText` and `redactJsonValue`: it never returns text
+that was not scanned. A failing scanner replaces the whole text (`[REDACTED:error]`), the part of a
+text beyond the 2,000,000-character scan cap becomes `[REDACTED:size-limit]`, and JSON is walked
+without recursion within `maxDepth`, `maxNodes` and `maxChars` (the async entries take them in the
+options too); whatever it cannot scan is a placeholder. Values under `skipKeys` (default `type`, `id`)
+keep their exemption. The rules and their semantics are in [`../spec/SPEC.md`](../spec/SPEC.md).
 
 ## Limits
 
@@ -266,7 +278,8 @@ unchanged). The files are published with the package and importable as
 
 ## Development and release
 
-Requires Node.js 22 or later, pnpm 10.18.1, and Bun for tests.
+Requires Node.js 22 or later, pnpm 10.18.1, and Bun for tests. Run the commands in this directory
+(`ts/`).
 
 ```sh
 pnpm install --frozen-lockfile
@@ -274,6 +287,12 @@ pnpm run typecheck
 pnpm test
 pnpm run build
 ```
+
+The rules are data: this package reads `ts/spec/*.json`, a copy of `../spec/` written by
+`../tools/sync-spec`, and refuses to import when the copy does not match the generated hash in
+`src/spec-hash.generated.ts` or holds no rules. Change a rule in `../spec/`, then run
+`../tools/sync-spec`. `src/golden.test.ts` replays a seeded corpus of 12,000+ inputs and requires the
+output recorded from the unchanged package at commit b12879a, byte for byte.
 
 The exact `13.0.4` pins of `@secretlint/secretlint-rule-preset-recommend` and
 `@secretlint/types` are load-bearing: dependency bumps need green parity and rule-shape guard tests.
@@ -283,7 +302,7 @@ loads neither core nor the profiler. The suite also runs the conformance vectors
 entries, a seeded fuzz test (3,000 sync and 600 async cases per family: no leak of an injected
 marker in values, keys, escaped JSON, URL userinfo, nested queries, cookies; idempotence; restore
 round trip, also after deleting, inserting and reordering items), the perf and adversarial budgets,
-and a 0.1.1 export-compat test.
+a 0.1.1 export-compat test, the golden replay, and the spec-integrity tests.
 
 After merge, a `v<version>` tag (for example `v0.2.0`) triggers publishing to GitHub Packages. The workflow
 checks the tag against `package.json`, requires the tagged commit to be on `main`,
