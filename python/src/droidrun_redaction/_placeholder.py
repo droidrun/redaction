@@ -43,7 +43,7 @@ def is_placeholder_value(text: str, start: int, end: int) -> bool:
 
 
 # The mark that starts a number inside a placeholder (`[REDACTED:npm#2]`, SPEC 7, numbered form).
-NUMBER_MARK = "#"
+NUMBER_MARK: str = _FORMAT["numberMark"]
 
 
 def _ends_with_number(rule: str) -> bool:
