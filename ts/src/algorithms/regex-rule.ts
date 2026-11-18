@@ -12,7 +12,12 @@ import type { Rule } from '../spec.js';
 
 export type Scanner = (text: string) => Range[];
 
-type Filter = { requireClass?: string; requireLiteral?: string; dropPlaceholder?: boolean };
+type Filter = {
+    requireClass?: string;
+    requireLiteral?: string;
+    dropPlaceholder?: boolean;
+    ignoreEquals?: string[];
+};
 type RegexRule = Rule &
     Filter & {
         pattern: string;
@@ -28,6 +33,7 @@ function prepareFilter(filter: Filter): (text: string, range: Range) => boolean 
         const value = text.slice(start, end);
         if (!hasClass(value)) return false;
         if (filter.requireLiteral !== undefined && !value.includes(filter.requireLiteral)) return false;
+        if (filter.ignoreEquals?.includes(value) === true) return false;
         return !(filter.dropPlaceholder === true && isPlaceholderValue(text, start, end));
     };
 }

@@ -1,0 +1,731 @@
+{
+  "description": "Full tier (the ported secretlint rules, SPEC 4.11 to 4.17): `expectedSync` is the standard tier, `expectedAsync` the full tier (`expected` when both agree). Each rule has a hit, near misses at its bounds and its letter guard; the scan cap and the scan windows are crossed with `inputGen`. An implementation without the full tier skips this file (`tier`).",
+  "tier": "full",
+  "cases": [
+    {
+      "name": "aws key id",
+      "input": "creds: AKIAQR7ZKT4MW2PLX9BD",
+      "expected": "creds: [REDACTED:aws]"
+    },
+    {
+      "name": "aws key id of the AWS documentation is ignored",
+      "input": "AKIAIOSFODNN7EXAMPLE",
+      "expected": "[REDACTED:aws]"
+    },
+    {
+      "name": "aws account id",
+      "input": "\"aws_account_id\": \"1234-5678-9012\"",
+      "expectedSync": "\"aws_account_id\": \"1234-5678-9012\"",
+      "expectedAsync": "[REDACTED:aws]\""
+    },
+    {
+      "name": "aws secret access key: the secret is redacted, the key name stays",
+      "input": "AWS_SECRET_ACCESS_KEY = wJalrXUtnFEMI/K7MDENG/bPxRfiCYSECRETSKEY\n",
+      "expectedSync": "AWS_SECRET_ACCESS_KEY = [REDACTED:generic-keyword]\n",
+      "expectedAsync": "AWS_SECRET_ACCESS_KEY = [REDACTED:aws]\n"
+    },
+    {
+      "name": "aws secret access key of the AWS documentation is ignored",
+      "input": "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      "expected": "aws_secret_access_key=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "aws secret access key quoted",
+      "input": "\"aws_secret_access_key\": \"wJalrXUtnFEMI/K7MDENG/bPxRfiCYSECRETSKEY\"",
+      "expectedSync": "\"aws_secret_access_key\": \"[REDACTED:generic-keyword]\"",
+      "expectedAsync": "\"aws_secret_access_key\": \"[REDACTED:aws]\""
+    },
+    {
+      "name": "private key",
+      "input": "key:\n-----BEGIN PRIVATE KEY-----\nMIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n-----END PRIVATE KEY-----\ndone",
+      "expectedSync": "key:\n[REDACTED:private-key]\ndone",
+      "expectedAsync": "key:\n[REDACTED:privatekey]\ndone"
+    },
+    {
+      "name": "private key with escaped newlines",
+      "input": "{\"k\":\"-----BEGIN RSA PRIVATE KEY-----\\nMIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\n-----END RSA PRIVATE KEY-----\"}",
+      "expectedSync": "{\"k\":\"[REDACTED:private-key]\"}",
+      "expectedAsync": "{\"k\":\"[REDACTED:privatekey]\"}"
+    },
+    {
+      "name": "private key placeholder body is not a key",
+      "input": "-----BEGIN PRIVATE KEY-----\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n-----END PRIVATE KEY-----",
+      "expected": "[REDACTED:private-key]"
+    },
+    {
+      "name": "private key body of 99 units is too short",
+      "input": "-----BEGIN PRIVATE KEY-----\nMIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n-----END PRIVATE KEY-----",
+      "expected": "[REDACTED:private-key]"
+    },
+    {
+      "name": "private key without a footer is not a hit",
+      "input": "-----BEGIN PRIVATE KEY-----\nMIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": "[REDACTED:private-key]"
+    },
+    {
+      "name": "private key openssh",
+      "input": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n-----END OPENSSH PRIVATE KEY-----",
+      "expectedSync": "[REDACTED:private-key]",
+      "expectedAsync": "[REDACTED:privatekey]"
+    },
+    {
+      "name": "private key header inside the trailing dashes of another",
+      "input": "-----BEGIN PRIVATE KEY-----BEGIN PRIVATE KEY-----\nMIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n-----END PRIVATE KEY-----",
+      "expected": "[REDACTED:private-key]"
+    },
+    {
+      "name": "npm token",
+      "input": "registry token npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA done",
+      "expectedSync": "registry token [REDACTED:auth-header] done",
+      "expectedAsync": "registry token [REDACTED:npm] done"
+    },
+    {
+      "name": "npm token 37 units",
+      "input": "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "npm token behind a letter",
+      "input": "xnpm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": "xnpm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "npm token behind a non-letter digit",
+      "input": "1npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expectedSync": "1npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expectedAsync": "1[REDACTED:npm]"
+    },
+    {
+      "name": "npm token behind an astral letter",
+      "input": "\ud835\udc00npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": "\ud835\udc00npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "npm token behind an astral emoji",
+      "input": "\ud83d\ude00npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expectedSync": "\ud83d\ude00npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expectedAsync": "\ud83d\ude00[REDACTED:npm]"
+    },
+    {
+      "name": "npm token behind a lone surrogate",
+      "input": "\ud800npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expectedSync": "\ud800npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expectedAsync": "\ud800[REDACTED:npm]"
+    },
+    {
+      "name": "npm token behind a BMP letter",
+      "input": "\u00e9npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": "\u00e9npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "basic auth url",
+      "input": "fetch https://alice:hunter2x@host.example.com/path now",
+      "expectedSync": "fetch https://alice:[REDACTED:url-credentials]@host.example.com/path now",
+      "expectedAsync": "fetch [REDACTED:basicauth]/path now"
+    },
+    {
+      "name": "basic auth password is a placeholder",
+      "input": "https://alice:password@host.example.com",
+      "expected": "https://alice:[REDACTED:url-credentials]@host.example.com"
+    },
+    {
+      "name": "basic auth password is one repeated character",
+      "input": "https://alice:aaaa@host.example.com",
+      "expected": "https://alice:[REDACTED:url-credentials]@host.example.com"
+    },
+    {
+      "name": "basic auth user too short",
+      "input": "https://a:hunter2x@host.example.com",
+      "expected": "https://a:[REDACTED:url-credentials]@host.example.com"
+    },
+    {
+      "name": "slack token",
+      "input": "hook xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx",
+      "expected": "hook [REDACTED:slack]"
+    },
+    {
+      "name": "slack token ends before an underscore",
+      "input": "xoxb-111-222-abc_ tail",
+      "expectedSync": "xoxb-111-222-abc_ tail",
+      "expectedAsync": "[REDACTED:slack]-abc_ tail"
+    },
+    {
+      "name": "slack token with a digit segment",
+      "input": "xoxa-2-111-abc end",
+      "expectedSync": "xoxa-2-111-abc end",
+      "expectedAsync": "[REDACTED:slack] end"
+    },
+    {
+      "name": "slack token a dash before the end",
+      "input": "xoxb-aaa-bbb-",
+      "expectedSync": "xoxb-aaa-bbb-",
+      "expectedAsync": "[REDACTED:slack]-"
+    },
+    {
+      "name": "slack webhook",
+      "input": "curl HTTPS://Hooks.Slack.Com/Services/Tabc/Bdef/ghi",
+      "expectedSync": "curl HTTPS://Hooks.Slack.Com/Services/Tabc/Bdef/ghi",
+      "expectedAsync": "curl [REDACTED:slack]"
+    },
+    {
+      "name": "sendgrid key of 69 units",
+      "input": "SG.aaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedSync": "SG.aaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedAsync": "[REDACTED:sendgrid]"
+    },
+    {
+      "name": "sendgrid key of 70 units",
+      "input": "SG.aaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expected": "SG.aaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "name": "sendgrid key with a dash joiner",
+      "input": "SG.aaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbb-cccccccccccccccccccccc",
+      "expectedSync": "SG.aaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbb-cccccccccccccccccccccc",
+      "expectedAsync": "[REDACTED:sendgrid]"
+    },
+    {
+      "name": "sendgrid long tail consumes its start",
+      "input": "SG.xxSG.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expected": "SG.xxSG.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "name": "shopify token",
+      "input": "shpat_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "shpat_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:shopify]"
+    },
+    {
+      "name": "stripe key",
+      "input": "sk_live_aaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "[REDACTED:stripe]"
+    },
+    {
+      "name": "stripe key with 100 units",
+      "input": "sk_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "[REDACTED:stripe]"
+    },
+    {
+      "name": "github classic token",
+      "input": "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "[REDACTED:github]"
+    },
+    {
+      "name": "github classic token 37 units",
+      "input": "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "[REDACTED:github]"
+    },
+    {
+      "name": "github classic token behind a letter",
+      "input": "\u00e9ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "\u00e9[REDACTED:github]"
+    },
+    {
+      "name": "github fine grained token",
+      "input": "github_pat_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "[REDACTED:github]"
+    },
+    {
+      "name": "github app installation token",
+      "input": "ghs_123_aaaaa.bbbbbbb.ccccccccc",
+      "expectedSync": "ghs_123_aaaaa.bbbbbbb.ccccccccc",
+      "expectedAsync": "[REDACTED:github]"
+    },
+    {
+      "name": "github app installation token with 21 digits",
+      "input": "ghs_111111111111111111111_a.b.c",
+      "expected": "ghs_111111111111111111111_a.b.c"
+    },
+    {
+      "name": "gitlab token",
+      "input": "glpat-aaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "glpat-aaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:gitlab]"
+    },
+    {
+      "name": "grafana cloud token with padding",
+      "input": "glc_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "expectedSync": "glc_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "expectedAsync": "[REDACTED:grafana]"
+    },
+    {
+      "name": "grafana cloud token with three padding units",
+      "input": "glc_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA===",
+      "expected": "glc_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==="
+    },
+    {
+      "name": "grafana service account token",
+      "input": "glsa_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_aaaaaaaa",
+      "expectedSync": "glsa_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_aaaaaaaa",
+      "expectedAsync": "[REDACTED:grafana]"
+    },
+    {
+      "name": "openai legacy key",
+      "input": "sk-aaaaaaaaaaaaaaaaaaaaT3BlbkFJbbbbbbbbbbbbbbbbbbbb",
+      "expected": "[REDACTED:openai]"
+    },
+    {
+      "name": "openai project key",
+      "input": "sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaT3BlbkFJbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expected": "[REDACTED:openai]"
+    },
+    {
+      "name": "anthropic key",
+      "input": "sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expectedSync": "[REDACTED:openai]",
+      "expectedAsync": "[REDACTED:anthropic]"
+    },
+    {
+      "name": "anthropic key without the tail",
+      "input": "sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB",
+      "expected": "[REDACTED:openai]"
+    },
+    {
+      "name": "groq key",
+      "input": "gsk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "gsk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:groq]"
+    },
+    {
+      "name": "hugging face token",
+      "input": "hf_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "hf_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:huggingface]"
+    },
+    {
+      "name": "linear token",
+      "input": "lin_api_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "lin_api_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:linear]"
+    },
+    {
+      "name": "notion token",
+      "input": "ntn_11111111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "ntn_11111111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:notion]"
+    },
+    {
+      "name": "1password service account token",
+      "input": "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==",
+      "expectedSync": "ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZyI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEifQ==",
+      "expectedAsync": "[REDACTED:1password]"
+    },
+    {
+      "name": "1password lookalike that is not json",
+      "input": "ops_eyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfQ",
+      "expected": "ops_eyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfQ"
+    },
+    {
+      "name": "postgres connection string",
+      "input": "postgres://admin:hunter2secret@db.example.com:5432/app?ssl=true",
+      "expectedSync": "postgres://admin:[REDACTED:url-credentials]@db.example.com:5432/app?ssl=true",
+      "expectedAsync": "[REDACTED:database-connection-string]"
+    },
+    {
+      "name": "mongodb srv connection string",
+      "input": "MongoDB+SRV://bob:Zx9!kQ7m@cluster0.mongodb.net/test",
+      "expectedSync": "MongoDB+SRV://bob:[REDACTED:url-credentials]@cluster0.mongodb.net/test",
+      "expectedAsync": "[REDACTED:database-connection-string]"
+    },
+    {
+      "name": "mysql jdbc connection string",
+      "input": "jdbc:mysql://bob:Zx9!kQ7m@localhost:3306/db",
+      "expectedSync": "jdbc:mysql://bob:[REDACTED:url-credentials]@localhost:3306/db",
+      "expectedAsync": "[REDACTED:database-connection-string]"
+    },
+    {
+      "name": "connection string without credentials",
+      "input": "postgres://db.example.com:5432/app",
+      "expected": "postgres://db.example.com:5432/app"
+    },
+    {
+      "name": "vault service token",
+      "input": "hvs.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "hvs.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:hashicorp-vault]"
+    },
+    {
+      "name": "vault batch token",
+      "input": "hvb.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "hvb.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:hashicorp-vault]"
+    },
+    {
+      "name": "vercel token",
+      "input": "vcp_aaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "vcp_aaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:vercel]"
+    },
+    {
+      "name": "databricks token with a suffix",
+      "input": "dapiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-1",
+      "expectedSync": "dapiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-1",
+      "expectedAsync": "[REDACTED:databricks]"
+    },
+    {
+      "name": "databricks token with a suffix followed by hex",
+      "input": "dapiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-1a",
+      "expectedSync": "dapiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-1a",
+      "expectedAsync": "[REDACTED:databricks]-1a"
+    },
+    {
+      "name": "docker token",
+      "input": "dckr_pat_aaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "dckr_pat_aaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:docker]"
+    },
+    {
+      "name": "figma token",
+      "input": "figd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedSync": "figd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedAsync": "[REDACTED:figma]"
+    },
+    {
+      "name": "cloudflare token",
+      "input": "cfut_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaaaaaaa",
+      "expectedSync": "cfut_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaaaaaaa",
+      "expectedAsync": "[REDACTED:cloudflare]"
+    },
+    {
+      "name": "tailscale key",
+      "input": "tskey-auth-aaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedSync": "tskey-auth-aaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedAsync": "[REDACTED:tailscale]"
+    },
+    {
+      "name": "a token that ends exactly at the scan cap is found",
+      "inputGen": {
+        "parts": [
+          [
+            "a",
+            1999959
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ]
+        ]
+      },
+      "expectedGenSync": {
+        "parts": [
+          [
+            "a",
+            1999959
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "a",
+            1999959
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "[REDACTED:npm]",
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a token that starts after the scan cap is not found (compat)",
+      "inputGen": {
+        "parts": [
+          [
+            "a",
+            2000000
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ]
+        ]
+      },
+      "expectedGenSync": {
+        "parts": [
+          [
+            "a",
+            2000000
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "a",
+            2000000
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a token cut by the scan cap is not found (compat)",
+      "inputGen": {
+        "parts": [
+          [
+            "a",
+            1999979
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ]
+        ]
+      },
+      "expectedGenSync": {
+        "parts": [
+          [
+            "a",
+            1999979
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "a",
+            1999979
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a token that crosses the end of the first scan window is found",
+      "inputGen": {
+        "parts": [
+          [
+            "a",
+            99980
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "a",
+            20000
+          ]
+        ]
+      },
+      "expectedGenSync": {
+        "parts": [
+          [
+            "a",
+            99980
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "a",
+            20000
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "a",
+            99980
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "[REDACTED:npm]",
+            1
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "a",
+            20000
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a token inside the overlap of two scan windows is redacted once",
+      "inputGen": {
+        "parts": [
+          [
+            "a",
+            95000
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "a",
+            40000
+          ]
+        ]
+      },
+      "expectedGenSync": {
+        "parts": [
+          [
+            "a",
+            95000
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            1
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "a",
+            40000
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "a",
+            95000
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "[REDACTED:npm]",
+            1
+          ],
+          [
+            " ",
+            1
+          ],
+          [
+            "a",
+            40000
+          ]
+        ]
+      }
+    },
+    {
+      "name": "strict: the units beyond the scan cap are replaced",
+      "inputGen": {
+        "parts": [
+          [
+            "a",
+            2000100
+          ]
+        ]
+      },
+      "mode": "strict",
+      "expectedGenSync": {
+        "parts": [
+          [
+            "a",
+            2000100
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "a",
+            2000000
+          ],
+          [
+            "[REDACTED:size-limit]",
+            1
+          ]
+        ]
+      }
+    }
+  ]
+}

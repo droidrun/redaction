@@ -36,12 +36,10 @@
     "build": "tsc -p tsconfig.build.json",
     "prepack": "node scripts/copy-vectors.mjs"
   },
-  "dependencies": {
-    "@secretlint/secretlint-rule-preset-recommend": "13.0.4",
-    "@secretlint/types": "13.0.4"
-  },
   "devDependencies": {
     "@secretlint/core": "13.0.4",
+    "@secretlint/secretlint-rule-preset-recommend": "13.0.4",
+    "@secretlint/types": "13.0.4",
     "@types/bun": "1.4.3",
     "typescript": "6.0.3"
   },

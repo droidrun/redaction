@@ -3,7 +3,7 @@
  * point for plain text and the JSON-value visitor. A scanner failure falls
  * back to the deterministic rules (see `redactText`); it never passes a secret.
  */
-import { scanText } from './engine.js';
+import { detectFullHits } from './full-rules.js';
 import { applyHits, dedupeRanges, type Hit } from './hits.js';
 import type { RedactMode } from './mode.js';
 import { buildReadPlaceholder } from './placeholder.js';
@@ -18,19 +18,24 @@ const ERROR_RULE_ID = ALGORITHMS_SPEC.ruleIds.error;
 const MIN_SCAN_LEN = ALGORITHMS_SPEC.text.minScanLength;
 
 /**
- * Scan window size — a single string this long or shorter is scanned in one
- * `scanText` call. Longer strings are walked in overlapping windows (see
- * `detectSecrets`) rather than truncated, so a secret anywhere in the string
- * gets caught. The overlap must be at least as large as the biggest contiguous
- * secret the upstream scanners can match (the widest is the PEM body of the
- * privatekey rule, about 10k). The cap is the ceiling on how much of one string
- * is ever scanned by them; the sync rules run over the whole text, and a text
- * beyond the cap is reported as the `redaction.scan.capped` event. Values: spec `full`.
+ * Scan window size: a text this long or shorter is scanned by the full-tier rules in one pass. A longer one is
+ * scanned in overlapping windows (see `detectSecrets`) rather than truncated, so a secret anywhere in it is
+ * caught. The overlap must be at least as large as the biggest contiguous secret of the full tier (the PEM body,
+ * about 10k). The cap is the ceiling on how much of one text the full-tier rules see; the standard rules run over
+ * the whole text, and a text beyond the cap is reported as the `redaction.scan.capped` event. Values: spec `full`.
  */
 const FULL = ALGORITHMS_SPEC.full;
 const MAX_SCAN_LEN = FULL.scanWindow;
 const SCAN_OVERLAP = FULL.scanOverlap;
 const MAX_TOTAL_SCAN_LEN = FULL.scanCap;
+
+/** TypeScript extension (SPEC 13): the hits of the full tier carry the 0.2.0 id of the secretlint rule they were
+ *  ported from, so consumers that read `hits` see no change; the placeholder shortens it to the spec id. */
+const LEGACY_RULE_ID_PREFIX = ALGORITHMS_SPEC.placeholder.stripPrefixes[0] as string;
+
+function withLegacyId(hit: Hit): Hit {
+    return { ruleId: `${LEGACY_RULE_ID_PREFIX}${hit.ruleId}`, range: hit.range };
+}
 
 export type RedactTextOpts = {
     /** `strict` never passes an unscanned text: a scanner failure replaces the whole text and the
@@ -53,16 +58,14 @@ function emitEvent(opts: RedactTextOpts, name: string, attrs: Record<string, unk
 }
 
 /**
- * Unconditional, length-guarded scan: the upstream secretlint scanners plus
- * the sync rules (`sync-rules.ts`), so the async path finds everything the
- * sync path does. Errors propagate to `redactText`, which owns the fail-open
- * contract. Overlapping hits are merged.
+ * Unconditional, length-guarded scan: the full-tier rules of the spec plus the standard rules
+ * (`sync-rules.ts`), so the async path finds everything the sync path does. Errors propagate to `redactText`,
+ * which owns the fail-open contract. Overlapping hits are merged.
  *
- * The scanners see the first `MAX_TOTAL_SCAN_LEN` characters, in overlapping
- * windows when longer than `MAX_SCAN_LEN` (offsets are mapped back to absolute
- * indices; a secret straddling a boundary is covered by the union). The sync
- * rules run over the WHOLE text, so past the scanner cap only the scanner-only
- * formats are not found; a text that long is reported as `redaction.scan.capped`.
+ * The full-tier rules see the first `MAX_TOTAL_SCAN_LEN` characters, in overlapping windows when longer than
+ * `MAX_SCAN_LEN` (offsets are mapped back to absolute indices; a secret straddling a boundary is covered by the
+ * union). The standard rules run over the WHOLE text, so past the cap only the full-tier-only formats are not
+ * found; a text that long is reported as `redaction.scan.capped`.
  */
 export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Promise<Hit[]> {
     if (text.length < MIN_SCAN_LEN) return [];
@@ -75,21 +78,19 @@ export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Pr
         });
     }
     const scanned = capped ? text.slice(0, MAX_TOTAL_SCAN_LEN) : text;
-    const scannerHits = await scanWindows(scanned);
-    return dedupeRanges([...scannerHits, ...detectSyncHits(text)]);
+    return dedupeRanges([...scanWindows(scanned).map(withLegacyId), ...detectSyncHits(text)]);
 }
 
-/** The secretlint scanners over `text` (already capped), in windows when long. */
-async function scanWindows(text: string): Promise<Hit[]> {
+/** The full-tier rules over `text` (already capped), in windows when long. */
+function scanWindows(text: string): Hit[] {
     const scanLen = text.length;
-    if (scanLen <= MAX_SCAN_LEN) return scanText(text);
+    if (scanLen <= MAX_SCAN_LEN) return detectFullHits(text);
 
     const stride = MAX_SCAN_LEN - SCAN_OVERLAP;
     const allHits: Hit[] = [];
     for (let offset = 0; offset < scanLen; offset += stride) {
         const windowEnd = Math.min(offset + MAX_SCAN_LEN, scanLen);
-        const window = text.slice(offset, windowEnd);
-        const windowHits = await scanText(window);
+        const windowHits = detectFullHits(text.slice(offset, windowEnd));
         for (const hit of windowHits) {
             allHits.push({ ruleId: hit.ruleId, range: [hit.range[0] + offset, hit.range[1] + offset] });
         }

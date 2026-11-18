@@ -31,11 +31,11 @@ type VectorCase = {
     expectedGenSync?: Parts;
     expectedGenAsync?: Parts;
 };
-type VectorFile = { description: string; cases: VectorCase[] };
+type VectorFile = { description: string; tier?: 'full'; cases: VectorCase[] };
 
 const VECTORS_DIR = join(import.meta.dir, '..', '..', 'spec', 'vectors');
 const REQUIRED_FILES = [
-    'auth-headers', 'base64', 'entropy', 'false-positives', 'key-formats', 'key-names', 'keywords', 'modes',
+    'auth-headers', 'base64', 'entropy', 'false-positives', 'full', 'key-formats', 'key-names', 'keywords', 'modes',
     'nested-json', 'url-query',
 ];
 

@@ -1,8 +1,7 @@
 /**
  * runtime-free.test.ts — importing `./sync` or the full entry needs no Node built-in, file access or
  * `import.meta` in this package's own code: every module reachable from the entries through relative
- * imports is scanned. (The full entry also loads the secretlint scanners; those are dependencies and
- * out of scope here, the `./sync` entry loads none, see sync-entry.test.ts.)
+ * imports is scanned (the full-tier rules are part of that code; secretlint is no dependency).
  */
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';

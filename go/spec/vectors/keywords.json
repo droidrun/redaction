@@ -60,7 +60,7 @@
       "name": "aws secret access key",
       "input": "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYzzzzKEY9xxx1",
       "expectedSync": "AWS_SECRET_ACCESS_KEY=[REDACTED:generic-keyword]",
-      "expectedAsync": "[REDACTED:aws]"
+      "expectedAsync": "AWS_SECRET_ACCESS_KEY=[REDACTED:aws]"
     },
     {
       "name": "already a placeholder (idempotent)",

@@ -19,7 +19,9 @@ def expand_gen(gen: dict[str, Any]) -> str:
 def load_vector_files() -> list[tuple[str, dict[str, Any]]]:
     root = resources.files("droidrun_redaction").joinpath("spec", "vectors")
     names = sorted(entry.name for entry in root.iterdir() if entry.name.endswith(".json"))
-    return [(name, json.loads(root.joinpath(name).read_text(encoding="utf-8"))) for name in names]
+    files = [(name, json.loads(root.joinpath(name).read_text(encoding="utf-8"))) for name in names]
+    # A file marked `"tier": "full"` needs the full tier, which this package does not have yet.
+    return [(name, file) for name, file in files if file.get("tier") != "full"]
 
 
 def load_corpus() -> dict[str, Any]:

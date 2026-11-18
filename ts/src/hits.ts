@@ -3,10 +3,9 @@
  * Shared by the async (`redact-text.ts`) and the sync (`redact-sync.ts`) path,
  * so both produce the same output for the same hits.
  */
-import type { EngineHit } from './engine.js';
 import { buildPlaceholder, buildReadPlaceholder } from './placeholder.js';
 
-export type Hit = EngineHit;
+export type Hit = { ruleId: string; range: readonly [number, number] };
 
 /** Sort ascending by start, then MERGE overlapping/touching ranges into their
  *  union — two rules firing on overlapping spans (e.g. an AWS-shaped match

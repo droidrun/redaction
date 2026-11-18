@@ -9,9 +9,9 @@ vectors alone, without reading the TypeScript.
 
 Words in capitals (MUST, MUST NOT, MAY) are used in the RFC 2119 sense.
 
-Contents: 1 Scope and units, 2 Portable grammar, 3 Spec files and macros, 4 Standard-tier
-detection, 5 Shared algorithms, 6 Key names, 7 Placeholders, hits and splicing, 8 JSON contract,
-9 Tiers and modes, 10 ReDoS rules, 11 Metadata, 12 Spec integrity, 13 TypeScript extensions,
+Contents: 1 Scope and units, 2 Portable grammar, 3 Spec files and macros, 4 Detection (4.1 to 4.10 standard
+tier, 4.11 to 4.17 full tier), 5 Shared algorithms, 6 Key names, 7 Placeholders, hits and splicing, 8 JSON
+contract, 9 Tiers and modes, 10 ReDoS rules, 11 Metadata, 12 Spec integrity, 13 TypeScript extensions,
 14 Conformance vectors, 15 Known portability risks.
 
 ## 1. Scope and units
@@ -80,10 +80,13 @@ Banned:
 | rule id outside `^[a-z0-9-]+$` | ids are part of the placeholder |
 
 The linter checks **every** regex-bearing field of a rule, found by name: `pattern`, `header`, `footer`,
-`prefix`, `bearer`, `scheme`, `label`, `queryKey` hold patterns; `notBefore`, `notAfter` and every field ending
-in `Class`, `Char`, `Stop` or `End` hold exactly one character class; `id`, `kind`, `lead`, `separator`,
-`footerMarker`, `requireLiteral` are literal text. A string field with another name is an error, so a new
-field cannot escape the checks.
+`prefix`, `bearer`, `scheme`, `label`, `queryKey` and the list `variablePatterns` hold patterns; `notBefore`,
+`notAfter` and every field ending in `Class`, `Char`, `Stop` or `End` hold exactly one character class; `id`,
+`kind`, `lead`, `leads`, `separator`, `footerMarker`, `requireLiteral`, `lit`, `alt`, `tails`, `magic`,
+`ignoreEquals`, `userIgnoreContains`, `passwordIgnoreContains`, `passwordIgnoreEquals`, `stripLiteral`,
+`newline`, `dash`, `underscore`, `check`, `plainWords`, `queryOnlyKeys` are literal text. The check looks into
+nested objects and lists (the `parts` of a token). A string field with another name is an error, so a new field
+cannot escape the checks.
 
 A pattern is searched, never anchored: matches are found left to right, each starting at the
 leftmost position where the pattern matches, with the preference order of Perl-style engines
@@ -110,7 +113,8 @@ refuse to load. `spec/schema/*.schema.json` are JSON Schemas for the files.
   `{ "join": J, "words": [[w, ...], ...] }` (or `"fromKeys": "secretWords"` instead of `words`,
   which takes the word lists of `keys.json`).
 - `patterns.placeholder`: the placeholder grammar (section 7).
-- `pipeline`: the ordered rule list (section 4).
+- `pipeline`: the ordered rule list of the standard tier (sections 4.1 to 4.10).
+- `full`: the ordered rule list of the full tier, the ported secretlint preset (sections 4.11 to 4.17).
 
 **Expansion.** Every string that is a pattern or a class is expanded before use: each `{{NAME}}`
 is replaced by the macro `NAME`, repeatedly until nothing changes (nesting depth at most 8; more
@@ -130,12 +134,13 @@ string.
 `k`, and changes nothing else. Every comparison of words and every `lower(x) ==` test below uses
 it (JavaScript `toLowerCase` gives the same result on every string such a comparison can match).
 
-`keys.json` (section 6) and `algorithms.json` hold word lists and numeric parameters; they are
-named where they are used.
+`keys.json` (section 6) and `algorithms.json` hold word lists and numeric parameters (and the letter table
+of section 5.6); they are named where they are used.
 
-## 4. Standard-tier detection
+## 4. Detection
 
-`detect(text)` returns the merged hits of the standard tier.
+Sections 4.1 to 4.10 are the standard tier, 4.11 to 4.17 the full tier. `detect(text)` returns the merged hits of
+the standard tier.
 
 1. Let `hits` be empty. For each rule of `pipeline` in order, run the rule kind below on the whole
    text. It returns ranges in the order given by its kind. Append `(rule.id, start, end)` for each
@@ -155,7 +160,7 @@ Rule kinds. `P` is the expanded pattern text; `scan(P)` is the global search of 
 ### 4.1 `regex`
 
 Fields: `pattern`, optional `group` (default 0), `notBefore`, `notAfter`, `requireClass`,
-`requireLiteral`, `dropPlaceholder`.
+`requireLiteral`, `dropPlaceholder`, `ignoreEquals`.
 
 1. Find matches of `pattern` left to right. The candidate range is the whole match, or the span of
    capture group `group`.
@@ -166,7 +171,8 @@ Fields: `pattern`, optional `group` (default 0), `notBefore`, `notAfter`, `requi
    accepted match restarts at `e`.
 3. **Filters** on the candidate, all that are present: `requireClass`: the candidate text contains
    a unit of the class; `requireLiteral`: it contains the literal; `dropPlaceholder`: it is not an
-   `isPlaceholderValue`. A candidate that fails a filter is dropped (the search is not
+   `isPlaceholderValue`; `ignoreEquals`: its text is not equal to one of the listed strings (exact, case
+   sensitive). A candidate that fails a filter is dropped (the search is not
    restarted: the match was consumed).
 4. Output the surviving candidates in order.
 
@@ -354,6 +360,159 @@ keep the first rule's id (section 7): `jwt`, `gcp-api-key`, `xai-api-key`, `plat
 `cookie`, `auth-header`, then `generic-keyword` (keyword pairs, quoted pairs, unquoted pairs in
 that order), then `key-context` (query values).
 
+### 4.11 `token` (full tier)
+
+A key format: literals and runs of units of a class, an optional letter guard in front, and a class that must
+not follow. It is what the upstream expression `(?<!\p{L})PREFIX[CLASS]{a,b}(?![CLASS2])` means, written without
+backtracking. Fields: `parts` (list), optional `letterGuard` (boolean), `notAfter` (a class), `check`
+(`base64-json`) and `checkFrom` (a unit offset, default 0).
+
+A part is one of: `{lit}` (a literal); `{alt}` (a list of literals, none a prefix of another; the first that
+matches at the position is taken); `{runClass, min, max}` (a run of units of the class, with optional `tails`);
+`{opt}` (a list of literals and fixed runs; tried first, then skipped when the rest of the shape fails). The first
+part is a `lit` or `alt`.
+
+`scanToken(text)`: for each position `s` where a first literal starts (left to right, each position once):
+
+1. If `letterGuard` and the letter guard (5.6) refuses `s`: go on with `s + 1`.
+2. Match the parts in order from `s`, with `p` the current position:
+   - `lit` / `alt`: the text at `p` starts with the literal; `p` moves past it.
+   - a **fixed run** (`min == max`, no `tails`): the next `min` units are all in the class.
+   - a **variable run**: let `end` be the end of the **maximal** run of the class from `p` and `n = end - p`.
+     Without `tails`, `min <= n <= max` is required. With `tails`: the first tail (list order) the run ends with
+     (the units of the tail are the last units of the run); `n` is then the run length minus the tail length, and
+     `min <= n <= max` is required; no such tail fails. `p = end`.
+   - `opt`: match its parts from `p`; if that and everything after it succeeds, take it; otherwise continue
+     after the `opt` from `p` unchanged.
+3. After the last part: if `p < length` and `text[p]` is in `notAfter`, the match fails (for an `opt` this
+   makes the shape try again without it).
+4. A failed shape goes on with `s + 1`. A match `[s, p)` is dropped when `check` is set and the check fails on
+   `text[s + checkFrom .. p)` (the match is still consumed); otherwise it is output. Scanning goes on at `p`.
+
+**Run memory (normative).** The end of a maximal run is measured once and reused: for every variable-run part of a
+shape (not for every class: two parts of one class are two memories) an implementation keeps the last run it
+measured in the scan (its start and end) and, when a later start asks for a run that begins inside it, answers
+with the remembered end instead of walking the run again. Starts only move forward, so the work of one rule over
+one text is linear. A memory per class is **not conforming**: the parts of one class overwrite each other, and
+`ghs_1_` repeated 170 times, then `.`, then 100,000 `a` measures the long run again at every start (about 2,000
+times slower than the memory per part on a 2,000,000-unit text; `tools/lib/attacks.ts` holds this attack for
+every shape with repeated run classes). The memory of a part is made when the part first runs in a scan.
+
+The maximal run equals what the backtracking expression finds under conditions that `tools/lint-spec` checks:
+what follows a variable run never starts with a unit of the run's class, and a variable run at the end of the
+shape (or followed only by runs with `min` 0) needs `notAfter` to contain its class, so every shorter run is
+refused. A fixed run has no alternative. The checks are on the rule data, so a new rule cannot break them.
+
+`check` `base64-json` (5.7) is used by the 1Password rule. A `check` name the implementation does not know stops the
+package at load time (it is never read as "no check").
+
+### 4.12 `dash-chain` (full tier)
+
+Slack tokens: `\b(?:xoxb|xoxp|xapp|xoxa|xoxo|xoxr)-(?:\d-)?(?:[a-zA-Z0-9]{1,40}-)+[a-zA-Z0-9]{1,40}\b` written
+without backtracking. Fields: `leads`, `separator`, `segmentClass`, `wordClass`, `maxSegment` (40), `minSegments`
+(2). For each position `s` where a lead starts (left to right):
+
+1. `s` is refused when `text[s - 1]` is a `wordClass` unit (a word boundary is needed in front: the lead starts
+   with a word unit). Else go on with `s + 1`.
+2. After the lead the text must have `separator`.
+3. The **chain**: from the position after it, repeat: `run` is the maximal run of `segmentClass`; stop when its
+   length is 0 or above `maxSegment`; otherwise record its end and, when `text[end]` is the separator, go on after
+   it, else stop. Let `K` be the number of recorded runs.
+4. The token ends at the last run if the unit after that run is not a `wordClass` unit (a word boundary), else at
+   the run before it. `used` is the number of runs the token has (`K`, or `K - 1`). If `used < minSegments`
+   the start fails (go on with `s + 1`).
+5. Output `[s, end of run used)`; scanning goes on at its end.
+
+The optional leading digit of the expression only moves the first run out of the repeated group; it never changes
+the match (the same chain, the same end), so it is not part of the data.
+
+### 4.13 `sendgrid-key` (full tier)
+
+SendGrid keys: `(?<!\p{L})SG\.\w{1,128}\.\w{1,128}([-_]?)\w{1,128}(?!\w)` and only a match of exactly 69 units is
+a key. The expression backtracks, so *which* match it finds decides what the scan consumes, even when the length
+test then drops it. Fields: `lead` (`SG.`), `separator` (`.`), `wordClass`, `dash`, `maxSegment` (128), `length` (69). For each position `s` where `lead` starts:
+
+1. Letter guard (5.6); refused: go on with `s + 1`.
+2. `A` = the maximal run of `wordClass` after `lead`; its length is `1..maxSegment` and `text[end of A]` is
+   `separator`, else the start fails. `p` = the position after the separator.
+3. `R` = the maximal run of `wordClass` from `p`, `r` its length, `E = p + r`. `r == 0` fails. Then, in this order,
+   the first that holds gives the end of the match:
+   a. `r <= maxSegment`, `text[E]` is `dash`, and the maximal run `C` of `wordClass` after it has length
+      `1..maxSegment`: the end is the end of `C`.
+   b. `2 <= r <= 2 * maxSegment`: the end is `E`.
+   Else the start fails (`s + 1`).
+4. The match `[s, end)` is consumed (scanning goes on at `end`) and output only when `end - s == length`.
+
+(These are the matches of the backtracking expression: the two runs after the separator share one run `R` unless
+the joiner is the dash, and a dash can only follow a run that is not longer than `maxSegment`. The expression has
+one more match, `r == 2 * maxSegment + 1` with `_` as the joiner at offset `maxSegment`; it is left out because it
+changes no output: its length is above 69, so it is never a key, and it cannot hide another start, since a start
+inside the match needs `SG.` and the match holds a `.` only at its separator.)
+
+### 4.14 `pem-key` (full tier)
+
+The private key rule of the preset: header, body of 100 to 10000 units, footer, and a body that really is the
+base64 of a key. Unlike `pem-blocks` (4.3) an unterminated or invalid block is **not** a hit. Fields: `header`,
+`footer` (patterns), `bodyClass` (no `-` in it), `minBody`, `maxBody`, `newline` (a line feed), `stripClass`,
+`stripLiteral` (the two units `\` and `n`), `contentClass`, `padChar`, `minContent`, `magic`. The header search
+resumes at `h + 1` after a failed start (a header may start inside the trailing dashes of the previous one) and
+at the footer end after a hit. For each header match `[h0, h)`:
+
+1. `E` = the end of the maximal run of `bodyClass` from `h`, `L = E - h`, `lead` = `text[h]` is `newline`,
+   `trail` = `L > 0` and `text[E - 1]` is `newline`.
+2. The body length is acceptable when one of `L`, `L - 1` (if `lead`), `L - 1` (if `trail`), `L - 2` (if both,
+   `L >= 2`) is in `minBody..maxBody` (the expression may or may not take the line feed after the header and the
+   one before the footer into the body).
+3. The footer pattern must match **exactly at `E`** (anchored there; the body class has no `-`, so the body ends
+   at `E`).
+4. `content` = the text `[h, E)` without every unit of `stripClass` and without every occurrence of
+   `stripLiteral`, scanned left to right (a unit of the class is removed; else if `stripLiteral` starts here it is
+   removed as a whole; else the unit is kept). It is valid when it starts with one or more units of
+   `contentClass`, then only `padChar` units, is at least `minContent` long, and starts with one of `magic`.
+5. A valid block outputs `[h0, footer end)`.
+
+### 4.15 `credential-uri` (full tier)
+
+URLs that carry `user:password@`, from the basic-auth and database-connection-string rules. Fields: `pattern`
+(capture group 1 = user, group 2 = password; every other group is non-capturing), `userMin`, `passwordMin`,
+`userIgnoreContains`, `passwordIgnoreContains`, `passwordIgnoreEquals`, `userEqualsPassword`,
+`variablePatterns`, `repeatRun`. For each match of `pattern` (left to right, each match consumed whether it is
+reported or not), skip it when group 1 or group 2 did not take part or is empty. Otherwise report the **whole
+match** when all hold (`lower` is section 3; `contains` is a substring test on the lower-cased texts):
+
+- `length(user) >= userMin` (0 when absent); `lower(user)` contains none of `userIgnoreContains` (lower-cased);
+- not (`userEqualsPassword` and `user == password`, case sensitive);
+- `length(password) >= passwordMin`;
+- no pattern of `variablePatterns` has a match in `password` (a search, anywhere);
+- `lower(password)` contains none of `passwordIgnoreContains` and equals none of `passwordIgnoreEquals`;
+- `password` is not `repeatRun` or more units that are all the same unit.
+
+(The standard tier already replaces such a password by `[REDACTED:url-credentials]`, which the full tier then reads
+as a real password: the output of the standard tier is not a fixed point of the full tier for a URL whose password
+the checks reject; the upstream rules behave the same and no vector covers it.) (The basic-auth class of user and password has no `$ { } % ( )`, so the template patterns of the upstream
+basic-auth rule can never match there; they are left out of that rule's data.)
+
+### 4.16 Rule order of the full tier
+
+`rules.json` lists `full` in the order of the upstream preset, and the order is normative for ties (below):
+`aws` (key id, account id, secret access key), `privatekey`, `npm`, `basicauth`, `slack` (token, webhook),
+`sendgrid`, `shopify`, `stripe`, `github` (classic, fine-grained, app installation), `gitlab`, `grafana` (cloud,
+service account), `openai`, `anthropic`, `groq`, `huggingface`, `linear`, `notion`, `1password`,
+`database-connection-string` (MongoDB, MySQL, PostgreSQL), `hashicorp-vault` (service, batch, recovery),
+`vercel`, `databricks`, `docker`, `figma`, `cloudflare`, `tailscale`. Rule ids are the upstream ids without the
+`@secretlint/secretlint-rule-` prefix.
+
+### 4.17 Full-tier detection
+
+`detectFull(text)`: run every rule of `full` on the text (the first `full.scanCap` units, 9.4); the hits are
+`(rule id, start, end)`, stable-sorted by `start`, then by `end` (equal pairs keep rule order). The full tier's
+`detect` is `merge(detectFull(text) ++ detect(text))` (section 7): the full-tier hits come first, so on an equal
+start their rule id wins. The AWS secret access key rule reports the 40 units of the secret (`group` 1), not
+`[match start, match start + 40]` as the upstream rule does (decided by Lutz, 2026-11-18, L-K); this is the only
+deviation from the upstream preset, and the parity test names it. Not ported (INVENTORY.md): `gcp`,
+`filter-comments`, and the two `npm` branches that need a `package.json` or `.npmrc` file name, which the package
+never supplies.
+
 ## 5. Shared algorithms
 
 ### 5.1 Guarded run
@@ -436,6 +595,31 @@ characters, so an astral character (two units) or a lone surrogate is allowed in
 (`your`, `my`, `the`, `replace`, `insert`, `example`, `dummy`, `sample`) followed by a unit in `separator`
 (`_` or `-`), or ends with one of `suffixes` (`here`) preceded by a unit in `separator`. (`your_api_key_here`,
 `REPLACE_ME_TOKEN`.)
+
+### 5.6 Letter guard
+
+`passesLetterGuard(text, i)` is the upstream lookbehind `(?<!\p{L})`: true when `i == 0` or the code point that
+ends at `i` is not a letter. The code point before `i` is the pair `text[i-2], text[i-1]` when `text[i-1]` is a
+low surrogate and `text[i-2]` a high surrogate (one astral code point), else the unit `text[i-1]` (a lone
+surrogate is not a letter). A letter is a code point of `algorithms.json` `letters.ranges`: the Unicode 15.0.0
+General Categories Lu, Ll, Lt, Lm and Lo as sorted, merged ranges `lo-hi` (hex, a single code point without a
+dash) joined by `,`, generated by `tools/gen-letters.ts` from `UnicodeData.txt` 15.0.0 (SHA-256 pinned in the
+generator). No language uses its own `\p{L}` (the runtimes differ in Unicode version); the table is the
+definition. The generator reports the code points where a runtime's `\p{L}` differs from the table (Node 26,
+Unicode 17: only code points added to Unicode after 15.0).
+
+### 5.7 Base64 JSON check
+
+`isBase64Json(s)` (the 1Password token, `check: base64-json`; `s` has only units of `[A-Za-z0-9+/=]`):
+
+1. **Decode** (WHATWG forgiving base64): if `length(s)` is a multiple of 4 remove one or two trailing `=`; if
+   `length mod 4 == 1` it fails; a unit outside `A-Za-z0-9+/` (an `=` left in the middle or at a length that is
+   not a multiple of 4) fails. Every 6 bits give a byte; bits that do not fill a byte are dropped. Each byte is one
+   unit (Latin-1; no UTF-8 decoding).
+2. The bytes are **one JSON text** (ECMA-404: whitespace only space, tab, LF, CR; literals `true false null`;
+   numbers `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`; strings with units from U+0020, the escapes `\" \\ \/
+   \b \f \n \r \t` and `\uXXXX`; no trailing comma) whose top value is an **object or array**. The check is
+   iterative (no depth limit): do not use a library parser.
 
 ## 6. Key names
 
@@ -566,15 +750,14 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
 **Tiers**:
 
 - `standard`: the rules of section 4.
-- `full`: the standard rules, plus the upstream secretlint preset (`@secretlint/secretlint-rule-preset-recommend`
-  13.0.4 without `filter-comments`, AWS ID scanning on; the engine configuration is a TypeScript constant,
-  section 13, not spec data), merged with the standard hits. The upstream rules are specified in `INVENTORY.md`, not yet in this
-  document (a later slice ports them). **Until then only the TypeScript implementation has the full tier;
-  another implementation's `full` equals `standard`**, and the vectors with different `expectedSync` and
-  `expectedAsync` are the backlog. The upstream scanners see only the first `full.scanCap` (2,000,000)
-  units of a text, in windows of `full.scanWindow` (100,000) units that overlap by `full.scanOverlap`
-  (10,240) (stride = window minus overlap, last window ends at the cap); the standard rules always see
-  the whole text. A text longer than the cap is reported by the event `redaction.scan.capped`.
+- `full`: the standard rules plus the **full-tier rules** (`rules.json` `full`, sections 4.11 to 4.17): the
+  secretlint preset `@secretlint/secretlint-rule-preset-recommend` 13.0.4 without `filter-comments` and `gcp`, AWS
+  key id and account id scanning on, ported into the spec (INVENTORY.md). The full tier's `detect` is the merge of
+  its rules' hits and the standard hits (4.17). Every implementation has the full tier. The full-tier rules see
+  only the first `full.scanCap` (2,000,000) units of a text, in windows of `full.scanWindow` (100,000) units that
+  overlap by `full.scanOverlap` (10,240) (stride = window minus overlap, last window ends at the cap; the hits of
+  a window are moved by its offset and merged); the standard rules always see the whole text. A text longer than
+  the cap is reported as the event `redaction.scan.capped`.
 
 **Entry points** (TypeScript names; the contract is language neutral): redact a text, redact a JSON
 value; each in the `standard` tier (the sync entry) and the `full` tier (the async entry).
@@ -582,7 +765,7 @@ value; each in the `standard` tier (the sync entry) and the `full` tier (the asy
 **Modes**:
 
 - `compat` (TypeScript default; reproduces v0.2.0). The standard tier fails closed. The full tier fails
-  open: when its scanners fail it falls back to the standard rules, and a text beyond the scan cap is
+  open: when its rules fail it falls back to the standard rules, and a text beyond the scan cap is
   scanned by the standard rules only.
 - `strict` (Python and Go default; an option in TypeScript). **No path returns text that was not scanned.**
   Any internal error, cap or limit gives an error placeholder or `[REDACTED:size-limit]` for the unscanned
@@ -652,8 +835,8 @@ Everything else (order, verdicts, number handling, key redaction) is as in 9.2.
 
 ### 9.4 Full tier
 
-- `compat`: text: `detect` is the upstream scanners over the first `scanCap` units (windowed) plus `detect`
-  over the whole text, merged; splice. A detector failure emits the event `redaction.detect.failed` with the
+- `compat`: text: `detect` is the full-tier rules over the first `scanCap` units (windowed) plus `detect`
+  over the whole text, merged (4.17); splice. A detector failure emits the event `redaction.detect.failed` with the
   error class only, then returns the result of `detect` alone, or `[REDACTED:error]` with the hit `(error,
   0, 0)` if that fails too. JSON: each string leaf is a text of this kind; keys use the sync key redaction;
   no depth, node or character limit (a TypeScript behaviour kept for compatibility).
@@ -727,8 +910,9 @@ These exist for compatibility with v0.2.0 and never change what is detected:
   `[REDACTED:size-limit]`; an `Error` is read as `{name, message, stack}`; an object with `toJSON` as its
   result; a cycle becomes `[REDACTED:circular]`; a non-string text is turned into a string.
 - `detect` override, `onEvent` callback, `skipKeys` option.
-- The configuration of the upstream secretlint engine (excluded rules, AWS options) and the `last4` threshold
-  (16) and masked characters (`[` and `]`).
+- The hits of the full tier carry the 0.2.0 rule id `@secretlint/secretlint-rule-<id>` in `hits` (the placeholder
+  shortens it to `<id>`, section 7); the other languages report `<id>`.
+- The `last4` threshold (16) and masked characters (`[` and `]`).
 
 All data of these extensions is **TypeScript constants in `ts/src`**, outside the hashed spec files: changing
 one never changes the spec hash that Python and Go embed, and none of them affects detection of the standard
@@ -747,6 +931,11 @@ can hide:
 - Defaults of the limits are the values of section 9; an implementation never hard-codes another default.
 - `strict` is the default mode in Python and Go and an option in TypeScript (section 9).
 - The key predicate and verdict are public (section 6).
+- **Go: two deviations beyond the limits are allowed** (decided by Lutz, 2026-11-18), both fail closed and never
+  leave text unscanned: (1) the strict parse budget of `RedactJSON` counts the strings of secret-named keys too
+  (the other languages receive a parsed value, so they cannot meet this limit earlier than the walk does); (2) when
+  the node limit cuts a container, the cut is made in document order (the order Go's streaming decoder sees the
+  members), not in the contract order of section 8. Every cut part is replaced by `[REDACTED:size-limit]`.
 
 ## 14. Conformance vectors
 
@@ -774,7 +963,9 @@ same seeded corpus through every implementation.
 - **Percent decoding**: UTF-8 decoding of `%XX` runs must reject exactly what ECMAScript
   `decodeURIComponent` rejects (overlong forms, surrogate code points, truncated sequences); then the value
   is left whole (4.9).
-- **Unicode letter guard** (upstream rules, later slice): needs one pinned Unicode version across languages.
+- **Unicode letter guard** (full tier, 5.6): the table is pinned to Unicode 15.0.0 and is data of the spec; a
+  language must not use its own `\p{L}`, `unicodedata` or `unicode.IsLetter`, whose Unicode version differs
+  (the generator lists the code points where Node 26 differs: only letters added after 15.0).
 - **Unit counting** (section 1): the most likely source of drift (astral characters inside values and keys,
   lone surrogates, invalid UTF-8 in Go).
 - **Numbers**: the double model of section 8 is the contract; big integers are rounded, not preserved.

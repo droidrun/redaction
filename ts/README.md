@@ -1,9 +1,9 @@
 # @droidrun/redaction
 
 Secret detection and redaction for text and JSON values, with the same rules
-and placeholders for every consumer. Runs the pinned secretlint scanners directly;
-`@secretlint/core` and `@secretlint/profiler` are absent from the runtime import graph.
-No consumer-side dependency patch is needed.
+and placeholders for every consumer. The rules, including the formats that 0.2.0 took from secretlint,
+are data in `../spec/` that this package interprets; secretlint is no longer a dependency (it is the test
+oracle only). No consumer-side dependency patch is needed.
 
 ## Install
 
@@ -37,13 +37,13 @@ Pass the secret with `docker build --secret id=npm_token,env=NODE_AUTH_TOKEN .`.
 | | sync | async (full) |
 |---|---|---|
 | Functions | `redactTextSync`, `redactJsonValueSync` | `redactText`, `redactJsonValue`, `detectSecrets` |
-| Rules | deterministic regex rules only | the same rules **plus** the upstream secretlint scanners |
+| Rules | the standard tier | the standard tier **plus** the full tier (the ported secretlint rules: AWS, GitHub, Slack, npm, 1Password, private keys, database connection strings, …) |
 | Use for | logs, spans, error bodies, hot paths | stored user content, API read responses |
-| Bounds | character, node and depth limits; **fails closed** | scanner windows and a 2 MB scanner cap; a scanner failure falls back to the sync rules |
+| Bounds | character, node and depth limits; **fails closed** | a 2 MB cap for the full-tier rules; a failure falls back to the sync rules |
 | Budget | about 30 ms for 1,000 action rows | about 75 ms for 1,000 action rows |
 
 The sync rules are the one rule source: the async path runs them over the whole text and
-adds the secretlint scanners (AWS, GitHub, Slack, npm, 1Password, database connection strings, …).
+adds the full-tier rules (AWS, GitHub, Slack, npm, 1Password, database connection strings, …).
 A secret both find is reported once; the earlier hit's rule id wins (the scanner's), so
 `AWS_SECRET_ACCESS_KEY=…` is `[REDACTED:aws]` async and
 `AWS_SECRET_ACCESS_KEY=[REDACTED:generic-keyword]` sync. The conformance vectors record both.
@@ -69,7 +69,7 @@ const safe = await redactJsonValue(stored, stats);
 ### The `./sync` entry
 
 `import { redactTextSync, redactJsonValueSync, restoreRedacted } from '@droidrun/redaction/sync'`
-loads **no secretlint module** (a test enforces it): use it in loggers, spans and edge workers
+loads no full-tier code (a test enforces it): use it in loggers, spans and edge workers
 where start-up and bundle size matter. It exports the sync redactors, `restoreRedacted`,
 `isSecretKeyName`, `keyVerdict`, `STRUCTURAL_SKIP_KEYS`, `PLACEHOLDER_RE`, `buildPlaceholder`,
 `buildReadPlaceholder` and `shortenRuleId`; the main entry re-exports all of them.
@@ -159,9 +159,11 @@ What a secret-named key does to the value below it:
   matcher, kept unchanged for existing consumers (it also hits `secretary` and `tokenizer` and
   misses `x-auth-token`); use `isSecretKeyName`.
 
-The scanners are the recommended secretlint rules (without the comment filter, so
-`secretlint-disable` comments cannot suppress findings; AWS ID scanning on). The JWT, Google, xAI
-and keyword rules that 0.1.1 ran as secretlint rules are now the sync rules, with the same ids.
+The full tier is the recommended secretlint 13.0.4 rule set, ported into the spec (`spec/INVENTORY.md`):
+without the comment filter, so `secretlint-disable` comments cannot suppress findings, and without the
+`gcp` rule; AWS key ids and account ids are on. The one difference from secretlint: an AWS secret access key is
+reported over the secret itself, not from the key name. The JWT, Google, xAI and keyword rules that 0.1.1
+ran as secretlint rules are the sync rules, with the same ids.
 
 ## Placeholders
 
@@ -262,9 +264,8 @@ semantics are in [`../spec/SPEC.md`](../spec/SPEC.md).
 
 - Secrets split across different string leaves are not reassembled or detected.
 - Skipped primitive values (`type`, `id`) are never scanned, even if they contain a secret.
-- The secretlint scanners see 100,000-character windows (10,240 overlap) of the first 2,000,000
-  characters of each leaf; beyond that only the sync rules run (fail closed for the sync formats,
-  documented gap for scanner-only formats).
+- The full-tier rules see the first 2,000,000 characters of each leaf; beyond that only the sync rules
+  run (fail closed for the sync formats, documented gap for full-tier-only formats).
 - Short, unlabeled passwords in free text are not detected; a secret-named key provides the context
   to redact such a value.
 - Keys are only scanned for secrets, not renamed otherwise; two keys that become the same
@@ -297,11 +298,11 @@ rule in `../spec/`, then run `../tools/sync-spec`. The conformance vectors are c
 `prepack`. `src/golden.test.ts` replays a seeded corpus of 12,000+ inputs and requires the
 output recorded from the unchanged package at commit b12879a, byte for byte.
 
-The exact `13.0.4` pins of `@secretlint/secretlint-rule-preset-recommend` and
-`@secretlint/types` are load-bearing: dependency bumps need green parity and rule-shape guard tests.
-Parity tests use `@secretlint/core` only as a development dependency. A separate
-process verifies that importing the public entry and scanning a 300 kB input
-loads neither core nor the profiler. The suite also runs the conformance vectors on both
+`@secretlint/core`, `@secretlint/secretlint-rule-preset-recommend` and `@secretlint/types` (all `13.0.4`)
+are development dependencies: the oracle of `src/secretlint-parity.test.ts`, which requires the same
+(rule id, range) pairs as the preset in both directions on the upstream fixtures, the golden corpus and
+seeded near-misses (one documented AWS deviation). `tools/check-pack.ts` verifies that the packed package
+imports no `@secretlint` module. The suite also runs the conformance vectors on both
 entries, a seeded fuzz test (3,000 sync and 600 async cases per family: no leak of an injected
 marker in values, keys, escaped JSON, URL userinfo, nested queries, cookies; idempotence; restore
 round trip, also after deleting, inserting and reordering items), the perf and adversarial budgets,

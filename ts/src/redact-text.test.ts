@@ -202,25 +202,27 @@ describe('idempotence + overlap', () => {
 
     test('a later, farther-reaching overlapping hit is MERGED (unioned), not dropped ' +
         '— no secret material survives past the first hit\'s end', async () => {
-        // Exact repro of the P1 finding: the AWS rule fires on [0,40) and the
-        // generic-keyword rule (triggered by "SECRET" in the label) fires on
-        // [22,62) of this fixture — a genuine overlap, not a nested/duplicate
-        // match. The old dedupe kept only the first-sorted hit ([0,40)) and
-        // silently dropped the second, leaving chars 40-62 — real secret
-        // material — in plaintext after redaction.
+        // Two rules fire on [0,6) and [4,10): a genuine partial overlap. The old dedupe kept only the
+        // first-sorted hit and left chars 6-10 — real secret material — in plaintext.
+        const detect = async () => [
+            { ruleId: 'first', range: [0, 6] as const },
+            { ruleId: 'second', range: [4, 10] as const },
+        ];
+        const { text: out, hits } = await redactText('abcdefghijkl', { detect });
+        expect(out).toBe('[REDACTED:first]kl');
+        expect(hits.map((hit) => hit.ruleId)).toEqual(['first', 'second']);
+    });
+
+    test('an AWS secret access key is redacted over the secret itself, the key name stays (SPEC 4.17)', async () => {
+        // secretlint reports [match start, match start + 40], which begins at the key name; the full tier
+        // reports the 40 units of the secret, where the generic-keyword rule agrees with it.
         const secret = 'wJalrXUtnFEMIK7MDENGbPxRfiCYzzzzKEY9xxx1';
         const text = `AWS_SECRET_ACCESS_KEY=${secret}`;
-        const { text: out } = await redactText(text);
-        // Nothing of the secret survives anywhere in the output, including
-        // the tail past the old (buggy) [0,40) cutoff.
-        expect(out).not.toContain(secret);
-        expect(out).not.toContain(secret.slice(18));
-        // The two ranges merge into ONE placeholder spanning the full union
-        // — a single marker built from the merged (62-char) match, carrying
-        // the ruleId of the earliest-starting hit (aws).
-        expect(out).toBe('[REDACTED:aws]');
+        const { text: out, hits } = await redactText(text);
+        expect(out).toBe('AWS_SECRET_ACCESS_KEY=[REDACTED:aws]');
+        expect(hits).toEqual([{ ruleId: '@secretlint/secretlint-rule-aws', range: [22, 62] }]);
         const legacy = await redactText(text, { last4: true });
-        expect(legacy.text).toBe(`[REDACTED:aws:${secret.slice(-4)}]`);
+        expect(legacy.text).toBe(`AWS_SECRET_ACCESS_KEY=[REDACTED:aws:${secret.slice(-4)}]`);
     });
 
     test('two independent, non-overlapping hits in one string both get placeholders', async () => {

@@ -13,7 +13,8 @@
     "docPlaceholder",
     "sync",
     "full",
-    "strict"
+    "strict",
+    "letters"
   ],
   "properties": {
     "specVersion": {
@@ -292,6 +293,23 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 100000000
+        }
+      }
+    },
+    "letters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unicodeVersion",
+        "ranges"
+      ],
+      "properties": {
+        "unicodeVersion": {
+          "const": "15.0.0"
+        },
+        "ranges": {
+          "type": "string",
+          "pattern": "^[0-9a-f]+(-[0-9a-f]+)?(,[0-9a-f]+(-[0-9a-f]+)?)*$"
         }
       }
     }

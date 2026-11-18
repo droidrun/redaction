@@ -11,7 +11,8 @@ for item in payload["patterns"]:
     for attack in payload["attacks"]:
         for size in payload["sizes"]:
             unit = attack["unit"]
-            text = (unit * (size // len(unit) + 1))[:size]
+            head = attack.get("head", "")
+            text = head + (unit * (size // len(unit) + 1))[: max(0, size - len(head))]
             best = float("inf")
             for _ in range(payload["runs"]):
                 started = time.perf_counter()

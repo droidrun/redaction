@@ -24,7 +24,14 @@ import {
     grammarViolations,
     ruleIdViolation,
 } from './lib/grammar.ts';
-import { collectPatterns, readSpecDir, unclassifiedFields, type NamedPattern } from './lib/spec-patterns.ts';
+import {
+    collectPatterns,
+    readSpecDir,
+    RULE_LISTS,
+    unclassifiedFields,
+    type NamedPattern,
+} from './lib/spec-patterns.ts';
+import { tokenShapeProblems } from './lib/token-shape.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
 const SIZES = [100_000, 1_000_000];
@@ -32,6 +39,9 @@ const MAX_RATIO = 30;
 const NOISE_FLOOR_MS = 10;
 const MAX_MS_AT_LARGE = 3000;
 const MAX_INTERPRETER_MS_AT_LARGE = 10_000;
+/** A composite attack (short cluster, long run) may cost at most this many times the plain text of its size. */
+const MAX_COMPOSITE_FACTOR = 20;
+const COMPOSITE_FLOOR_MS = 20;
 const SCALING_DEADLINE_MS = 900_000;
 
 type Problem = string;
@@ -64,20 +74,24 @@ function validateSchemas(dir: string, schemaDir: string): Problem[] {
 
 /** A `regex` rule takes a capture `group` or guards, never both (SPEC 4.1: guarded matches are whole). */
 function ruleShapeProblems(dir: string): Problem[] {
-    return readSpecDir(dir).rules.pipeline.flatMap((rule, index) => {
-        const hasGuard = rule.notBefore !== undefined || rule.notAfter !== undefined;
-        const hasGroup = rule.group !== undefined && rule.group !== 0;
-        if (rule.kind !== 'regex' || !hasGuard || !hasGroup) return [];
-        return [
-            `pipeline[${index}] ${String(rule.id)}: group combined with guards (SPEC 4.1 allows one of them)`,
-        ];
-    });
+    const rules = readSpecDir(dir).rules;
+    return RULE_LISTS.flatMap((list) =>
+        rules[list].flatMap((rule, index) => {
+            const hasGuard = rule.notBefore !== undefined || rule.notAfter !== undefined;
+            const hasGroup = rule.group !== undefined && rule.group !== 0;
+            if (rule.kind !== 'regex' || !hasGuard || !hasGroup) return [];
+            return [
+                `${list}[${index}] ${String(rule.id)}: group combined with guards (SPEC 4.1 allows one of them)`,
+            ];
+        }),
+    );
 }
 
 function ruleIdProblems(dir: string): Problem[] {
     const spec = readSpecDir(dir);
     const ids = [
         ...spec.rules.pipeline.map((rule) => String(rule.id)),
+        ...spec.rules.full.map((rule) => String(rule.id)),
         ...Object.values((spec.algorithms as { ruleIds: Record<string, string> }).ruleIds),
     ];
     return ids.flatMap((id) => ruleIdViolation(id) ?? []);
@@ -175,9 +189,10 @@ function scalingProblems(patterns: NamedPattern[], dir: string): Problem[] {
     return problems;
 }
 
-/** Scaling through `detectSyncHits` of the TypeScript package: the restart loops of every rule kind. */
-function interpreterScalingProblems(dir: string): Problem[] {
-    const payload = JSON.stringify({ attacks: attacksFor(readSpecDir(dir)), sizes: SIZES });
+/** Scaling through `detectSyncHits` and `detectFullHits` of the TypeScript package: the restart loops of every rule kind. */
+export function interpreterScalingProblems(dir: string): Problem[] {
+    const attacks = attacksFor(readSpecDir(dir));
+    const payload = JSON.stringify({ attacks, sizes: SIZES });
     const result = spawnSync('bun', [join(ROOT, 'tools/lint/scaling-interpreter.ts')], {
         input: payload,
         encoding: 'utf8',
@@ -190,9 +205,19 @@ function interpreterScalingProblems(dir: string): Problem[] {
         byAttack.set(timing.attack, { ...(byAttack.get(timing.attack) ?? {}), [timing.size]: timing.ms });
     }
     const problems: Problem[] = [];
+    const composites = new Set(
+        attacks.filter((attack) => attack.head !== undefined).map((attack) => attack.name),
+    );
+    const plain = Math.max(byAttack.get('__plain')?.[SIZES[1] as number] ?? 0, COMPOSITE_FLOOR_MS);
     for (const [attack, times] of byAttack) {
         const small = Math.max(times[SIZES[0] as number] ?? 0, NOISE_FLOOR_MS);
         const large = times[SIZES[1] as number] ?? 0;
+        if (composites.has(attack) && large > plain * MAX_COMPOSITE_FACTOR) {
+            problems.push(
+                `interpreter scaling: ${attack}: ${Math.round(large)} ms at 1 MB, more than ` +
+                    `${MAX_COMPOSITE_FACTOR} times the plain text (${Math.round(plain)} ms): a long run is measured again per start`,
+            );
+        }
         if (large > small * MAX_RATIO || large > MAX_INTERPRETER_MS_AT_LARGE) {
             problems.push(
                 `interpreter scaling: ${attack}: ${Math.round(small)} ms at 100 KB, ` +
@@ -217,6 +242,7 @@ export async function lintDir(
         ...validateSchemas(dir, schemaDir),
         ...ruleIdProblems(dir),
         ...ruleShapeProblems(dir),
+        ...tokenShapeProblems(readSpecDir(dir)),
         ...unclassifiedFields(readSpecDir(dir)),
         ...grammarProblems(patterns),
         ...jsCompileProblems(patterns),
@@ -228,7 +254,16 @@ export async function lintDir(
     return problems;
 }
 
-type Plant = { name: string; rule: string; field: string; value: string | number; expect: string };
+type Plant = {
+    name: string;
+    rule: string;
+    field: string;
+    value: unknown;
+    expect: string;
+    /** Further fields of the rule set with the planted one. */
+    extra?: Record<string, unknown>;
+    list?: 'pipeline' | 'full';
+};
 
 /** Each plant is written into a rule of a copy of the spec; the lint must report it. */
 const PLANTS: Plant[] = [
@@ -358,6 +393,75 @@ const PLANTS: Plant[] = [
         value: '(?<!a)b',
         expect: 'cannot classify',
     },
+    // The full tier: the same checks reach its rules, and its token shapes have their own conditions.
+    {
+        name: 'lookbehind in a full-tier pattern',
+        list: 'full',
+        rule: 'openai',
+        field: 'pattern',
+        value: '(?<![a-z])sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20}',
+        expect: 'lookaround',
+    },
+    {
+        name: 'unknown string field inside a token part',
+        list: 'full',
+        rule: 'gitlab',
+        field: 'parts',
+        value: [
+            { lit: 'glpat-', mystery: '(?<!a)b' },
+            { runClass: '[A-Za-z0-9_-]', min: 20, max: 128 },
+        ],
+        expect: 'cannot classify',
+    },
+    {
+        name: 'variable run followed by a unit of its own class',
+        list: 'full',
+        rule: 'gitlab',
+        field: 'parts',
+        value: [{ lit: 'glpat-' }, { runClass: '[A-Za-z0-9_-]', min: 20, max: 128 }, { lit: 'a' }],
+        expect: 'starts with a unit of its class',
+    },
+    {
+        name: 'variable run at the end without notAfter',
+        list: 'full',
+        rule: 'gitlab',
+        field: 'notAfter',
+        value: undefined,
+        expect: 'without notAfter',
+    },
+    {
+        name: 'notAfter that does not cover the variable run',
+        list: 'full',
+        rule: 'gitlab',
+        field: 'notAfter',
+        value: '[a-z]',
+        expect: 'does not cover',
+    },
+    {
+        name: 'chained range [a-b-c] read as two ranges (the second hyphen is a unit)',
+        list: 'full',
+        rule: 'gitlab',
+        field: 'parts',
+        value: [{ lit: 'x' }, { runClass: '[a-b-c]', min: 1, max: 2 }],
+        extra: { notAfter: '[a-c]' },
+        expect: 'does not cover',
+    },
+    {
+        name: 'alternative that is a prefix of another',
+        list: 'full',
+        rule: 'vercel',
+        field: 'parts',
+        value: [{ alt: ['vc', 'vcp'] }, { lit: '_' }, { runClass: '[A-Za-z0-9]', min: 20, max: 60 }],
+        expect: 'prefix of another',
+    },
+    {
+        name: 'tail with a unit outside the run class',
+        list: 'full',
+        rule: 'anthropic',
+        field: 'parts',
+        value: [{ lit: 'sk-ant-api0' }, { runClass: '[A-Za-z0-9_-]', min: 90, max: 128, tails: ['A!'] }],
+        expect: 'outside the class',
+    },
 ];
 
 function lintPlanted(plant: Plant): Promise<Problem[]> {
@@ -365,11 +469,15 @@ function lintPlanted(plant: Plant): Promise<Problem[]> {
     try {
         cpSync(join(ROOT, 'spec'), copy, { recursive: true });
         const rulesPath = join(copy, 'rules.json');
-        const rules = JSON.parse(readFileSync(rulesPath, 'utf8')) as {
-            pipeline: Array<Record<string, unknown>>;
-        };
-        const target = rules.pipeline.find((rule) => rule.id === plant.rule) as Record<string, unknown>;
+        const rules = JSON.parse(readFileSync(rulesPath, 'utf8')) as Record<
+            string,
+            Array<Record<string, unknown>>
+        >;
+        const target = (rules[plant.list ?? 'pipeline'] as Array<Record<string, unknown>>).find(
+            (rule) => rule.id === plant.rule,
+        ) as Record<string, unknown>;
         target[plant.field] = plant.value;
+        Object.assign(target, plant.extra ?? {});
         writeFileSync(rulesPath, JSON.stringify(rules, null, 2));
         return lintDir(copy, { scaling: false, recheck: false });
     } finally {

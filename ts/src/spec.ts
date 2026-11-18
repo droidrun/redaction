@@ -16,6 +16,7 @@ export type RulesSpec = {
     macros: Record<string, Macro>;
     patterns: { placeholder: string };
     pipeline: Rule[];
+    full: Rule[];
 };
 export type KeysSpec = {
     specVersion: number;
@@ -47,6 +48,7 @@ export type AlgorithmsSpec = {
     sync: { maxChars: number; maxDepth: number; maxNodes: number; maxKeyChars: number };
     full: { scanWindow: number; scanOverlap: number; scanCap: number };
     strict: { maxChars: number; maxDepth: number; maxNodes: number };
+    letters: { unicodeVersion: string; ranges: string };
 };
 
 const SPEC_SUPPORTED_VERSION = 1;
@@ -63,7 +65,8 @@ function loadSpec(): { rules: RulesSpec; keys: KeysSpec; algorithms: AlgorithmsS
     const rules = checked<RulesSpec>(RULES_DATA);
     const keys = checked<KeysSpec>(KEYS_DATA);
     const algorithms = checked<AlgorithmsSpec>(ALGORITHMS_DATA);
-    if (rules.pipeline.length === 0 || keys.secretWords.length === 0) {
+    const hasNoRules = rules.pipeline.length === 0 || rules.full.length === 0;
+    if (hasNoRules || keys.secretWords.length === 0) {
         throw new Error('redaction spec holds no rules');
     }
     return { rules, keys, algorithms };

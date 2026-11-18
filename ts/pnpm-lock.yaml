@@ -7,15 +7,14 @@ settings:
 importers:
 
   .:
-    dependencies:
+    devDependencies:
+      '@secretlint/core':
+        specifier: 13.0.4
+        version: 13.0.4
       '@secretlint/secretlint-rule-preset-recommend':
         specifier: 13.0.4
         version: 13.0.4
       '@secretlint/types':
-        specifier: 13.0.4
-        version: 13.0.4
-    devDependencies:
-      '@secretlint/core':
         specifier: 13.0.4
         version: 13.0.4
       '@types/bun':
