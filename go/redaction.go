@@ -22,18 +22,24 @@ const (
 	Compat
 )
 
-// Options are the parameters of a call. A zero limit means the spec default.
+// Options are the parameters of a call. A nil limit is the spec default; an explicit limit is
+// used as given, so Limit(0) is a limit of zero (as in the TypeScript package).
 type Options struct {
 	Mode Mode
 	// SkipKeys replaces the default skip keys (`type`, `id`): a primitive value under such a key
 	// is not replaced by key context. A nil slice keeps the default; an empty one skips nothing.
 	SkipKeys []string
 	// MaxDepth is the deepest container level that is walked (JSON only).
-	MaxDepth int
+	MaxDepth *int
 	// MaxNodes is the number of values that are visited (JSON only).
-	MaxNodes int
+	MaxNodes *int
 	// MaxChars is the number of UTF-16 units of a text, or in total of a JSON value.
-	MaxChars int
+	MaxChars *int
+}
+
+// Limit returns a pointer to n, for the limit fields of Options.
+func Limit(n int) *int {
+	return &n
 }
 
 // RuleCount is the number of hits of one rule. Ranges are not exposed: they would reveal lengths.
@@ -103,11 +109,11 @@ func unitsToString(units []uint16) string {
 	return string(utf16.Decode(units))
 }
 
-func orDefault(value int, fallback int) int {
-	if value > 0 {
-		return value
+func orDefault(value *int, fallback int) int {
+	if value == nil {
+		return fallback
 	}
-	return fallback
+	return *value
 }
 
 // RedactText redacts one text with the standard tier. Input that is not valid UTF-8 is read with

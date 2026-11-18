@@ -72,12 +72,12 @@ func TestCaseFoldingIsAsciiAndKelvin(t *testing.T) {
 func TestAstralCharactersAreTwoUnits(t *testing.T) {
 	key := "\U0001F511"
 	runTextCases(t, []textCase{
-		{"four astral characters fit eight units", strings.Repeat(key, 4), Options{MaxChars: 8},
+		{"four astral characters fit eight units", strings.Repeat(key, 4), Options{MaxChars: Limit(8)},
 			strings.Repeat(key, 4)},
-		{"four astral characters do not fit seven", strings.Repeat(key, 4), Options{MaxChars: 7},
+		{"four astral characters do not fit seven", strings.Repeat(key, 4), Options{MaxChars: Limit(7)},
 			"[REDACTED:size-limit]"},
-		{"eight ASCII characters fit eight units", "abcdefgh", Options{MaxChars: 8}, "abcdefgh"},
-		{"eight ASCII characters do not fit seven", "abcdefgh", Options{MaxChars: 7},
+		{"eight ASCII characters fit eight units", "abcdefgh", Options{MaxChars: Limit(8)}, "abcdefgh"},
+		{"eight ASCII characters do not fit seven", "abcdefgh", Options{MaxChars: Limit(7)},
 			"[REDACTED:size-limit]"},
 		{"astral value", "password=" + strings.Repeat(key, 4), Options{}, "password=" + keyword},
 		{"astral stand-in is trivial", "password=<" + strings.Repeat(key, 4) + ">", Options{},
@@ -107,9 +107,9 @@ func TestInvalidUTF8IsOneUnitPerByte(t *testing.T) {
 		{"invalid bytes inside a value", "password=\xff\xfe" + secretValue, Options{}, "password=" + keyword},
 		{"invalid bytes before a pair", "\xff\xff\xff\xff password=" + secretValue, Options{},
 			strings.Repeat(replacement, 4) + " password=" + keyword},
-		{"eight invalid bytes are eight units", strings.Repeat("\xff", 8), Options{MaxChars: 8},
+		{"eight invalid bytes are eight units", strings.Repeat("\xff", 8), Options{MaxChars: Limit(8)},
 			strings.Repeat(replacement, 8)},
-		{"eight invalid bytes do not fit seven", strings.Repeat("\xff", 8), Options{MaxChars: 7},
+		{"eight invalid bytes do not fit seven", strings.Repeat("\xff", 8), Options{MaxChars: Limit(7)},
 			"[REDACTED:size-limit]"},
 		{"a truncated sequence is one unit per byte", "\xf0\x9f\x98 password=" + secretValue, Options{},
 			strings.Repeat(replacement, 3) + " password=" + keyword},

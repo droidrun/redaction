@@ -21,24 +21,6 @@ type goldenOpts struct {
 	SkipKeys []string `json:"skipKeys"`
 }
 
-// hasZeroLimit is true for a case that sets a limit to 0. In Go a zero limit means the default,
-// so such a case cannot be asked; the replay leaves it out and counts it.
-func (o goldenOpts) hasZeroLimit() bool {
-	for _, limit := range []*int{o.MaxChars, o.MaxDepth, o.MaxNodes} {
-		if limit != nil && *limit == 0 {
-			return true
-		}
-	}
-	return false
-}
-
-func valueOr(limit *int) int {
-	if limit == nil {
-		return 0
-	}
-	return *limit
-}
-
 type goldenOutcome struct {
 	Out  json.RawMessage `json:"out"`
 	Hits [][]any         `json:"hits"`
@@ -87,9 +69,9 @@ func (c goldenCase) inputJSON(t *testing.T) []byte {
 func (c goldenCase) options() Options {
 	options := Options{
 		Mode:     Compat,
-		MaxChars: valueOr(c.Opts.MaxChars),
-		MaxDepth: valueOr(c.Opts.MaxDepth),
-		MaxNodes: valueOr(c.Opts.MaxNodes),
+		MaxChars: c.Opts.MaxChars,
+		MaxDepth: c.Opts.MaxDepth,
+		MaxNodes: c.Opts.MaxNodes,
 	}
 	if c.Opts.SkipKeys != nil {
 		options.SkipKeys = c.Opts.SkipKeys
@@ -152,26 +134,18 @@ func sameCounts(a map[string]int, b map[string]int) bool {
 
 func TestGoldenReplay(t *testing.T) {
 	golden := loadGolden(t)
-	if golden.Count != len(golden.Cases) || golden.Count < 5000 {
+	if golden.Count != len(golden.Cases) || len(golden.Cases) != 15288 {
 		t.Fatalf("the corpus holds %d cases", len(golden.Cases))
 	}
 	var differing []string
-	replayed := 0
 	for _, c := range golden.Cases {
-		if c.Opts.hasZeroLimit() {
-			continue
-		}
-		replayed++
 		got, result := runWithResult(t, c.inputJSON(t), c.options())
 		same := matchesRecord(t, got, c.Sync.Out) && sameCounts(countsOf(result), c.recordedCounts())
 		if !same {
 			differing = append(differing, c.ID)
 		}
 	}
-	t.Logf("replayed %d of %d cases, %d differ", replayed, len(golden.Cases), len(differing))
-	if replayed < 15000 {
-		t.Fatalf("only %d cases replayed", replayed)
-	}
+	t.Logf("replayed %d cases, %d differ", len(golden.Cases), len(differing))
 	if len(differing) > 0 {
 		t.Fatalf("%d cases differ, first: %v", len(differing), differing[:min(len(differing), 20)])
 	}

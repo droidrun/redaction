@@ -22,9 +22,9 @@ type vectorCase struct {
 }
 
 type vectorOpts struct {
-	MaxChars int `json:"maxChars"`
-	MaxDepth int `json:"maxDepth"`
-	MaxNodes int `json:"maxNodes"`
+	MaxChars *int `json:"maxChars"`
+	MaxDepth *int `json:"maxDepth"`
+	MaxNodes *int `json:"maxNodes"`
 }
 
 type vectorFile struct {

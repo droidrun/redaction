@@ -39,9 +39,10 @@ redaction.IsSecretKeyName("x-auth-token") // true
   `9007199254740992`). Input that is not one JSON value gives `ErrInvalidJSON`, which never quotes
   the input.
 - `IsSecretKeyName(key string) bool` is the key-name predicate of the spec.
-- `Options{Mode, SkipKeys, MaxDepth, MaxNodes, MaxChars}`; a zero limit means the spec default
-  (so a limit of 0 cannot be asked for). `SkipKeys` replaces the default skip keys (`type`, `id`);
-  nil keeps them, an empty slice skips nothing.
+- `Options{Mode, SkipKeys, MaxDepth, MaxNodes, MaxChars}`; a nil limit is the spec default and an
+  explicit one is used as given, so `redaction.Limit(0)` is a limit of zero (as in the TypeScript
+  package). `SkipKeys` replaces the default skip keys (`type`, `id`); nil keeps them, an empty
+  slice skips nothing.
 - `Result{Hits []RuleCount; Err string}` with `RuleCount{RuleID string; Count int}`. It holds rule
   ids and counts only; ranges are not exposed because they reveal lengths. `Err` is the class of
   the first fail-closed event of the call (`size-limit`, `depth-limit`, `redaction-failed`) or

@@ -40,7 +40,7 @@ func TestResultNeverHoldsMatchedText(t *testing.T) {
 			}
 		}
 	}
-	_, result := RedactText("password="+injectedMarker, Options{MaxChars: 8})
+	_, result := RedactText("password="+injectedMarker, Options{MaxChars: Limit(8)})
 	if result.Err != "size-limit" || len(result.Hits) != 1 || result.Hits[0].RuleID != "size-limit" {
 		t.Fatalf("got %+v", result)
 	}
@@ -60,7 +60,7 @@ func TestErrorsNameNoInput(t *testing.T) {
 }
 
 func TestFailureEventsCarryTheClassOnly(t *testing.T) {
-	out, result, err := RedactJSON([]byte(`{"a":{"b":"`+injectedMarker+`"}}`), Options{MaxDepth: 1})
+	out, result, err := RedactJSON([]byte(`{"a":{"b":"`+injectedMarker+`"}}`), Options{MaxDepth: Limit(1)})
 	if err != nil {
 		t.Fatal(err)
 	}

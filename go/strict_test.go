@@ -42,17 +42,17 @@ func TestStrictNeverReturnsUnscannedText(t *testing.T) {
 		},
 		{
 			"node limit collapses an array",
-			`["a","b","c","d"]`, Options{MaxNodes: 3},
+			`["a","b","c","d"]`, Options{MaxNodes: Limit(3)},
 			`["a","b","[REDACTED:size-limit]"]`,
 		},
 		{
 			"node limit collapses an object into one entry",
-			`{"a":"x","b":"y","c":"z"}`, Options{MaxNodes: 2},
+			`{"a":"x","b":"y","c":"z"}`, Options{MaxNodes: Limit(2)},
 			`{"a":"x","[REDACTED:size-limit]":"[REDACTED:size-limit]"}`,
 		},
 		{
 			"depth limit",
-			`{"a":{"b":{"c":"x"}}}`, Options{MaxDepth: 2},
+			`{"a":{"b":{"c":"x"}}}`, Options{MaxDepth: Limit(2)},
 			`{"a":{"b":"[REDACTED:depth-limit]"}}`,
 		},
 		{
@@ -62,15 +62,57 @@ func TestStrictNeverReturnsUnscannedText(t *testing.T) {
 		},
 		{
 			"keys count against the character budget",
-			`{"password":"abcdefghi","n":5,"list":["xxxxxxxxx"]}`, Options{MaxChars: 12},
+			`{"password":"abcdefghi","n":5,"list":["xxxxxxxxx"]}`, Options{MaxChars: Limit(12)},
 			`{"password":"[REDACTED:key-context]","n":5,"[REDACTED:size-limit]":["[REDACTED:size-limit]"]}`,
 		},
 		{
 			"a leaf that does not fit empties the budget",
-			`{"a":"aaaaaaaaaaaa","b":"bbbbbbbb"}`, Options{MaxChars: 12},
+			`{"a":"aaaaaaaaaaaa","b":"bbbbbbbb"}`, Options{MaxChars: Limit(12)},
 			`{"a":"[REDACTED:size-limit]","[REDACTED:size-limit]":"[REDACTED:size-limit]"}`,
 		},
 	})
+}
+
+func TestExplicitZeroLimitsAreLimits(t *testing.T) {
+	for _, mode := range []Mode{Strict, Compat} {
+		chars := map[Mode]string{
+			Strict: `{"[REDACTED:size-limit]":""}`,
+			Compat: `{"x":"[REDACTED:size-limit]","y":""}`,
+		}
+		runJSONCases(t, []jsonCase{
+			{
+				"depth zero cuts the root container",
+				`{"x":"visible"}`, Options{Mode: mode, MaxDepth: Limit(0)},
+				`"[REDACTED:depth-limit]"`,
+			},
+			{
+				"depth zero keeps a root primitive",
+				`"visible"`, Options{Mode: mode, MaxDepth: Limit(0)},
+				`"visible"`,
+			},
+			{
+				"nodes zero cuts the root",
+				`{"x":"visible"}`, Options{Mode: mode, MaxNodes: Limit(0)},
+				`"[REDACTED:size-limit]"`,
+			},
+			{
+				"chars zero cuts every non-empty leaf",
+				`{"x":"visible","y":""}`, Options{Mode: mode, MaxChars: Limit(0)},
+				chars[mode],
+			},
+		})
+		text, result := RedactText("abcdefghi", Options{Mode: mode, MaxChars: Limit(0)})
+		if text != "[REDACTED:size-limit]" || result.Err != "size-limit" {
+			t.Fatalf("mode %v: got %q with %q", mode, text, result.Err)
+		}
+	}
+}
+
+func TestOmittedLimitsAreTheSpecDefaults(t *testing.T) {
+	out, _, err := RedactJSON([]byte(`{"x":"visible"}`), Options{})
+	if err != nil || string(out) != `{"x":"visible"}` {
+		t.Fatalf("got %s, %v", out, err)
+	}
 }
 
 func TestCompatKeepsSkipKeyStrings(t *testing.T) {
@@ -98,7 +140,7 @@ func TestStrictIsTheDefaultMode(t *testing.T) {
 	if zero.Mode != Strict {
 		t.Fatal("the zero Options value is not strict")
 	}
-	text, result := RedactText("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Options{MaxChars: 10})
+	text, result := RedactText("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Options{MaxChars: Limit(10)})
 	if text != "[REDACTED:size-limit]" || result.Err != "size-limit" {
 		t.Fatalf("got %q with %q", text, result.Err)
 	}
