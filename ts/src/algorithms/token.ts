@@ -114,7 +114,8 @@ export function prepareToken(rule: TokenRule): Scanner {
     const steps = rule.parts.map((part) => compilePart(part, counter));
     const starts = firstLiterals(rule.parts[0]);
     const blocksAfter = rule.notAfter === undefined ? () => false : charTest(rule.notAfter);
-    const check = rule.check === undefined ? undefined : (CHECKS[rule.check] as (value: string) => boolean);
+    const check = rule.check === undefined ? undefined : CHECKS[rule.check];
+    if (rule.check !== undefined && check === undefined) throw new Error('unknown check in the spec');
     return (text) => {
         const context: Context = { text, memo: [] };
         const endGuard: Continue = (position) =>

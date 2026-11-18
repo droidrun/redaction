@@ -403,7 +403,8 @@ what follows a variable run never starts with a unit of the run's class, and a v
 shape (or followed only by runs with `min` 0) needs `notAfter` to contain its class, so every shorter run is
 refused. A fixed run has no alternative. The checks are on the rule data, so a new rule cannot break them.
 
-`check` `base64-json` (5.7) is used by the 1Password rule.
+`check` `base64-json` (5.7) is used by the 1Password rule. A `check` name the implementation does not know stops the
+package at load time (it is never read as "no check").
 
 ### 4.12 `dash-chain` (full tier)
 
