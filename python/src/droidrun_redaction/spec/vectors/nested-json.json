@@ -1,0 +1,168 @@
+{
+  "description": "strings inside nested JSON, arrays and mixed types",
+  "cases": [
+    {
+      "name": "secret in a nested string leaf",
+      "input": {
+        "steps": [
+          {
+            "name": "login",
+            "run": "curl -H \"Authorization: Bearer abc.def-1=\" https://example.test"
+          }
+        ]
+      },
+      "expected": {
+        "steps": [
+          {
+            "name": "login",
+            "run": "curl -H \"Authorization: Bearer [REDACTED:auth-header]\" https://example.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "array of strings with keywords",
+      "input": [
+        "ok",
+        "password=hunter2",
+        "Bearer abc.def-1="
+      ],
+      "expected": [
+        "ok",
+        "password=[REDACTED:generic-keyword]",
+        "Bearer [REDACTED:auth-header]"
+      ]
+    },
+    {
+      "name": "mixed types stay",
+      "input": {
+        "n": 1,
+        "b": true,
+        "z": null,
+        "s": "plain",
+        "a": [
+          1,
+          2,
+          {
+            "k": "v"
+          }
+        ]
+      },
+      "expected": {
+        "n": 1,
+        "b": true,
+        "z": null,
+        "s": "plain",
+        "a": [
+          1,
+          2,
+          {
+            "k": "v"
+          }
+        ]
+      }
+    },
+    {
+      "name": "deep nesting",
+      "input": {
+        "a": {
+          "b": {
+            "c": {
+              "d": {
+                "password": "hunter2",
+                "e": "api_key=zzz"
+              }
+            }
+          }
+        }
+      },
+      "expected": {
+        "a": {
+          "b": {
+            "c": {
+              "d": {
+                "password": "[REDACTED:key-context]",
+                "e": "api_key=[REDACTED:generic-keyword]"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "same key twice at different depths",
+      "input": {
+        "token": "a",
+        "inner": {
+          "token": "b",
+          "note": "ok"
+        }
+      },
+      "expected": {
+        "token": "[REDACTED:key-context]",
+        "inner": {
+          "token": "[REDACTED:key-context]",
+          "note": "ok"
+        }
+      }
+    },
+    {
+      "name": "empty containers",
+      "input": {
+        "a": {},
+        "b": [],
+        "c": ""
+      },
+      "expected": {
+        "a": {},
+        "b": [],
+        "c": ""
+      }
+    },
+    {
+      "name": "placeholder followed by LF is not a placeholder",
+      "input": {
+        "token": "[REDACTED]\n"
+      },
+      "expected": {
+        "token": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "placeholder followed by CR is not a placeholder",
+      "input": {
+        "token": "[REDACTED]\r"
+      },
+      "expected": {
+        "token": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "placeholder followed by U+2028 is not a placeholder",
+      "input": {
+        "token": "[REDACTED] "
+      },
+      "expected": {
+        "token": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "placeholder followed by U+2029 is not a placeholder",
+      "input": {
+        "token": "[REDACTED] "
+      },
+      "expected": {
+        "token": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "placeholder alone is kept",
+      "input": {
+        "token": "[REDACTED]"
+      },
+      "expected": {
+        "token": "[REDACTED]"
+      }
+    }
+  ]
+}
