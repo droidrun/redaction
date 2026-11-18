@@ -1,7 +1,7 @@
 /**
- * Scaling run through the interpreter (JS): reads {attacks, sizes} from stdin, runs `detectSyncHits` (every rule
- * kind with its restart loops, not only the raw patterns) over every attack string at every size, prints the
- * time per run as JSON. Run by lint-spec in a subprocess under an external deadline.
+ * Scaling run through the interpreter (JS): reads {attacks, sizes} from stdin, runs `detectSyncHits` (every
+ * rule kind with its restart loops, not only the raw patterns) over every attack string at every size and
+ * prints the time per run as JSON. Run by lint-spec in a subprocess under an external deadline.
  */
 import { detectSyncHits } from '../../ts/src/sync-rules.ts';
 

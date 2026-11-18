@@ -183,7 +183,8 @@ function interpreterScalingProblems(dir: string): Problem[] {
         const large = times[SIZES[1] as number] ?? 0;
         if (large > small * MAX_RATIO || large > MAX_INTERPRETER_MS_AT_LARGE) {
             problems.push(
-                `interpreter scaling: ${attack}: ${Math.round(small)} ms at 100 KB, ${Math.round(large)} ms at 1 MB`,
+                `interpreter scaling: ${attack}: ${Math.round(small)} ms at 100 KB, ` +
+                    `${Math.round(large)} ms at 1 MB`,
             );
         }
     }

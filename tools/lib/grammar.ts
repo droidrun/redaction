@@ -64,7 +64,7 @@ function checkGroupOpen(source: string, at: number, out: string[]): void {
     }
 }
 
-/** A UTF-16 surrogate unit: an astral character is one character in Python and Go, two units in JavaScript. */
+/** A UTF-16 surrogate unit: an astral character is one character in Python and Go, two in JavaScript. */
 function hasSurrogate(source: string): boolean {
     for (let i = 0; i < source.length; i++) {
         const unit = source.charCodeAt(i);

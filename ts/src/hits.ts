@@ -53,7 +53,7 @@ export function applyHits(text: string, hits: readonly Hit[], last4 = false): st
     return parts.join('');
 }
 
-/** Append every hit of `source` to `target` (a loop: spreading a large list into `push` overflows the stack). */
+/** Append every hit of `source` to `target` (a loop: spreading a long list into `push` overflows). */
 export function appendHits(target: Hit[], source: readonly Hit[]): void {
     for (const hit of source) target.push(hit);
 }

@@ -36,7 +36,7 @@ export type RedactTextOpts = {
     /** `strict` never passes an unscanned text: a scanner failure replaces the whole text and the
      *  part beyond the scan cap becomes `[REDACTED:size-limit]`. Default `compat`. */
     mode?: RedactMode;
-    /** `strict` only: a text longer than this is replaced whole by `[REDACTED:size-limit]` (default 4,000,000). */
+    /** `strict` only: a longer text is replaced whole by `[REDACTED:size-limit]` (default 4,000,000). */
     maxChars?: number;
     /** Use the 0.1.1 placeholder `[REDACTED:<rule>:<last4>]` for matches of at least
      *  16 characters. Default: `[REDACTED:<rule>]`, which exposes nothing of the secret. */

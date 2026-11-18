@@ -76,7 +76,8 @@ export function unclassifiedFields(spec: SpecDir): string[] {
             .filter(([name, value]) => typeof value === 'string' && fieldRole(name) === 'unknown')
             .map(
                 ([name]) =>
-                    `pipeline[${index}] ${String(rule.id)}.${name}: a string field the linter cannot classify`,
+                    `pipeline[${index}] ${String(rule.id)}.${name}: ` +
+                    'a string field the linter cannot classify',
             );
     });
 }

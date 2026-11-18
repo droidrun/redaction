@@ -117,17 +117,21 @@ test('strict: last4 is ignored, no hit carries a character of the text', async (
 
 test('strict: a text over maxChars is replaced whole before any scan', async () => {
     const strict = await redactText(`a ${SECRET}`, { mode: 'strict', maxChars: 10 });
-    expect(strict).toEqual({ text: '[REDACTED:size-limit]', hits: [{ ruleId: 'size-limit', range: [0, 28] }] });
+    expect(strict).toEqual({
+        text: '[REDACTED:size-limit]',
+        hits: [{ ruleId: 'size-limit', range: [0, 28] }],
+    });
     const fits = await redactText(`a ${SECRET}`, { mode: 'strict', maxChars: 28 });
     expect(fits.text).toBe('a password=[REDACTED:generic-keyword]');
     const huge = await redactText('x '.repeat(2_000_001), { mode: 'strict' });
     expect(huge.text).toBe('[REDACTED:size-limit]');
 });
 
-test('strict: 150000 hits in one value do not overflow the stack', () => {
-    const value = Array.from({ length: 150_000 }, () => SECRET);
+test('strict: a million hits in one value do not overflow the stack', () => {
+    const value = Array.from({ length: 1_050_000 }, () => 'token=Zq9abcDE');
     const stats = { hits: [] as Array<{ ruleId: string }> };
-    const out = redactJsonValueSync(value, { mode: 'strict', stats: stats as { hits: never[] } }) as string[];
-    expect(out[149_999]).toBe('password=[REDACTED:generic-keyword]');
-    expect(stats.hits).toHaveLength(150_000);
+    const limits = { mode: 'strict', maxChars: 30_000_000, maxNodes: 2_000_000 } as const;
+    const out = redactJsonValueSync(value, { ...limits, stats: stats as { hits: never[] } }) as string[];
+    expect(out[1_049_999]).toBe('token=[REDACTED:generic-keyword]');
+    expect(stats.hits).toHaveLength(1_050_000);
 });

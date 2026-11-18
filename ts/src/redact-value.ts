@@ -45,7 +45,7 @@ export type RedactValueStats = { hits: Hit[] };
 
 export type RedactValueOpts = RedactTextOpts & {
     skipKeys?: ReadonlySet<string>;
-    /** Limits of `mode: 'strict'` (ignored in `compat`): container depth and values; `maxChars` is the total. */
+    /** Limits of `mode: 'strict'` (ignored in `compat`): container depth and values. */
     maxDepth?: number;
     maxNodes?: number;
 };
