@@ -1,0 +1,233 @@
+package redaction
+
+import "strings"
+
+// Verdict is what a key name makes of the values below it (SPEC section 6).
+type Verdict int
+
+const (
+	// VerdictNone: the key does not name a secret; values are scanned as text.
+	VerdictNone Verdict = iota
+	// VerdictString: a string value under the key is replaced, a number is kept (`tokens`,
+	// `max_tokens`: counts are never hidden).
+	VerdictString
+	// VerdictAny: a string and a number under the key are replaced (`password`, `pin`).
+	VerdictAny
+)
+
+// keyNames is the key-name matcher of SPEC section 6, from keys.json.
+type keyNames struct {
+	sequences    [][]string
+	exact        map[string]bool
+	joined       map[string]bool
+	suffixWords  []string
+	prefixWords  []string
+	passLastWord string
+	countWords   map[string]bool
+	placeholders *placeholders
+}
+
+func newKeyNames(keys *keysFile, found *placeholders) *keyNames {
+	sequences := append(append([][]string{}, keys.SecretWords...), keys.ExtraSequences...)
+	joined := make(map[string]bool)
+	for _, sequence := range sequences {
+		if len(sequence) > 1 {
+			joined[strings.Join(sequence, "")] = true
+		}
+	}
+	for _, word := range keys.JoinedExtra {
+		joined[word] = true
+	}
+	return &keyNames{
+		sequences:    sequences,
+		exact:        toSet(keys.ExactKeys),
+		joined:       joined,
+		suffixWords:  keys.SuffixWords,
+		prefixWords:  keys.PrefixWords,
+		passLastWord: keys.PassLastWord,
+		countWords:   toSet(keys.CountWords),
+		placeholders: found,
+	}
+}
+
+func toSet(words []string) map[string]bool {
+	set := make(map[string]bool, len(words))
+	for _, word := range words {
+		set[word] = true
+	}
+	return set
+}
+
+var (
+	upperSet = rangeSet('A', 'Z')
+	lowerSet = rangeSet('a', 'z')
+	digitSet = rangeSet('0', '9')
+)
+
+// wordEnd is the end of the word that starts at `start`, or `start` when none does (SPEC 6).
+func wordEnd(key []uint16, start int) int {
+	if upperSet.hasAt(key, start) {
+		capitals := runEnd(key, start, upperSet, unbounded)
+		if !lowerSet.hasAt(key, capitals) {
+			return capitals
+		}
+		if capitals-start >= 2 {
+			return capitals - 1
+		}
+	}
+	lowerStart := start
+	if upperSet.hasAt(key, start) {
+		lowerStart = start + 1
+	}
+	lowerEnd := runEnd(key, lowerStart, lowerSet, unbounded)
+	if lowerEnd > lowerStart {
+		return lowerEnd
+	}
+	if digitSet.hasAt(key, start) {
+		return runEnd(key, start, digitSet, unbounded)
+	}
+	return start
+}
+
+// splitKeyWords splits a key into lower-case words at separators and camelCase humps.
+func splitKeyWords(key []uint16) []string {
+	var words []string
+	for at := 0; at < len(key); {
+		end := wordEnd(key, at)
+		if end == at {
+			at++
+			continue
+		}
+		words = append(words, foldString(key[at:end]))
+		at = end
+	}
+	return words
+}
+
+// compactKey is the key lower-cased with every unit outside a-z and 0-9 removed (U+0130 is `i`).
+func compactKey(key []uint16) string {
+	var compact []byte
+	for _, unit := range key {
+		lowered := lowerUnit(unit)
+		if unit == upperDotI {
+			lowered = 'i'
+		}
+		isLetter := lowered >= 'a' && lowered <= 'z'
+		isDigit := lowered >= '0' && lowered <= '9'
+		if isLetter || isDigit {
+			compact = append(compact, byte(lowered))
+		}
+	}
+	return string(compact)
+}
+
+// String is the name the spec gives the verdict: `none`, `string` or `any`.
+func (v Verdict) String() string {
+	return [...]string{"none", "string", "any"}[v]
+}
+
+func (k *keyNames) isSecretWord(word string, plural bool) bool {
+	base := word
+	if plural {
+		base = strings.TrimSuffix(word, "s")
+	}
+	if k.joined[word] || k.joined[base] {
+		return true
+	}
+	for _, suffix := range k.suffixWords {
+		if strings.HasSuffix(base, suffix) {
+			return true
+		}
+	}
+	for _, prefix := range k.prefixWords {
+		if strings.HasPrefix(word, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func wordMatches(words []string, at int, expected string, plural bool) bool {
+	if at >= len(words) {
+		return false
+	}
+	return words[at] == expected || (plural && words[at] == expected+"s")
+}
+
+func startsSequence(words []string, start int, sequence []string, plural bool) bool {
+	for offset, expected := range sequence {
+		if !wordMatches(words, start+offset, expected, plural) {
+			return false
+		}
+	}
+	return true
+}
+
+func (k *keyNames) hasSequence(words []string, plural bool) bool {
+	for _, sequence := range k.sequences {
+		for start := range words {
+			if startsSequence(words, start, sequence, plural) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (k *keyNames) matchKey(key []uint16, plural bool) bool {
+	words := splitKeyWords(key)
+	if k.exact[compactKey(key)] {
+		return true
+	}
+	if len(words) > 0 && words[len(words)-1] == k.passLastWord {
+		return true
+	}
+	for _, word := range words {
+		if k.isSecretWord(word, plural) {
+			return true
+		}
+	}
+	return k.hasSequence(words, plural)
+}
+
+func (k *keyNames) isSecretKeyName(key []uint16) bool {
+	return k.matchKey(key, true)
+}
+
+var redactedOpen = decodeUTF8("[REDACTED")
+
+// keyVerdict is what a key makes of the values below it. A key that holds placeholders is
+// classified without them, so a second pass gives the first verdict.
+func (k *keyNames) keyVerdict(raw []uint16) Verdict {
+	key := raw
+	if containsUnits(raw, redactedOpen) {
+		key = joinSegments(k.placeholders.literalSegments(newText(raw)))
+	}
+	if !k.matchKey(key, true) {
+		return VerdictNone
+	}
+	if !k.matchKey(key, false) {
+		return VerdictString
+	}
+	for _, word := range splitKeyWords(key) {
+		if k.countWords[word] {
+			return VerdictString
+		}
+	}
+	return VerdictAny
+}
+
+func joinSegments(segments [][]uint16) []uint16 {
+	var joined []uint16
+	for i, segment := range segments {
+		if i > 0 {
+			joined = append(joined, ' ')
+		}
+		joined = append(joined, segment...)
+	}
+	return joined
+}
+
+func strongerVerdict(a Verdict, b Verdict) Verdict {
+	return max(a, b)
+}
