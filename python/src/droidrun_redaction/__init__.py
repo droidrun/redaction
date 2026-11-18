@@ -16,14 +16,15 @@ from ._scan import (
     RULE_IDS,
     STRICT_LIMITS,
     SYNC_LIMITS,
-    oversize_text,
+    Scan,
+    scan_capped,
     scan_full_compat,
     scan_full_strict,
-    scan_text,
+    scan_standard,
     tally,
 )
 from ._spec import KEYS
-from ._units import from_units, to_units
+from ._units import from_units
 from ._walk import WalkState, walk_json
 
 __all__ = [
@@ -53,9 +54,11 @@ class RuleCount(NamedTuple):
 class RedactResult:
     """`value` is the redacted text or JSON value, `hits` the rule counts in order of first hit.
 
-    `error` is None, or the class name of the failure that made `value` the placeholder
-    `[REDACTED:redaction-failed]` (standard tier) or `[REDACTED:error]` (full tier); never a message,
-    which could echo the input.
+    `error` is None when every scan ran. Otherwise it is the class name (never a message, which could echo the
+    input) of the first failure of a scan: `value` is then the placeholder `[REDACTED:redaction-failed]` or
+    `[REDACTED:error]` (the whole text, or a JSON leaf), or, in the full tier's `compat` mode, the result of
+    the standard rules that took over after the full-tier rules failed. A caller that must not send a
+    degraded result checks `error`.
     """
 
     value: Any
@@ -83,8 +86,8 @@ def _check_limit(name: str, value: int | None, default: int) -> int:
     return value
 
 
-def _result(value: Any, counts: dict[str, int]) -> RedactResult:
-    return RedactResult(value, tuple(RuleCount(*item) for item in counts.items()), None)
+def _result(value: Any, counts: dict[str, int], error: str | None = None) -> RedactResult:
+    return RedactResult(value, tuple(RuleCount(*item) for item in counts.items()), error)
 
 
 def _failed(error: Exception) -> RedactResult:
@@ -92,21 +95,14 @@ def _failed(error: Exception) -> RedactResult:
     return RedactResult(build_read_placeholder(rule_id), (RuleCount(rule_id, 1),), type(error).__name__)
 
 
-def _redact_full_text(text: str, strict: bool, max_chars: int | None) -> RedactResult:
-    """SPEC 9.4. `compat` is TypeScript's full tier and has no length cap (`max_chars` is ignored)."""
+def _redact_text(text: str, limit: int | None, scan: Scan) -> RedactResult:
     counts: dict[str, int] = {}
     try:
-        if strict:
-            limit = _check_limit("max_chars", max_chars, STRICT_LIMITS["maxChars"])
-            if len(text) > limit:
-                placeholder, hits = oversize_text(len(text))
-                tally(counts, hits)
-                return _result(placeholder, counts)
-        scanned, hits, error = (scan_full_strict if strict else scan_full_compat)(to_units(text))
+        scanned, hits, error = scan_capped(text, limit, scan)
     except Exception as failure:
         return _failed(failure)
     tally(counts, hits)
-    return RedactResult(from_units(scanned), tuple(RuleCount(*item) for item in counts.items()), error)
+    return _result(from_units(scanned), counts, error)
 
 
 def redact_text(
@@ -126,22 +122,13 @@ def redact_text(
     is_full = _check_tier(tier)
     if not isinstance(text, str):
         raise TypeError("text must be a str")
-    if is_full:
-        return _redact_full_text(text, strict, max_chars)
-    limit = _check_limit("max_chars", max_chars, SYNC_LIMITS["maxChars"])
-    counts: dict[str, int] = {}
-    try:
-        # A text has at least as many units as characters, so a text over the cap by characters is over it
-        # by units: it is replaced without being converted.
-        if len(text) > limit:
-            placeholder, hits = oversize_text(len(text))
-            tally(counts, hits)
-            return _result(placeholder, counts)
-        scanned, hits = scan_text(to_units(text), limit)
-    except Exception as error:
-        return _failed(error)
-    tally(counts, hits)
-    return _result(from_units(scanned), counts)
+    if not is_full:
+        limit = _check_limit("max_chars", max_chars, SYNC_LIMITS["maxChars"])
+        return _redact_text(text, limit, scan_standard)
+    if not strict:
+        return _redact_text(text, None, scan_full_compat)
+    limit = _check_limit("max_chars", max_chars, STRICT_LIMITS["maxChars"])
+    return _redact_text(text, limit, scan_full_strict)
 
 
 def redact_json(
@@ -185,4 +172,4 @@ def redact_json(
         out = walk_json(value, state)
     except Exception as error:
         return _failed(error)
-    return _result(out, state.counts)
+    return _result(out, state.counts, state.error)

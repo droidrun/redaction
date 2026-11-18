@@ -22,14 +22,14 @@ _PREPARE = {
 }
 
 
-def _prepare(rule: dict[str, Any]) -> tuple[str, _rules.Scanner]:
-    prepare = _PREPARE.get(rule["kind"])
+def _prepare(rule: dict[str, Any], table: dict[str, Any]) -> tuple[str, _rules.Scanner]:
+    prepare = table.get(rule["kind"])
     if prepare is None:
         raise SpecError("redaction spec holds an unknown rule kind")
     return rule["id"], prepare(rule)
 
 
-_PIPELINE = [_prepare(rule) for rule in RULES["pipeline"]]
+_PIPELINE = [_prepare(rule, _PREPARE) for rule in RULES["pipeline"]]
 
 _FULL_PREPARE = {
     "regex": _rules.prepare_regex,
@@ -41,14 +41,7 @@ _FULL_PREPARE = {
 }
 
 
-def _prepare_full(rule: dict[str, Any]) -> tuple[str, _rules.Scanner]:
-    prepare = _FULL_PREPARE.get(rule["kind"])
-    if prepare is None:
-        raise SpecError("redaction spec holds an unknown rule kind")
-    return rule["id"], prepare(rule)
-
-
-_FULL_PIPELINE = [_prepare_full(rule) for rule in RULES["full"]]
+_FULL_PIPELINE = [_prepare(rule, _FULL_PREPARE) for rule in RULES["full"]]
 
 
 def merge_hits(hits: list[Hit]) -> list[Hit]:

@@ -5,8 +5,9 @@ Each `prepare_*` takes a rule of `full` in the spec, compiles what it needs once
 function from a unit string to the ranges the rule finds, in the order of its kind.
 """
 
+import itertools
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from ._base64_json import is_base64_json
@@ -109,24 +110,17 @@ def _optional_step(inner: list[Step]) -> Step:
     return step
 
 
-class _Counter:
-    """Numbers the variable-run parts of one rule, in the order they are compiled."""
-
-    def __init__(self) -> None:
-        self.next = 0
-
-
-def _compile_part(part: dict[str, Any], counter: _Counter) -> Step:
+def _compile_part(part: dict[str, Any], memory_ids: Iterator[int]) -> Step:
+    """`memory_ids` numbers the variable-run parts of one rule, in the order they are compiled."""
     if "lit" in part:
         return _literal_step(part["lit"])
     if "alt" in part:
         return _alternative_step(part["alt"])
     if "opt" in part:
-        return _optional_step([_compile_part(inner, counter) for inner in part["opt"]])
+        return _optional_step([_compile_part(inner, memory_ids) for inner in part["opt"]])
     if part["min"] == part["max"] and "tails" not in part:
         return _fixed_run_step(run_pattern(part["runClass"]), part["min"])
-    counter.next += 1
-    return _maximal_run_step(part, counter.next - 1)
+    return _maximal_run_step(part, next(memory_ids))
 
 
 def _first_literals(first: dict[str, Any]) -> list[str]:
@@ -138,8 +132,8 @@ def _first_literals(first: dict[str, Any]) -> list[str]:
 
 
 def prepare_token(rule: dict[str, Any]) -> Scanner:
-    counter = _Counter()
-    steps = [_compile_part(part, counter) for part in rule["parts"]]
+    memory_ids = itertools.count()
+    steps = [_compile_part(part, memory_ids) for part in rule["parts"]]
     starts = _first_literals(rule["parts"][0])
     blocks_after = char_test(rule["notAfter"]) if "notAfter" in rule else None
     has_letter_guard = rule.get("letterGuard") is True

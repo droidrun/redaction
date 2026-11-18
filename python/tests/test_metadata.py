@@ -1,12 +1,12 @@
 """Metadata (SPEC section 11): hits are rule id and count only; no input fragment reaches an error."""
 
-import droidrun_redaction
 import pytest
 from droidrun_redaction import (
     RedactResult,
     RuleCount,
     _detect,
     _keys,
+    _scan,
     _walk,
     is_secret_key_name,
     key_verdict,
@@ -61,7 +61,7 @@ def test_a_failing_leaf_becomes_a_placeholder_in_strict_and_fails_the_value_in_c
     value = {"a": "short", "b": f"password={SECRET}"}
     strict = redact_json(value, mode="strict")
     assert strict.value == {"a": "short", "b": "[REDACTED:redaction-failed]"}
-    assert strict.error is None
+    assert strict.error == "RuntimeError"
     compat = redact_json(value, mode="compat")
     assert (compat.value, compat.error) == ("[REDACTED:redaction-failed]", "RuntimeError")
     assert SECRET not in repr(compat)
@@ -69,14 +69,16 @@ def test_a_failing_leaf_becomes_a_placeholder_in_strict_and_fails_the_value_in_c
 
 def test_an_unknown_rule_kind_in_the_spec_is_a_spec_error():
     with pytest.raises(SpecError):
-        _detect._prepare({"id": "x", "kind": "no-such-kind"})
+        _detect._prepare({"id": "x", "kind": "no-such-kind"}, _detect._PREPARE)
+    with pytest.raises(SpecError):
+        _detect._prepare({"id": "x", "kind": "no-such-kind"}, _detect._FULL_PREPARE)
 
 
 def test_a_text_over_the_cap_is_not_converted(monkeypatch):
     def refuse(text):
         raise AssertionError("converted")
 
-    monkeypatch.setattr(droidrun_redaction, "to_units", refuse)
+    monkeypatch.setattr(_scan, "to_units", refuse)
     result = redact_text("a" * 11, max_chars=10)
     assert (result.value, result.hits, result.error) == ("[REDACTED:size-limit]", (("size-limit", 1),), None)
 

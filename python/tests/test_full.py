@@ -207,43 +207,122 @@ def test_a_run_memory_per_part_keeps_dash_chains_and_sendgrid_linear(monkeypatch
         walked.clear()
 
 
+class ScanBroken(Exception):
+    pass
+
+
 def failing(units):
-    raise RuntimeError(f"cannot scan {units}")
+    raise ScanBroken(f"cannot scan {units}")
 
 
 SECRET = "Zq9abcDEF123ghi_x"
+TEXT = f"{NPM} password={SECRET}"
+FALLBACK = f"{NPM} password=[REDACTED:generic-keyword]"
+JSON_VALUE = {"a": "short", "b": TEXT}
 
 
-def test_compat_falls_back_to_the_standard_rules_when_the_full_rules_fail(monkeypatch):
+def break_full_rules(monkeypatch):
     monkeypatch.setattr(_detect, "_FULL_PIPELINE", [("npm", failing)])
-    result = redact_text(f"{NPM} password={SECRET}", tier="full", mode="compat")
-    assert result.value == f"{NPM} password=[REDACTED:generic-keyword]"
-    assert result.error is None
-    assert SECRET not in repr(result)
 
 
-def test_compat_replaces_the_text_when_the_standard_rules_fail_too(monkeypatch):
-    monkeypatch.setattr(_detect, "_FULL_PIPELINE", [("npm", failing)])
+def break_all_rules(monkeypatch):
+    break_full_rules(monkeypatch)
     monkeypatch.setattr(_detect, "_PIPELINE", [("jwt", failing)])
-    result = redact_text(f"{NPM} password={SECRET}", tier="full", mode="compat")
-    assert (result.value, result.hits, result.error) == ("[REDACTED:error]", (("error", 1),), "RuntimeError")
+
+
+def test_error_is_none_when_nothing_failed():
+    for call in (
+        redact_text(TEXT, tier="full"),
+        redact_text(TEXT, tier="full", mode="compat"),
+        redact_json(JSON_VALUE, tier="full"),
+        redact_json(JSON_VALUE, tier="full", mode="compat"),
+    ):
+        assert call.error is None
+
+
+def test_compat_text_falls_back_to_the_standard_rules_and_reports_the_failure(monkeypatch):
+    break_full_rules(monkeypatch)
+    result = redact_text(TEXT, tier="full", mode="compat")
+    assert (result.value, result.error) == (FALLBACK, "ScanBroken")
+    assert result.hits == (("generic-keyword", 1),)
     assert SECRET not in repr(result)
 
 
-def test_strict_replaces_the_text_without_a_fallback(monkeypatch):
-    monkeypatch.setattr(_detect, "_FULL_PIPELINE", [("npm", failing)])
-    result = redact_text(f"{NPM} password={SECRET}", tier="full")
-    assert (result.value, result.hits, result.error) == ("[REDACTED:error]", (("error", 1),), "RuntimeError")
+def test_compat_text_is_replaced_when_the_standard_rules_fail_too(monkeypatch):
+    break_all_rules(monkeypatch)
+    result = redact_text(TEXT, tier="full", mode="compat")
+    assert (result.value, result.hits, result.error) == ("[REDACTED:error]", (("error", 1),), "ScanBroken")
+    assert SECRET not in repr(result)
 
 
-def test_a_failing_leaf_is_replaced_in_strict_and_in_compat(monkeypatch):
-    monkeypatch.setattr(_detect, "_FULL_PIPELINE", [("npm", failing)])
-    value = {"a": "short", "b": f"password={SECRET}"}
-    strict = redact_json(value, tier="full")
-    assert strict.value == {"a": "short", "b": "[REDACTED:error]"}
-    assert strict.hits == (("error", 1),)
-    compat = redact_json(value, tier="full", mode="compat")
-    assert compat.value == {"a": "short", "b": "password=[REDACTED:generic-keyword]"}
+def test_strict_text_is_replaced_without_a_fallback(monkeypatch):
+    break_full_rules(monkeypatch)
+    result = redact_text(TEXT, tier="full")
+    assert (result.value, result.hits, result.error) == ("[REDACTED:error]", (("error", 1),), "ScanBroken")
+
+
+def test_strict_json_reports_the_failure_of_a_leaf(monkeypatch):
+    break_full_rules(monkeypatch)
+    result = redact_json(JSON_VALUE, tier="full")
+    assert result.value == {"a": "short", "b": "[REDACTED:error]"}
+    assert (result.hits, result.error) == ((("error", 1),), "ScanBroken")
+    assert SECRET not in repr(result)
+
+
+def test_compat_json_falls_back_per_leaf_and_reports_the_failure(monkeypatch):
+    break_full_rules(monkeypatch)
+    result = redact_json(JSON_VALUE, tier="full", mode="compat")
+    assert result.value == {"a": "short", "b": FALLBACK}
+    assert result.error == "ScanBroken"
+
+
+def test_compat_json_replaces_a_leaf_when_the_standard_rules_fail_too(monkeypatch):
+    break_all_rules(monkeypatch)
+    result = redact_json(JSON_VALUE, tier="full", mode="compat")
+    assert result.value == {"a": "short", "b": "[REDACTED:error]"}
+    assert result.error == "ScanBroken"
+
+
+def test_json_keeps_the_first_failure(monkeypatch):
+    class Later(Exception):
+        pass
+
+    calls = []
+
+    def breaking(units):
+        calls.append(units)
+        raise (ScanBroken if len(calls) == 1 else Later)(units)
+
+    monkeypatch.setattr(_detect, "_FULL_PIPELINE", [("npm", breaking)])
+    result = redact_json({"a": TEXT, "b": TEXT}, tier="full")
+    assert (result.value, result.error) == ({"a": "[REDACTED:error]", "b": "[REDACTED:error]"}, "ScanBroken")
+
+
+def test_a_failing_standard_leaf_is_reported_too(monkeypatch):
+    monkeypatch.setattr(_detect, "_PIPELINE", [("jwt", failing)])
+    result = redact_json(JSON_VALUE)
+    assert result.value == {"a": "short", "b": "[REDACTED:redaction-failed]"}
+    assert result.error == "ScanBroken"
+
+
+@pytest.mark.parametrize(
+    ("text", "limit", "kept"),
+    [
+        ("\U0001f511" * 6, 10, False),
+        ("\U0001f511" * 5, 10, True),
+        ("\U0001f511" * 6, 12, True),
+        ("\U0001f511" * 6, 11, False),
+        ("\U0001f511" * 3 + "a" * 5, 11, True),
+        ("\U0001f511" * 3 + "a" * 5, 10, False),
+        ("a" * 10, 10, True),
+        ("a" * 11, 10, False),
+    ],
+)
+@pytest.mark.parametrize("tier", ["standard", "full"])
+def test_the_character_cap_counts_utf16_units(text, limit, kept, tier):
+    result = redact_text(text, tier=tier, max_chars=limit)
+    assert (result.value == text) is kept
+    assert kept or result.value == "[REDACTED:size-limit]"
 
 
 def test_the_default_tier_is_standard():

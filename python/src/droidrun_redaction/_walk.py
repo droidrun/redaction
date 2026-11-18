@@ -67,6 +67,7 @@ class WalkState:
         self.skip = skip
         self.strict = strict
         self.counts: dict[str, int] = {}
+        self.error: str | None = None
         self.ancestors: set[int] = set()
 
     def count(self, rule_id: str, times: int = 1) -> None:
@@ -127,13 +128,15 @@ def _leaf_replacement(verdict: str, value: Any) -> str | None:
 
 def _scan_leaf_text(units: str, state: WalkState) -> str:
     if state.full:
-        scanned, hits, _error = (scan_full_strict if state.strict else scan_full_compat)(units)
+        scanned, hits, error = (scan_full_strict if state.strict else scan_full_compat)(units)
+        state.error = state.error or error
     elif not state.strict:
         scanned, hits = scan_units(units)
     else:
         try:
             scanned, hits = scan_units(units)
-        except Exception:
+        except Exception as failure:
+            state.error = state.error or type(failure).__name__
             return state.limit(_FAILED)
     state.count_hits(hits)
     return from_units(scanned)
