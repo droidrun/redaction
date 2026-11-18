@@ -4,11 +4,12 @@
  * module. The hits come back ordered by start, then end (rule order breaks ties), the order the standard
  * rules are merged after.
  */
+import { FULL_KINDS } from './algorithms/full-registry.js';
 import { prepareRules } from './algorithms/registry.js';
 import type { Hit } from './hits.js';
 import { RULES_SPEC } from './spec.js';
 
-const FULL = prepareRules(RULES_SPEC.full);
+const FULL = prepareRules(RULES_SPEC.full, FULL_KINDS);
 
 export function detectFullHits(text: string): Hit[] {
     const hits: Hit[] = [];

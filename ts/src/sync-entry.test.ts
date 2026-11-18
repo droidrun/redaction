@@ -1,5 +1,5 @@
 /**
- * sync-entry.test.ts — the `./sync` subpath: importing it must not load the full tier
+ * sync-entry.test.ts — the `./sync` subpath: importing it must not load the full tier (no full-only algorithm module)
  * (the logger and edge workers import only this), no entry loads secretlint, and it
  * exports the same functions as the full entry.
  */
@@ -9,14 +9,15 @@ import { fileURLToPath } from 'node:url';
 import * as full from './index.js';
 import * as sync from './sync.js';
 
-test('importing the sync entry loads no full-tier and no secretlint module', () => {
+test('importing the sync entry loads no full-tier algorithm and no secretlint module', () => {
     const result = spawnSync(process.execPath, ['--eval', `
         import { strict as assert } from 'node:assert';
         const sync = await import('./src/sync.ts');
         const out = sync.redactTextSync('login password: Zq9fakeMARKER_x1');
         assert.equal(out.text, 'login password: [REDACTED:generic-keyword]');
         assert.equal(sync.restoreRedacted({ a: '[REDACTED]' }, { a: 'x' }).value.a, 'x');
-        const loaded = Object.keys(require.cache).filter((path) => /secretlint|full-rules/.test(path));
+        const fullOnly = /secretlint|full-rules|full-registry|algorithms.(token|dash-chain|sendgrid|pem-key|credential-uri|base64-json|letters|scan-support)/;
+        const loaded = Object.keys(require.cache).filter((path) => fullOnly.test(path));
         assert.deepEqual(loaded, []);
     `], {
         cwd: fileURLToPath(new URL('..', import.meta.url)),
