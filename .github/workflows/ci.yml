@@ -240,7 +240,7 @@ jobs:
         working-directory: python
         run: uv sync --locked --python 3.11
       - name: Differential driver tests (key order, lone surrogates, numbers, counts, line splitting)
-        run: bun test tools/diff
+        run: bun test tools/diff tools/release-version
       - name: Same cases through the TypeScript, Python and Go runners (a tier a language lacks is skipped)
         run: bun tools/diff/driver.ts
 
@@ -254,3 +254,5 @@ jobs:
           bun-version: '1.4.4'
       - name: npm, Python and Go carry the same version
         run: tools/release-version --check
+      - name: The version tool itself (SemVer without leading zeros, set and check)
+        run: bun test tools/release-version

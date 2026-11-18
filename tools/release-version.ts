@@ -14,8 +14,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-const ROOT = resolve(import.meta.dir, '..');
-const SEMVER = /^\d+\.\d+\.\d+$/;
+const ROOT = process.env.RELEASE_VERSION_ROOT ?? resolve(import.meta.dir, '..');
+/** X.Y.Z where each number is 0 or has no leading zero (SemVer 2.0.0, without pre-release or build parts). */
+const SEMVER = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+
+export function isVersion(text: string): boolean {
+    return SEMVER.test(text);
+}
 
 type Place = { file: string; label: string; pattern: RegExp };
 
@@ -61,7 +66,7 @@ function check(tag: string | undefined): void {
         console.error(`the versions differ:\n${table.join('\n')}`);
         process.exit(1);
     }
-    if (!SEMVER.test(version)) {
+    if (!isVersion(version)) {
         console.error(`not a version of the form X.Y.Z: ${version}`);
         process.exit(1);
     }
@@ -73,7 +78,7 @@ function check(tag: string | undefined): void {
 }
 
 function set(version: string): void {
-    if (!SEMVER.test(version)) {
+    if (!isVersion(version)) {
         console.error('usage: tools/release-version X.Y.Z | --check [tag] | --print');
         process.exit(2);
     }
@@ -84,7 +89,9 @@ function set(version: string): void {
     check(undefined);
 }
 
-const [first, second] = process.argv.slice(2);
-if (first === '--check') check(second);
-else if (first === '--print') console.log(agreed(versions()) ?? process.exit(1));
-else set(first ?? '');
+if (import.meta.main) {
+    const [first, second] = process.argv.slice(2);
+    if (first === '--check') check(second);
+    else if (first === '--print') console.log(agreed(versions()) ?? process.exit(1));
+    else set(first ?? '');
+}
