@@ -24,7 +24,7 @@ from droidrun_redaction import redact_json
 
 TESTS = Path(__file__).resolve().parent
 SIZES = [100_000, 1_000_000]
-WORKERS = os.cpu_count() or 2
+WORKERS = int(os.environ.get("REDACTION_SCALING_WORKERS", os.cpu_count() or 2))
 DEADLINE_SECONDS = 900
 RATIO_LIMIT = 15
 FLOOR_MS = 10

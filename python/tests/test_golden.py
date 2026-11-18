@@ -6,9 +6,12 @@ the 0.2.0 record carry the prefix `@secretlint/secretlint-rule-`, the placeholde
 A recorded output longer than 20,000 characters is stored as its SHA-256 and length; the replay compares
 those.
 
-ONE case differs on the full side, by decision of Lutz (2026-11-18, SPEC 4.17): the AWS secret access key is
-reported over the secret, not from the key name, so the key name stays (`AWS_SECRET_ACCESS_KEY=[REDACTED:aws]`
-where 0.2.0 recorded `[REDACTED:aws]`). The same exception is enumerated in `ts/src/golden.test.ts`.
+Two groups differ on the full side, both by decision of Lutz (2026-11-18), and both are enumerated:
+the AWS secret access key (SPEC 4.17) is reported over the secret, not from the key name, so the key name
+stays (`AWS_SECRET_ACCESS_KEY=[REDACTED:aws]` where 0.2.0 recorded `[REDACTED:aws]`; the same exception is in
+`ts/src/golden.test.ts`); and object keys are scanned with the full rules (L-N): 24 cases whose key is itself
+a full-tier token (an npm, SendGrid, Slack, Linear, Shopify or GitLab token, or a database URL) now have that
+key replaced by its placeholder.
 """
 
 import hashlib
@@ -57,6 +60,27 @@ AWS_CORRECTION = {
     }
 }
 LEGACY_PREFIX = "@secretlint/secretlint-rule-"
+# Object keys that are full-tier tokens (L-N, Lutz 2026-11-18): the recorded 0.2.0 output left them, or
+# redacted only the password of a URL in them; the full tier now replaces the whole key.
+DATABASE_URL = "[REDACTED:database-connection-string]"
+FULL_KEY_RENAMES = {
+    "postgres://app:[REDACTED:url-credentials]@db.example.test:5432/app": DATABASE_URL,
+    "mongodb+srv://admin:[REDACTED:url-credentials]@cluster0.example.test/db": DATABASE_URL,
+    "postgres://user:[REDACTED:url-credentials]@db.example.test:5432/app": DATABASE_URL,
+    "npm_8sm7OXhsKGb9ECZOWLzYB1kfKvQRdckR5v8p": "[REDACTED:npm]",
+    "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": "[REDACTED:sendgrid]",
+    "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX": "[REDACTED:slack]",
+    "lin_api_HZnTQA00zaX9FHQIppNWPLOlaAuBbPikE26OHX5q": "[REDACTED:linear]",
+    "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": "[REDACTED:shopify]",
+    "glpat-s7UFmkxn32UiKz2tBhmt": "[REDACTED:gitlab]",
+}
+FULL_KEY_CASES = [
+    *(f"sample-{number}" for number in (68, 119, 122, 125, 128, 131, 137, 140)),
+    *(
+        f"fuzz-key-{number}"
+        for number in (39, 57, 82, 127, 167, 189, 193, 198, 201, 211, 214, 236, 266, 274, 280, 284)
+    ),
+]
 
 
 def test_the_corpus_holds_at_least_5000_cases():
@@ -84,12 +108,29 @@ def test_every_case_gives_the_recorded_standard_result():
     assert replay("standard", "sync") == []
 
 
-def test_every_case_gives_the_recorded_full_result_but_the_aws_correction():
+def rename_keys(value, mapping):
+    """`value` with every object key in `mapping` renamed (a later key replaces an equal earlier one)."""
+    if isinstance(value, dict):
+        return {mapping.get(key, key): rename_keys(item, mapping) for key, item in value.items()}
+    if isinstance(value, list):
+        return [rename_keys(item, mapping) for item in value]
+    return value
+
+
+def test_every_case_gives_the_recorded_full_result_but_the_enumerated_ones():
     differing = replay("full", "async")
-    assert [case_id for case_id, _ in differing] == list(AWS_CORRECTION)
     by_id = {item["id"]: item for item in CORPUS["cases"]}
+    assert [case_id for case_id, _ in differing] == sorted(
+        [*AWS_CORRECTION, *FULL_KEY_CASES], key=[item["id"] for item in CORPUS["cases"]].index
+    )
     for case_id, value in differing:
-        expected = AWS_CORRECTION[case_id]
-        assert by_id[case_id]["input"] == expected["input"]
-        assert by_id[case_id]["async"]["out"] == expected["recorded"]
-        assert value == expected["now"]
+        if case_id in AWS_CORRECTION:
+            expected = AWS_CORRECTION[case_id]
+            assert by_id[case_id]["input"] == expected["input"]
+            assert by_id[case_id]["async"]["out"] == expected["recorded"]
+            assert value == expected["now"]
+        else:
+            # Only object keys differ: the full tier scans keys with the full rules (L-N), so a key that
+            # is itself a full-tier token is replaced by its placeholder where 0.2.0 left it or only
+            # redacted the URL password inside it.
+            assert value == rename_keys(by_id[case_id]["async"]["out"], FULL_KEY_RENAMES)
