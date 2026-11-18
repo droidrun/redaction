@@ -1,5 +1,7 @@
 """Placeholders (SPEC section 7): the format, the grammar, the idempotence guard."""
 
+from collections import deque
+
 from ._patterns import compile_pattern
 from ._spec import ALGORITHMS, RULES
 
@@ -38,6 +40,31 @@ def is_placeholder_value(text: str, start: int, end: int) -> bool:
     """True when a placeholder starts at `start` and reaches at least `end` (the idempotence guard)."""
     placeholder_end = placeholder_end_at(text, start)
     return placeholder_end != -1 and placeholder_end >= end
+
+
+# The mark that starts a number inside a placeholder (`[REDACTED:npm#2]`, SPEC 7, numbered form).
+NUMBER_MARK: str = _FORMAT["numberMark"]
+
+
+def _ends_with_number(rule: str) -> bool:
+    """True when the rule part ends with `#<digits>` (it is itself numbered)."""
+    at = rule.rfind(NUMBER_MARK)
+    if at == -1 or at == len(rule) - len(NUMBER_MARK):
+        return False
+    return rule[at + len(NUMBER_MARK) :].isascii() and rule[at + len(NUMBER_MARK) :].isdigit()
+
+
+def number_slot(key: str) -> int | None:
+    """Where a number goes in a key (SPEC 8, key collisions): the index of the `]` of its last placeholder,
+    when that is exactly `[REDACTED:<rule>]` with a rule that has no `:suffix` and is not itself numbered.
+    Otherwise None (no placeholder, a `:suffix`, the bare `[REDACTED]`, an already numbered rule)."""
+    last = next(iter(deque(_PLACEHOLDER.finditer(key), maxlen=1)), None)
+    if last is None or not key.startswith(_FORMAT["open"], last.start()):
+        return None
+    rule = key[last.start() + len(_FORMAT["open"]) : last.end() - len(_FORMAT["close"])]
+    if ":" in rule or _ends_with_number(rule):
+        return None
+    return last.end() - len(_FORMAT["close"])
 
 
 def literal_segments(text: str) -> list[str]:

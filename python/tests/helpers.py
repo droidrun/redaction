@@ -19,10 +19,7 @@ def expand_gen(gen: dict[str, Any]) -> str:
 def load_vector_files() -> list[tuple[str, dict[str, Any]]]:
     root = resources.files("droidrun_redaction").joinpath("spec", "vectors")
     names = sorted(entry.name for entry in root.iterdir() if entry.name.endswith(".json"))
-    files = [(name, json.loads(root.joinpath(name).read_text(encoding="utf-8"))) for name in names]
-    # A file marked `"tier": "full"` needs the full tier, which this package does not have yet.
-    # A file marked `"pending"` is a spec change this package has not implemented yet.
-    return [(name, file) for name, file in files if file.get("tier") != "full" and "pending" not in file]
+    return [(name, json.loads(root.joinpath(name).read_text(encoding="utf-8"))) for name in names]
 
 
 def load_corpus() -> dict[str, Any]:
@@ -41,12 +38,19 @@ def canonical(value: Any) -> Any:
     return ["number", float(value)]
 
 
-def run(value: Any, *, mode: str, opts: dict[str, Any]) -> Any:
-    """A string goes through the text entry point, any other JSON value through the JSON one."""
+def run(value: Any, *, mode: str, opts: dict[str, Any], tier: str = "standard") -> Any:
+    """A string goes through the text entry point, any other JSON value through the JSON one.
+
+    The full tier's `compat` mode has no limits and refuses them; the recorded results of that side (the
+    TypeScript async entry) ignore the limits of a case, so they are not passed on.
+    """
+    if tier == "full" and mode == "compat":
+        opts = {key: item for key, item in opts.items() if key == "skipKeys"}
     if isinstance(value, str):
-        return redaction.redact_text(value, mode=mode, max_chars=opts.get("maxChars"))
+        return redaction.redact_text(value, tier=tier, mode=mode, max_chars=opts.get("maxChars"))
     return redaction.redact_json(
         value,
+        tier=tier,
         mode=mode,
         max_chars=opts.get("maxChars"),
         max_depth=opts.get("maxDepth"),

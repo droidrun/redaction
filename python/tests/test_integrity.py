@@ -124,3 +124,40 @@ def test_a_stale_hash_constant_fails(tmp_path):
     process = import_copy(tmp_path, change)
     assert process.returncode != 0
     assert "SpecError: redaction spec does not match its hash" in process.stderr
+
+
+def test_an_empty_full_rule_list_fails_even_with_a_matching_hash(tmp_path):
+    process = import_copy(
+        tmp_path, lambda copy: rewrite_spec(copy, "rules.json", lambda d: d.update(full=[]))
+    )
+    assert process.returncode != 0
+    assert "SpecError: redaction spec holds no rules" in process.stderr
+
+
+def test_an_unknown_full_rule_kind_fails_at_import(tmp_path):
+    def change(data):
+        data["full"][0]["kind"] = "no-such-kind"
+
+    process = import_copy(tmp_path, lambda copy: rewrite_spec(copy, "rules.json", change))
+    assert process.returncode != 0
+    assert "SpecError: redaction spec holds an unknown rule kind" in process.stderr
+
+
+def test_an_unknown_check_fails_at_import_and_is_never_read_as_no_check(tmp_path):
+    def change(data):
+        rule = next(rule for rule in data["full"] if rule.get("check") == "base64-json")
+        rule["check"] = "no-such-check"
+
+    process = import_copy(tmp_path, lambda copy: rewrite_spec(copy, "rules.json", change))
+    assert process.returncode != 0
+    assert "SpecError: redaction spec names an unknown check" in process.stderr
+
+
+def test_a_changed_letter_table_fails_the_hash_check(tmp_path):
+    def change(copy):
+        path = copy / "spec" / "algorithms.json"
+        path.write_text(path.read_text(encoding="utf-8").replace('"41-5a,', '"41-59,', 1), encoding="utf-8")
+
+    process = import_copy(tmp_path, change)
+    assert process.returncode != 0
+    assert "SpecError: redaction spec does not match its hash" in process.stderr

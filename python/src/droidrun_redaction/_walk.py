@@ -7,14 +7,29 @@ budget, the rest of a node-exhausted container collapses into one marker).
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from ._detect import Hit
 from ._keys import key_verdict, stronger_verdict
-from ._placeholder import build_read_placeholder, is_whole_placeholder
-from ._scan import RULE_IDS, is_overlong_key, redact_key, scan_units, tally
-from ._units import from_units, to_units
+from ._placeholder import (
+    NUMBER_MARK,
+    PLACEHOLDER_MARK,
+    build_read_placeholder,
+    is_whole_placeholder,
+    number_slot,
+)
+from ._scan import (
+    RULE_IDS,
+    is_overlong_key,
+    redact_key,
+    scan_full_compat,
+    scan_full_strict,
+    scan_standard,
+    scan_units,
+    tally,
+)
+from ._units import from_units, to_units, unit_length
 
 _ARRAY_INDEX = re.compile("(?:0|[1-9][0-9]*)", re.ASCII)
 _MAX_ARRAY_INDEX = 4294967294
@@ -40,16 +55,29 @@ class _Frame:
     depth: int
     index: int = 0
     out_key: str = ""
+    changed: bool = False
+    reserved: set[str] = field(default_factory=set)
+    last: dict[str, int] = field(default_factory=dict)
 
 
 class WalkState:
-    def __init__(self, max_nodes: int, max_chars: int, max_depth: int, skip: frozenset[str], strict: bool):
+    def __init__(
+        self,
+        max_nodes: float,
+        max_chars: float,
+        max_depth: float,
+        skip: frozenset[str],
+        strict: bool,
+        full: bool = False,
+    ):
+        self.full = full
         self.nodes = max_nodes
         self.chars = max_chars
         self.max_depth = max_depth
         self.skip = skip
         self.strict = strict
         self.counts: dict[str, int] = {}
+        self.error: str | None = None
         self.ancestors: set[int] = set()
 
     def count(self, rule_id: str, times: int = 1) -> None:
@@ -109,12 +137,16 @@ def _leaf_replacement(verdict: str, value: Any) -> str | None:
 
 
 def _scan_leaf_text(units: str, state: WalkState) -> str:
-    if not state.strict:
+    if state.full:
+        scanned, hits, error = (scan_full_strict if state.strict else scan_full_compat)(units)
+        state.error = state.error or error
+    elif not state.strict:
         scanned, hits = scan_units(units)
     else:
         try:
             scanned, hits = scan_units(units)
-        except Exception:
+        except Exception as failure:
+            state.error = state.error or type(failure).__name__
             return state.limit(_FAILED)
     state.count_hits(hits)
     return from_units(scanned)
@@ -156,7 +188,9 @@ def _open_frame(value: Any, verdict: str, depth: int, state: WalkState) -> _Fram
     keys = _contract_keys(value)
     if not all(isinstance(key, str) for key in keys):
         return state.limit(_FAILED)
-    return _Frame(value, keys, [value[key] for key in keys], {}, verdict, depth)
+    frame = _Frame(value, keys, [value[key] for key in keys], {}, verdict, depth)
+    frame.reserved = _reserved_keys(keys, state)
+    return frame
 
 
 def _enter(value: Any, verdict: str, depth: int, state: WalkState) -> tuple[_Frame | None, Any]:
@@ -189,28 +223,87 @@ def _over_budget(state: WalkState) -> str:
     return state.limit(_SIZE_LIMIT)
 
 
-def _next_key(key: str, state: WalkState) -> str:
-    """The output key of the next object entry."""
+def _scan_key(units: str, state: WalkState) -> tuple[str, list[Hit], str | None]:
+    """The key scan of the walk (the tier's rules; a key over `maxKeyChars` is left as it is)."""
+    scan = (scan_full_strict if state.strict else scan_full_compat) if state.full else scan_standard
+    return redact_key(units, scan)
+
+
+def _next_key(key: str, state: WalkState) -> tuple[str, bool]:
+    """The output key of the next object entry, and whether redaction (or a limit) changed it."""
     # A key has at least as many units as characters: one over a limit by characters is over it by units.
     if is_overlong_key(key) and not state.strict:
-        return key
+        return key, False
     if state.strict and (is_overlong_key(key) or len(key) > state.chars):
-        return _over_budget(state)
+        return _over_budget(state), True
     units = to_units(key)
     if state.strict:
         if is_overlong_key(units) or len(units) > state.chars:
-            return _over_budget(state)
+            return _over_budget(state), True
         state.chars -= len(units)
-    redacted, hits = redact_key(units)
+    redacted, hits, error = _scan_key(units, state)
+    state.error = state.error or error
     state.count_hits(hits)
-    return key if not hits else from_units(redacted)
+    out_key = key if not hits else from_units(redacted)
+    return out_key, out_key != key
+
+
+def _reserved_keys(keys: list[str], state: WalkState) -> set[str]:
+    """The input keys that hold a placeholder and that the key scan leaves as they are (SPEC 8): scanned
+    once, without a budget charge and without hits.
+
+    In `strict` only a key that fits the remaining character budget can be left as it is (a later one becomes
+    the size-limit placeholder), so the scan stops where the running total of the key lengths passes the
+    budget: its work is bounded by `max_chars`. A key over `maxKeyChars` is replaced in `strict`, so it is not
+    reserved there.
+    """
+    reserved: set[str] = set()
+    total = 0
+    for key in keys:
+        total += unit_length(key)
+        if state.strict and total > state.chars:
+            break
+        units = to_units(key) if PLACEHOLDER_MARK in key else key
+        if PLACEHOLDER_MARK not in key or (state.strict and is_overlong_key(units)):
+            continue
+        try:
+            scanned = _scan_key(units, state)[0]
+        except Exception:
+            continue
+        if scanned == units:
+            reserved.add(key)
+    return reserved
+
+
+def _place_key(frame: _Frame, out_key: str, changed: bool, value: Any) -> None:
+    """Store `value` in the output object of `frame` (SPEC 8, key collisions, L-P and L-Q).
+
+    A changed key whose name is reserved or taken gets a number inside its last placeholder, `#2`, `#3`, ...
+    (skipping reserved and taken names; the last number per name is remembered, so a run of colliding keys
+    costs linear time). Any other collision keeps the old rule: the later value replaces the earlier one.
+    """
+    out = frame.out
+    if not (changed and (out_key in frame.reserved or out_key in out)):
+        out[out_key] = value
+        return
+    slot = number_slot(out_key)
+    if slot is None:
+        out[out_key] = value
+        return
+    number = max(frame.last.get(out_key, 0), 1) + 1
+    while (
+        named := f"{out_key[:slot]}{NUMBER_MARK}{number}{out_key[slot:]}"
+    ) in out or named in frame.reserved:
+        number += 1
+    frame.last[out_key] = number
+    out[named] = value
 
 
 def _place(frame: _Frame, value: Any) -> None:
     if frame.keys is None:
         frame.out.append(value)
     else:
-        frame.out[frame.out_key] = value
+        _place_key(frame, frame.out_key, frame.changed, value)
 
 
 def _nodes_exhausted(frame: _Frame, state: WalkState) -> None:
@@ -219,6 +312,7 @@ def _nodes_exhausted(frame: _Frame, state: WalkState) -> None:
     if frame.keys is not None:
         key_marker = build_read_placeholder(_SIZE_LIMIT)
         frame.out_key = key_marker if state.strict else frame.keys[frame.index]
+        frame.changed = state.strict
     _place(frame, marker)
     frame.index = len(frame.items)
 
@@ -268,7 +362,7 @@ def walk_json(value: Any, state: WalkState) -> Any:
             pending = (child, top.verdict, top.depth + 1)
             continue
         key = top.keys[index]
-        top.out_key = _next_key(key, state)
+        top.out_key, top.changed = _next_key(key, state)
         if key in state.skip and _is_scalar(child):
             done, output = _skip_key_scalar(child, state)
             if done:

@@ -1,8 +1,18 @@
 """Replay of the recorded corpus (spec/corpus/golden-b12879a.json.gz, the TypeScript reference output).
 
-Every case whose input is a JSON value, standard tier, compat mode: the output must equal the recorded
-`sync` output and the rule counts must equal the counts of the recorded hits. A recorded output longer
-than 20,000 characters is stored as its SHA-256 and length; the replay compares those.
+Every case, both tiers in compat mode: the standard tier must equal the recorded `sync` result, the full tier
+the recorded `async` result (the output, and the rule counts of the recorded hits; the full-tier rule ids of
+the 0.2.0 record carry the prefix `@secretlint/secretlint-rule-`, the placeholder and this package do not).
+A recorded output longer than 20,000 characters is stored as its SHA-256 and length; the replay compares
+those.
+
+Three groups differ from the 0.2.0 record, all by decision of Lutz (2026-11-18), and all are enumerated:
+the AWS secret access key (SPEC 4.17) is reported over the secret, not from the key name, so the key name
+stays (`AWS_SECRET_ACCESS_KEY=[REDACTED:aws]` where 0.2.0 recorded `[REDACTED:aws]`; the same exception is in
+`ts/src/golden.test.ts`); object keys are scanned with the full rules (L-N): 24 cases whose key is itself
+a full-tier token (an npm, SendGrid, Slack, Linear, Shopify or GitLab token, or a database URL) now have that
+key replaced by its placeholder (full side only); and keys that redact to the same text keep every value
+(L-P): 120 `key-collision-*` cases, on both sides, where 0.2.0 let the later value replace the earlier one.
 """
 
 import hashlib
@@ -43,20 +53,116 @@ def is_digest(recorded):
     return isinstance(recorded, dict) and set(recorded) == {"digest", "length"}
 
 
+AWS_CORRECTION = {
+    "vector-109": {
+        "input": "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYzzzzKEY9xxx1",
+        "recorded": "[REDACTED:aws]",
+        "now": "AWS_SECRET_ACCESS_KEY=[REDACTED:aws]",
+    }
+}
+LEGACY_PREFIX = "@secretlint/secretlint-rule-"
+KEY_COLLISION_CASES = 120
+# Object keys that are full-tier tokens (L-N, Lutz 2026-11-18): the recorded 0.2.0 output left them, or
+# redacted only the password of a URL in them; the full tier now replaces the whole key.
+DATABASE_URL = "[REDACTED:database-connection-string]"
+FULL_KEY_RENAMES = {
+    "postgres://app:[REDACTED:url-credentials]@db.example.test:5432/app": DATABASE_URL,
+    "mongodb+srv://admin:[REDACTED:url-credentials]@cluster0.example.test/db": DATABASE_URL,
+    "postgres://user:[REDACTED:url-credentials]@db.example.test:5432/app": DATABASE_URL,
+    "npm_8sm7OXhsKGb9ECZOWLzYB1kfKvQRdckR5v8p": "[REDACTED:npm]",
+    "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": "[REDACTED:sendgrid]",
+    "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX": "[REDACTED:slack]",
+    "lin_api_HZnTQA00zaX9FHQIppNWPLOlaAuBbPikE26OHX5q": "[REDACTED:linear]",
+    "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": "[REDACTED:shopify]",
+    "glpat-s7UFmkxn32UiKz2tBhmt": "[REDACTED:gitlab]",
+}
+FULL_KEY_CASES = [
+    *(f"sample-{number}" for number in (68, 119, 122, 125, 128, 131, 137, 140)),
+    *(
+        f"fuzz-key-{number}"
+        for number in (39, 57, 82, 127, 167, 189, 193, 198, 201, 211, 214, 236, 266, 274, 280, 284)
+    ),
+]
+
+
 def test_the_corpus_holds_at_least_5000_cases():
     assert len(CORPUS["cases"]) == CORPUS["count"]
     assert CORPUS["count"] >= 5000
 
 
-def test_every_case_gives_the_recorded_output_and_rule_counts():
+def replay(tier, side):
+    """The ids of the cases that differ from the recorded result of `side`, and how many were replayed."""
     differing = []
     for item in CORPUS["cases"]:
-        result = run(case_input(item), mode="compat", opts=item.get("opts", {}))
-        recorded = item["sync"]
-        counts = Counter(rule_id for rule_id, _start, _end in recorded["hits"])
+        result = run(case_input(item), mode="compat", opts=item.get("opts", {}), tier=tier)
+        recorded = item[side]
+        ids = (rule_id.removeprefix(LEGACY_PREFIX) for rule_id, _start, _end in recorded["hits"])
+        counts = Counter(ids)
         output = digest_of(result.value) if is_digest(recorded["out"]) else result.value
         same_output = canonical(output) == canonical(recorded["out"])
         same_counts = dict(result.hits) == dict(counts)
         if result.error is not None or not same_output or not same_counts:
-            differing.append(item["id"])
-    assert differing == []
+            differing.append((item["id"], result.value))
+    return differing
+
+
+def rename_keys(value, mapping):
+    """`value` with every object key in `mapping` renamed (a later key replaces an equal earlier one)."""
+    if isinstance(value, dict):
+        return {mapping.get(key, key): rename_keys(item, mapping) for key, item in value.items()}
+    if isinstance(value, list):
+        return [rename_keys(item, mapping) for item in value]
+    return value
+
+
+NUMBER_IN_PLACEHOLDER = re.compile(r"#[0-9]+\]")
+
+
+def merge_numbered_keys(value):
+    """What 0.2.0 recorded for keys that redact to one text: the numbers of L-P taken out of the keys, so the
+    later value replaces the earlier one at the earlier position."""
+    if isinstance(value, dict):
+        merged = {}
+        for key, item in value.items():
+            merged[NUMBER_IN_PLACEHOLDER.sub("]", key)] = merge_numbered_keys(item)
+        return merged
+    if isinstance(value, list):
+        return [merge_numbered_keys(item) for item in value]
+    return value
+
+
+def collision_ids(differing):
+    return {case_id for case_id, _ in differing if case_id.startswith("key-collision-")}
+
+
+def test_every_case_gives_the_recorded_standard_result_but_the_key_collisions():
+    # L-P (Lutz 2026-11-18): keys of one object that redact to the same text keep every value, the later ones
+    # numbered (`[REDACTED:<rule>#2]`); 0.2.0 recorded the later value replacing the earlier one.
+    differing = replay("standard", "sync")
+    assert {case_id for case_id, _ in differing} == collision_ids(differing)
+    assert len(differing) == KEY_COLLISION_CASES
+    by_id = {item["id"]: item for item in CORPUS["cases"]}
+    for case_id, value in differing:
+        assert merge_numbered_keys(value) == by_id[case_id]["sync"]["out"]
+
+
+def test_every_case_gives_the_recorded_full_result_but_the_enumerated_ones():
+    differing = replay("full", "async")
+    by_id = {item["id"]: item for item in CORPUS["cases"]}
+    collisions = collision_ids(differing)
+    assert len(collisions) == KEY_COLLISION_CASES
+    assert {case_id for case_id, _ in differing} == {*collisions, *AWS_CORRECTION, *FULL_KEY_CASES}
+    for case_id, value in differing:
+        recorded = by_id[case_id]["async"]["out"]
+        if case_id in AWS_CORRECTION:
+            expected = AWS_CORRECTION[case_id]
+            assert by_id[case_id]["input"] == expected["input"]
+            assert recorded == expected["recorded"]
+            assert value == expected["now"]
+        elif case_id in collisions:
+            assert merge_numbered_keys(value) == recorded
+        else:
+            # Only object keys differ: the full tier scans keys with the full rules (L-N), so a key that
+            # is itself a full-tier token is replaced by its placeholder where 0.2.0 left it or only
+            # redacted the URL password inside it.
+            assert value == rename_keys(recorded, FULL_KEY_RENAMES)

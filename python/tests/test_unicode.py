@@ -5,6 +5,7 @@ Expected values were produced by the TypeScript package and are written out here
 
 import pytest
 from droidrun_redaction import is_secret_key_name, redact_json, redact_text
+from droidrun_redaction._units import to_units, unit_length
 
 SECRET = "Zq9abcDEF123ghi_x"
 PLACEHOLDER = "[REDACTED:generic-keyword]"
@@ -113,9 +114,12 @@ def test_keys_keep_the_ecmascript_order():
     assert keys == ["2", "10", "4294967294", "b", "a", "01", "4294967295"]
 
 
-def test_a_key_that_holds_a_secret_is_redacted_and_colliding_keys_merge():
+def test_a_key_that_holds_a_secret_is_redacted_and_colliding_keys_keep_both_values():
     value = {"password=Zq9abcDEF123ghi_x": 1, "password=Zq9abcDEF123ghi_y": 2}
-    assert redact_json(value, mode="compat").value == {f"password={PLACEHOLDER}": "[REDACTED:key-context]"}
+    assert redact_json(value, mode="compat").value == {
+        f"password={PLACEHOLDER}": "[REDACTED:key-context]",
+        "password=[REDACTED:generic-keyword#2]": "[REDACTED:key-context]",
+    }
 
 
 def test_numbers_equal_the_typescript_output_as_doubles():
@@ -138,3 +142,12 @@ def test_an_integer_that_is_not_replaced_comes_back_exactly(mode):
 @pytest.mark.parametrize("mode", ["strict", "compat"])
 def test_an_integer_under_a_secret_key_is_still_replaced(mode):
     assert redact_json({"pin": 10**400}, mode=mode).value == {"pin": "[REDACTED:key-context]"}
+
+
+@pytest.mark.parametrize(
+    ("text", "units"),
+    [("", 0), ("abc", 3), ("é", 1), (SMILE, 2), (SMILE * 3 + "a", 7), ("\ud800", 1), ("𝐀", 2)],
+)
+def test_unit_length_counts_utf16_units_without_converting(text, units):
+    assert unit_length(text) == units
+    assert unit_length(text) == len(to_units(text))
