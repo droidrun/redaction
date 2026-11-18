@@ -1,0 +1,121 @@
+{
+  "description": "Bearer, Basic and Token authorization values",
+  "cases": [
+    {
+      "name": "bearer header",
+      "input": "Authorization: Bearer abc.def-1=",
+      "expected": "Authorization: Bearer [REDACTED:auth-header]"
+    },
+    {
+      "name": "bearer lower case",
+      "input": "authorization: bearer abc.def-1= for the call",
+      "expected": "authorization: bearer [REDACTED:auth-header] for the call"
+    },
+    {
+      "name": "bearer in a sentence",
+      "input": "sent x Bearer zzz y",
+      "expected": "sent x Bearer [REDACTED:auth-header] y"
+    },
+    {
+      "name": "basic credentials",
+      "input": "Authorization: Basic dXNlcjpwYXNzd29yZA==",
+      "expected": "Authorization: Basic [REDACTED:auth-header]"
+    },
+    {
+      "name": "basic lower case",
+      "input": "basic dXNlcjpwYXNz",
+      "expected": "basic [REDACTED:auth-header]"
+    },
+    {
+      "name": "token scheme",
+      "input": "Authorization: Token 9f8e7d6c5b4a3210",
+      "expected": "Authorization: Token [REDACTED:auth-header]"
+    },
+    {
+      "name": "proxy authorization header in a json value",
+      "input": {
+        "Proxy-Authorization": "Basic dXNlcjpwYXNzd29yZA==",
+        "accept": "json"
+      },
+      "expected": {
+        "Proxy-Authorization": "[REDACTED:key-context]",
+        "accept": "json"
+      }
+    },
+    {
+      "name": "header map",
+      "input": {
+        "headers": {
+          "X-Forwarded": "Bearer abc.def-ghi",
+          "accept": "json"
+        }
+      },
+      "expected": {
+        "headers": {
+          "X-Forwarded": "Bearer [REDACTED:auth-header]",
+          "accept": "json"
+        }
+      }
+    },
+    {
+      "name": "prose with Token",
+      "input": "Token expired, Basic information, token refresh",
+      "expected": "Token expired, Basic information, token refresh"
+    },
+    {
+      "name": "prose with Basic",
+      "input": "Basic Authentication",
+      "expected": "Basic Authentication"
+    },
+    {
+      "name": "prose with token",
+      "input": "use the token",
+      "expected": "use the token"
+    },
+    {
+      "name": "cookie header line",
+      "input": "Cookie: sid=abc123; theme=dark; other=1",
+      "expected": "Cookie: [REDACTED:cookie]"
+    },
+    {
+      "name": "set-cookie header line",
+      "input": "Set-Cookie: session=xyz; Path=/; HttpOnly\nHost: example.test",
+      "expected": "Set-Cookie: [REDACTED:cookie]\nHost: example.test"
+    },
+    {
+      "name": "guard: Cookie without a pair",
+      "input": "Cookie: enabled",
+      "expected": "Cookie: enabled"
+    },
+    {
+      "name": "guard: missing bearer prose",
+      "input": "Missing or invalid bearer token",
+      "expected": "Missing or invalid bearer token"
+    },
+    {
+      "name": "guard: bearer scheme prose",
+      "input": "Use the Bearer scheme in the Authorization header",
+      "expected": "Use the Bearer scheme in the Authorization header"
+    },
+    {
+      "name": "cookie value stops at escaped upper-case N",
+      "input": "Cookie: a=b\\Nxyz tail",
+      "expected": "Cookie: [REDACTED:cookie]\\Nxyz tail"
+    },
+    {
+      "name": "cookie value stops at escaped upper-case R",
+      "input": "Cookie: a=b\\Rxyz tail",
+      "expected": "Cookie: [REDACTED:cookie]\\Rxyz tail"
+    },
+    {
+      "name": "cookie value stops at escaped lower-case n",
+      "input": "Set-Cookie: sid=Zq9abcDEF123ghi\\nxyz",
+      "expected": "Set-Cookie: [REDACTED:cookie]\\nxyz"
+    },
+    {
+      "name": "cookie value continues past another escape",
+      "input": "Cookie: a=b\\Xxyz tail",
+      "expected": "Cookie: [REDACTED:cookie]"
+    }
+  ]
+}
