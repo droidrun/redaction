@@ -49,8 +49,11 @@ result.value   # {'user': 'a', 'api_key': '[REDACTED:key-context]', 'note': 'Bea
   (`none`: nothing; `string`: a string is replaced; `any`: a number is replaced too).
 - `RedactResult(value, hits, error)` is a frozen dataclass. `hits` is a tuple of
   `RuleCount(rule_id, count)` in order of first hit: **rule id and count only, never a range or any text**
-  (ranges reveal lengths). `error` is `None`, or the class name of the failure that made `value` the
-  placeholder `[REDACTED:redaction-failed]` (never a message: it could echo the input).
+  (ranges reveal lengths). `error` is `None` when every scan ran. Otherwise it is the class name of the
+  first failure of a scan (never a message: it could echo the input), and `value` holds a placeholder for what
+  could not be scanned: `[REDACTED:redaction-failed]` in the standard tier, `[REDACTED:error]` in the full tier
+  (the whole text, or the JSON leaf). In the full tier's `compat` mode `error` is also set when the full-tier
+  rules failed but the standard rules took over; check it before you send a result on.
 
 ### Logging filter
 
@@ -91,8 +94,7 @@ interpreter's own `unicodedata`.
   class instances, non-string keys) and any internal failure give a placeholder
   (`[REDACTED:size-limit]`, `[REDACTED:depth-limit]`, `[REDACTED:circular]`,
   `[REDACTED:redaction-failed]`). The JSON walk is iterative: deep input cannot overflow the stack. In the
-  full tier a failing scan of a text gives `[REDACTED:error]` (no fallback), and `RedactResult.error` names
-  the exception class.
+  full tier a failing scan gives `[REDACTED:error]` (no fallback) for the text or the JSON leaf.
 - `compat`: reproduces the TypeScript v0.2.0 behaviour of its sync entry (a string under a skip key is
   returned unscanned; keys do not count against `max_chars`; a node-exhausted object keeps its raw key at the
   cut). Use it only to compare with TypeScript output. In the full tier `compat` is TypeScript's async
