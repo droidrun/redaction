@@ -12,6 +12,9 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ts
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -31,12 +34,30 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: '1.4.4'
+      - name: Spec copies and hash match the spec on the tagged commit
+        working-directory: .
+        run: tools/sync-spec --check
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.26'
       - name: Setup pnpm
         run: corepack enable && corepack prepare pnpm@10.18.1 --activate
       - run: pnpm install --frozen-lockfile
+      - name: Install tools
+        working-directory: tools
+        run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
+      - name: Lint spec on the tagged commit
+        working-directory: .
+        run: bun tools/lint-spec.ts
+      - name: Pack and import from the tarball
+        working-directory: .
+        run: bun tools/check-pack.ts
       - run: pnpm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

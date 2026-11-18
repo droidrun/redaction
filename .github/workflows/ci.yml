@@ -9,9 +9,83 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
+    outputs:
+      spec: ${{ steps.filter.outputs.spec }}
+      ts: ${{ steps.filter.outputs.ts }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # No usable base (new branch, forced push): run everything.
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "spec=true" >> "$GITHUB_OUTPUT"
+            echo "ts=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$BASE" "$GITHUB_SHA")
+          if printf '%s\n' "$changed" | grep -Eq '^(spec/|tools/|ts/src/spec-data\.generated\.ts$|\.github/workflows/ci\.yml$)'; then
+            echo "spec=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "spec=false" >> "$GITHUB_OUTPUT"
+          fi
+          if printf '%s\n' "$changed" | grep -Eq '^(ts/|spec/|tools/|\.github/workflows/ci\.yml$)'; then
+            echo "ts=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ts=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  spec:
+    needs: changes
+    if: needs.changes.outputs.spec == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.22.1'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.4'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.26'
+      - name: Setup pnpm
+        run: corepack enable && corepack prepare pnpm@10.18.1 --activate
+      - name: Install package dependencies (the interpreter scaling run imports ts/src)
+        working-directory: ts
+        run: pnpm install --frozen-lockfile
+      - name: Install tools
+        working-directory: tools
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck tools
+        working-directory: tools
+        run: pnpm run typecheck
+      - name: Spec copies and hash are up to date
+        run: tools/sync-spec --check
+      - name: Lint spec (schemas, grammar, recheck, JS/Python/Go compile, scaling)
+        run: bun tools/lint-spec.ts
+      - name: Lint self-test (planted non-portable patterns must fail)
+        run: bun tools/lint-spec.ts --self-test
+
+  ts:
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ts
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -22,7 +96,13 @@ jobs:
           bun-version: '1.4.4'
       - name: Setup pnpm
         run: corepack enable && corepack prepare pnpm@10.18.1 --activate
+      - name: Spec copies and hash are up to date
+        working-directory: .
+        run: tools/sync-spec --check
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
+      - name: Pack and import a vector subpath from the tarball
+        working-directory: .
+        run: bun tools/check-pack.ts

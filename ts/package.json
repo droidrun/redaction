@@ -1,0 +1,51 @@
+{
+  "name": "@droidrun/redaction",
+  "version": "0.2.0",
+  "description": "Secret detection and redaction for text and JSON values, sync and async, with restore",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./sync": {
+      "types": "./dist/sync.d.ts",
+      "import": "./dist/sync.js",
+      "default": "./dist/sync.js"
+    },
+    "./vectors/*.json": "./vectors/*.json"
+  },
+  "files": [
+    "dist",
+    "vectors"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/droidrun/redaction.git"
+  },
+  "packageManager": "pnpm@10.18.1",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "node scripts/copy-vectors.mjs"
+  },
+  "dependencies": {
+    "@secretlint/secretlint-rule-preset-recommend": "13.0.4",
+    "@secretlint/types": "13.0.4"
+  },
+  "devDependencies": {
+    "@secretlint/core": "13.0.4",
+    "@types/bun": "1.4.3",
+    "typescript": "6.0.3"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
