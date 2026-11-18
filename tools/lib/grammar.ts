@@ -19,6 +19,8 @@ function describeEscape(char: string): string {
     if ('sSwWdD'.includes(char)) return `shorthand class \\${char}`;
     if (/[0-9]/.test(char)) return `back-reference \\${char}`;
     if (char === 'k') return 'named back-reference \\k';
+    if ('BAZzG'.includes(char))
+        return `context-sensitive construct \\${char} (only \\b may look at a neighbour)`;
     return `escape \\${char} (only \\b and escaped punctuation are portable)`;
 }
 

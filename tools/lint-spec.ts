@@ -62,6 +62,18 @@ function validateSchemas(dir: string, schemaDir: string): Problem[] {
     return problems;
 }
 
+/** A `regex` rule takes either a capture `group` or guards, never both (SPEC 4.1: the guarded path reports whole matches). */
+function ruleShapeProblems(dir: string): Problem[] {
+    return readSpecDir(dir).rules.pipeline.flatMap((rule, index) => {
+        const hasGuard = rule.notBefore !== undefined || rule.notAfter !== undefined;
+        const hasGroup = rule.group !== undefined && rule.group !== 0;
+        if (rule.kind !== 'regex' || !hasGuard || !hasGroup) return [];
+        return [
+            `pipeline[${index}] ${String(rule.id)}: group combined with guards (SPEC 4.1 allows one of them)`,
+        ];
+    });
+}
+
 function ruleIdProblems(dir: string): Problem[] {
     const spec = readSpecDir(dir);
     const ids = [
@@ -204,6 +216,7 @@ export async function lintDir(
     const problems = [
         ...validateSchemas(dir, schemaDir),
         ...ruleIdProblems(dir),
+        ...ruleShapeProblems(dir),
         ...unclassifiedFields(readSpecDir(dir)),
         ...grammarProblems(patterns),
         ...jsCompileProblems(patterns),
@@ -215,7 +228,7 @@ export async function lintDir(
     return problems;
 }
 
-type Plant = { name: string; rule: string; field: string; value: string; expect: string };
+type Plant = { name: string; rule: string; field: string; value: string | number; expect: string };
 
 /** Each plant is written into a rule of a copy of the spec; the lint must report it. */
 const PLANTS: Plant[] = [
@@ -288,6 +301,34 @@ const PLANTS: Plant[] = [
         field: 'pattern',
         value: 'xai-[^]a]{80}',
         expect: 'starts with "]"',
+    },
+    {
+        name: '\\B context-sensitive',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: 'xai-\\B[0-9a-zA-Z_]{80}',
+        expect: 'context-sensitive',
+    },
+    {
+        name: '\\A anchor escape',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: '\\Axai-[0-9a-zA-Z_]{80}',
+        expect: 'context-sensitive',
+    },
+    {
+        name: '\\Z anchor escape',
+        rule: 'xai-api-key',
+        field: 'pattern',
+        value: 'xai-[0-9a-zA-Z_]{80}\\Z',
+        expect: 'context-sensitive',
+    },
+    {
+        name: 'group with guards',
+        rule: 'gcp-api-key',
+        field: 'group',
+        value: 1,
+        expect: 'group combined with guards',
     },
     {
         name: 'astral literal',
