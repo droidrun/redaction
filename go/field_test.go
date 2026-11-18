@@ -28,6 +28,15 @@ func TestKeyVerdict(t *testing.T) {
 	}
 }
 
+func TestVerdictNamesAreTheSpecStrings(t *testing.T) {
+	names := map[Verdict]string{VerdictNone: "none", VerdictString: "string", VerdictAny: "any"}
+	for verdict, want := range names {
+		if verdict.String() != want {
+			t.Errorf("got %q, want %q", verdict.String(), want)
+		}
+	}
+}
+
 func TestRedactField(t *testing.T) {
 	cases := []struct {
 		name  string

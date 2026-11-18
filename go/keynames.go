@@ -121,6 +121,11 @@ func compactKey(key []uint16) string {
 	return string(compact)
 }
 
+// String is the name the spec gives the verdict: `none`, `string` or `any`.
+func (v Verdict) String() string {
+	return [...]string{"none", "string", "any"}[v]
+}
+
 func (k *keyNames) isSecretWord(word string, plural bool) bool {
 	base := word
 	if plural {
