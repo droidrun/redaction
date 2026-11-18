@@ -135,8 +135,8 @@ describe('structural skip-list', () => {
         );
         expect(out).toEqual({
             customKey: secret,
-            notes: 'password: [REDACTED:generic-keyword:4dor]',
-            type: 'password: [REDACTED:generic-keyword:4dor]',
+            notes: 'password: [REDACTED:generic-keyword]',
+            type: 'password: [REDACTED:generic-keyword]',
         });
         expect(stats.hits).toHaveLength(2);
     });
@@ -149,8 +149,8 @@ describe('structural skip-list', () => {
         expect(out).toEqual({
             type: secret,
             id: secret,
-            url: 'password: [REDACTED:generic-keyword:4dor]',
-            code: 'password: [REDACTED:generic-keyword:4dor]',
+            url: 'password: [REDACTED:generic-keyword]',
+            code: 'password: [REDACTED:generic-keyword]',
         });
         expect(stats.hits).toHaveLength(2);
     });

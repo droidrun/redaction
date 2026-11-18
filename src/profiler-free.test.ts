@@ -13,7 +13,7 @@ test('the public entry scans 300 kB without loading core or profiler', () => {
         const { text, hits } = await redactText(input);
         assert.equal(hits.length, 1);
         assert.equal(text.includes(secret), false);
-        assert.equal(text.includes('[REDACTED:generic-keyword:4dor]'), true);
+        assert.equal(text.includes('[REDACTED:generic-keyword]'), true);
         const forbidden = Object.keys(require.cache).filter((path) =>
             path.includes('@secretlint/core/') || path.includes('@secretlint/profiler/'));
         assert.deepEqual(forbidden, []);

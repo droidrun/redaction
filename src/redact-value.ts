@@ -1,36 +1,41 @@
 /**
- * Generic recursive JSON-value redaction.
+ * Generic recursive JSON-value redaction (async: scanners + sync rules).
  *
  * Two rules, applied at every depth:
  *
- *   1. Structural skip keys are never scanned or force-redacted, preserving
- *      identifiers byte-for-byte. The minimal default is `type` and `id`;
- *      consumers replace it with their own set through `opts.skipKeys`.
- *   2. A nonempty STRING value reached through a credential-suspicious key
- *      (`password`, `secret`, `token`, `apiKey`, `AWS_SECRET_ACCESS_KEY`, ...)
- *      is force-redacted even if the value alone would not trip a scanner
- *      (for example, a short, low-entropy password). The key is never touched.
+ *   1. Structural skip keys (default `type`, `id`; `opts.skipKeys` replaces the
+ *      set) keep their PRIMITIVE values byte for byte; containers under them
+ *      are still walked.
+ *   2. A string under a secret-named key (`isSecretKeyName`: `password`,
+ *      `secret`, `token`, `apiKey`, `x-auth-token`, `Set-Cookie`, ...) is
+ *      replaced even if it would not trip a scanner (for example a short,
+ *      low-entropy password); so is a number under a singular secret key
+ *      (`pin`), but not counts (`max_tokens`). Containers under such a key are
+ *      walked and their strings replaced. The key is never touched.
  *
  * Other string values go through the normal `redactText` detector pass.
  *
  * KNOWN TRADE-OFFS:
  *   - Each STRING leaf is scanned independently. Secrets split across
  *     sibling leaves are not reassembled and therefore may not be detected.
- *   - Skip-key fields are never scanned or force-redacted, even if they
- *     contain secret-shaped content. Consumers choose which values must
- *     remain byte-stable by supplying their own skip set.
+ *   - Skipped primitive values are never scanned, even if they contain
+ *     secret-shaped content.
  */
 import { redactText, type Hit, type RedactTextOpts } from './redact-text.js';
 import { buildPlaceholder } from './placeholder.js';
+import {
+    CREDENTIAL_KEY_RE,
+    KEY_CONTEXT_RULE_ID,
+    keyVerdict,
+    leafPlaceholder,
+    STRUCTURAL_SKIP_KEYS,
+    strongerVerdict,
+    type KeyVerdict,
+} from './key-names.js';
+import { setOwnKey } from './own-key.js';
+import { redactKey } from './redact-sync.js';
 
-/** minimal default; consumers pass their own structural keys via `opts.skipKeys` */
-export const STRUCTURAL_SKIP_KEYS: ReadonlySet<string> = new Set(['type', 'id']);
-
-export const CREDENTIAL_KEY_RE = new RegExp(
-    'password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|' +
-    'private[_-]?key|client[_-]?secret|credential',
-    'i',
-);
+export { CREDENTIAL_KEY_RE, STRUCTURAL_SKIP_KEYS };
 
 export type RedactValueStats = { hits: Hit[] };
 
@@ -43,45 +48,70 @@ export async function redactJsonValue(
     stats: RedactValueStats,
     opts: RedactValueOpts = {},
 ): Promise<unknown> {
-    return visit(value, stats, undefined, opts);
+    return visit(value, stats, opts, 'none');
 }
 
-/** `parentKey` is the object key this value was reached through. Array
- *  elements have no parent key; key-context applies only inside their objects. */
+function isPrimitive(value: unknown): boolean {
+    return value === null || (typeof value !== 'object' && typeof value !== 'function');
+}
+
+async function visitString(
+    value: string,
+    stats: RedactValueStats,
+    opts: RedactValueOpts,
+    verdict: KeyVerdict,
+): Promise<string> {
+    if (value.length === 0) return value;
+    const keyed = leafPlaceholder(verdict, value);
+    if (keyed !== undefined) {
+        stats.hits.push({ ruleId: KEY_CONTEXT_RULE_ID, range: [0, value.length] });
+        if (opts.last4 === true) return buildPlaceholder(KEY_CONTEXT_RULE_ID, value);
+        return keyed;
+    }
+    const { text, hits } = await redactText(value, opts);
+    stats.hits.push(...hits);
+    return text;
+}
+
 async function visit(
     value: unknown,
     stats: RedactValueStats,
-    parentKey: string | undefined,
     opts: RedactValueOpts,
+    verdict: KeyVerdict,
 ): Promise<unknown> {
-    if (typeof value === 'string') {
-        if (value.length === 0) return value;
-        const hasCredentialKey = parentKey !== undefined && CREDENTIAL_KEY_RE.test(parentKey);
-        if (hasCredentialKey) {
-            const placeholder = buildPlaceholder('key-context', value);
-            stats.hits.push({ ruleId: 'key-context', range: [0, value.length] });
-            return placeholder;
-        }
-        const { text, hits } = await redactText(value, opts);
-        stats.hits.push(...hits);
-        return text;
-    }
+    if (typeof value === 'string') return visitString(value, stats, opts, verdict);
     if (Array.isArray(value)) {
         const out: unknown[] = [];
-        for (const v of value) {
-            out.push(await visit(v, stats, undefined, opts));
+        for (const item of value) {
+            out.push(await visit(item, stats, opts, verdict));
         }
         return out;
     }
-    const isObject = value !== null && typeof value === 'object';
-    if (isObject) {
-        const out: Record<string, unknown> = {};
-        const skipKeys = opts.skipKeys ?? STRUCTURAL_SKIP_KEYS;
-        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            out[k] = skipKeys.has(k) ? v : await visit(v, stats, k, opts);
-        }
-        return out;
+    if (value !== null && typeof value === 'object') {
+        return visitEntries(value as Record<string, unknown>, stats, opts, verdict);
     }
-    // number / boolean / null / undefined — nothing to redact.
-    return value;
+    const keyed = leafPlaceholder(verdict, value);
+    if (keyed === undefined) return value;
+    stats.hits.push({ ruleId: KEY_CONTEXT_RULE_ID, range: [0, 0] });
+    return keyed;
+}
+
+async function visitEntries(
+    value: Record<string, unknown>,
+    stats: RedactValueStats,
+    opts: RedactValueOpts,
+    verdict: KeyVerdict,
+): Promise<Record<string, unknown>> {
+    const out: Record<string, unknown> = {};
+    const skipKeys = opts.skipKeys ?? STRUCTURAL_SKIP_KEYS;
+    for (const [key, child] of Object.entries(value)) {
+        const outKey = redactKey(key, stats.hits);
+        if (skipKeys.has(key) && isPrimitive(child)) {
+            setOwnKey(out, outKey, child);
+            continue;
+        }
+        const childVerdict = strongerVerdict(verdict, keyVerdict(key));
+        setOwnKey(out, outKey, await visit(child, stats, opts, childVerdict));
+    }
+    return out;
 }

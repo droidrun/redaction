@@ -1,0 +1,65 @@
+{
+  "description": "ordinary text that must come back unchanged on both entry points",
+  "cases": [
+    {
+      "name": "token: expired",
+      "input": "the session token: expired yesterday",
+      "expected": "the session token: expired yesterday"
+    },
+    {
+      "name": "token expired sentence",
+      "input": "Token expired, please sign in again",
+      "expected": "Token expired, please sign in again"
+    },
+    {
+      "name": "the secretary",
+      "input": "the secretary called about the passwordless login rollout",
+      "expected": "the secretary called about the passwordless login rollout"
+    },
+    {
+      "name": "password reset flow",
+      "input": "ValueError: boom password-reset flow ok",
+      "expected": "ValueError: boom password-reset flow ok"
+    },
+    {
+      "name": "doc placeholder snake_case",
+      "input": "set api_key: your_api_key_here in the .env file",
+      "expected": "set api_key: your_api_key_here in the .env file"
+    },
+    {
+      "name": "doc placeholder screaming",
+      "input": "export TOKEN=REPLACE_ME_TOKEN",
+      "expected": "export TOKEN=REPLACE_ME_TOKEN"
+    },
+    {
+      "name": "angle bracket placeholder",
+      "input": "Authorization: <your-token-here>",
+      "expected": "Authorization: <your-token-here>"
+    },
+    {
+      "name": "masked value",
+      "input": "secret: ****************",
+      "expected": "secret: ****************"
+    },
+    {
+      "name": "trivial value",
+      "input": "password: changeme",
+      "expected": "password: changeme"
+    },
+    {
+      "name": "undefined value",
+      "input": "default config has token: undefined and that is fine",
+      "expected": "default config has token: undefined and that is fine"
+    },
+    {
+      "name": "short design tokens",
+      "input": "spacing_token: 16px, color_token: #fff",
+      "expected": "spacing_token: 16px, color_token: #fff"
+    },
+    {
+      "name": "plain sentence",
+      "input": "The quick brown fox jumps over the lazy dog 1234567890 times",
+      "expected": "The quick brown fox jumps over the lazy dog 1234567890 times"
+    }
+  ]
+}

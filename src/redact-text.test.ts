@@ -4,6 +4,7 @@
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { detectSecrets, redactText } from './redact-text.js';
+import { redactJsonValue } from './redact-value.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -44,7 +45,7 @@ describe('positive fixtures — one per rule family', () => {
                 'SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVadQssw5c';
         const { text, hits } = await redactText(`bearer ${jwt}`);
         expect(text).not.toContain(jwt);
-        expect(hits.some((h) => h.ruleId === 'mobilerun-redaction/jwt')).toBe(true);
+        expect(hits.some((h) => h.ruleId === 'jwt')).toBe(true);
     });
 
     test('generic keyword+value: password:', async () => {
@@ -55,7 +56,7 @@ describe('positive fixtures — one per rule family', () => {
 
     test('leading BOM preserves input-relative redaction ranges', async () => {
         const { text, hits } = await redactText('\ufeffpassword: S0mmer2026!xTr0ub4dor');
-        expect(text).toBe('\ufeffpassword: [REDACTED:generic-keyword:4dor]');
+        expect(text).toBe('\ufeffpassword: [REDACTED:generic-keyword]');
         expect(hits).toHaveLength(1);
     });
 
@@ -65,7 +66,7 @@ describe('positive fixtures — one per rule family', () => {
         const input = filler.slice(0, 89_760) + '\ufeff' + filler.slice(89_761, 105_000) +
             secret + filler.slice(105_000 + secret.length);
         const { text } = await redactText(input);
-        expect(text).toContain('password: [REDACTED:generic-keyword:4dor]');
+        expect(text).toContain('password: [REDACTED:generic-keyword]');
         expect(text).not.toContain('S0mmer2026');
         expect(text).not.toContain(']r');
     });
@@ -91,7 +92,7 @@ describe('positive fixtures — one per rule family', () => {
         expect(key).toHaveLength(39);
         const { text, hits } = await redactText(`GOOGLE_API_KEY=${key}`);
         expect(text).not.toContain(key);
-        expect(hits.some((h) => h.ruleId === 'mobilerun-redaction/gcp-api-key')).toBe(true);
+        expect(hits.some((h) => h.ruleId === 'gcp-api-key')).toBe(true);
     });
 
     test('xAI (x.ai / Grok) API key: xai- + 80-char body (custom rule — no upstream ' +
@@ -100,7 +101,7 @@ describe('positive fixtures — one per rule family', () => {
         expect(key).toHaveLength(84);
         const { text, hits } = await redactText(`XAI_API_KEY=${key}`);
         expect(text).not.toContain(key);
-        expect(hits.some((h) => h.ruleId === 'mobilerun-redaction/xai-api-key')).toBe(true);
+        expect(hits.some((h) => h.ruleId === 'xai-api-key')).toBe(true);
     });
 });
 
@@ -158,7 +159,7 @@ describe('AIza boundary bug (Fix 1 — trailing \\b false-negative)', () => {
         expect(key.endsWith('-')).toBe(true);
         const { text, hits } = await redactText(`the deploy log mentions ${key} in passing`);
         expect(text).not.toContain(key);
-        expect(hits.some((h) => h.ruleId === 'mobilerun-redaction/gcp-api-key')).toBe(true);
+        expect(hits.some((h) => h.ruleId === 'gcp-api-key')).toBe(true);
     });
 
     test('AIza-shaped decoy with a 36-char body (one over the real 35) is NOT flagged', async () => {
@@ -217,7 +218,9 @@ describe('idempotence + overlap', () => {
         // The two ranges merge into ONE placeholder spanning the full union
         // — a single marker built from the merged (62-char) match, carrying
         // the ruleId of the earliest-starting hit (aws).
-        expect(out).toBe(`[REDACTED:aws:${secret.slice(-4)}]`);
+        expect(out).toBe('[REDACTED:aws]');
+        const legacy = await redactText(text, { last4: true });
+        expect(legacy.text).toBe(`[REDACTED:aws:${secret.slice(-4)}]`);
     });
 
     test('two independent, non-overlapping hits in one string both get placeholders', async () => {
@@ -231,8 +234,13 @@ describe('idempotence + overlap', () => {
 });
 
 describe('placeholder shape', () => {
-    test('match >=16 chars gets ruleId:last4', async () => {
+    test('the default placeholder carries no character of the secret', async () => {
         const { text } = await redactText('ghp_16C7e42F292c6912E7710c838347Ae178B4a');
+        expect(text).toBe('[REDACTED:github]');
+    });
+
+    test('opts.last4 restores the 0.1.1 form for matches of >=16 chars', async () => {
+        const { text } = await redactText('ghp_16C7e42F292c6912E7710c838347Ae178B4a', { last4: true });
         expect(text).toMatch(/^\[REDACTED:github:[A-Za-z0-9]{4}\]$/);
     });
 
@@ -352,8 +360,8 @@ bUYm3BPmcU25IA5I3TuFELVEQm3dwFnr52EgbIAl8ov82Xs5FsNeVJTkvSsJwkA0
         expect(out.match(/\[REDACTED:/g)?.length).toBe(1);
     });
 
-    test('a string beyond the 2M absolute cap: scans up to the cap (catching a ' +
-        'secret inside it), logs redaction.scan.capped, and does not scan past it', async () => {
+    test('a string beyond the 2M absolute cap: the secretlint scanners stop at the cap ' +
+        '(redaction.scan.capped), the deterministic rules still cover the whole text', async () => {
         const warnSpy = mock((_name: string, _attrs: Record<string, unknown>) => {});
         const insideSecret = 'Lk4pQw8eRt2yUi6oAs1dFg5hJz9xCvBn';
         const beyondSecret = 'Mo3nBv7cXz1lKj5hGf9dSa2wQe6rTy8u';
@@ -366,7 +374,7 @@ bUYm3BPmcU25IA5I3TuFELVEQm3dwFnr52EgbIAl8ov82Xs5FsNeVJTkvSsJwkA0
         const { text: out, hits } = await redactText(text, { onEvent: warnSpy });
         const cappedWarns = warnSpy.mock.calls.filter(([event]) => event === 'redaction.scan.capped');
         expect(out).not.toContain(insideSecret);
-        expect(out).toContain(beyondSecret); // past the cap — documented trade-off, not a bug
+        expect(out).not.toContain(beyondSecret); // sync rules run past the scanner cap (fail closed)
         expect(hits.length).toBeGreaterThan(0);
         expect(cappedWarns).toEqual([
             ['redaction.scan.capped', { originalLength: text.length, scannedLength: 2_000_000 }],
@@ -374,9 +382,36 @@ bUYm3BPmcU25IA5I3TuFELVEQm3dwFnr52EgbIAl8ov82Xs5FsNeVJTkvSsJwkA0
     }, 20_000);
 });
 
-describe('fail-open: detector exceptions never throw, never leak the exception message into logs', () => {
-    test('a throwing detector: redactText returns the ORIGINAL text unredacted ' +
-        'rather than losing data', async () => {
+describe('scanner failure: never throws, never logs the exception message, never passes a secret', () => {
+    test('a throwing scanner still gets the deterministic rules applied', async () => {
+        const detect = async (): Promise<never> => {
+            throw new Error('scanner down');
+        };
+        const input = 'ok password=Zq9fakeMARKER_x1 Bearer abc.def-1= done';
+        const { text, hits } = await redactText(input, { detect });
+        expect(text).toBe('ok password=[REDACTED:generic-keyword] Bearer [REDACTED:auth-header] done');
+        expect(hits).toHaveLength(2);
+    });
+
+    test('if the deterministic rules fail too, the whole text becomes [REDACTED:error]', async () => {
+        const detect = async (): Promise<never> => {
+            throw new Error('scanner down');
+        };
+        const broken = { length: 20 } as unknown as string;
+        const { text } = await redactText(broken, { detect });
+        expect(text).toBe('[REDACTED:error]');
+    });
+
+    test('redactJsonValue leaves get the same fallback', async () => {
+        const detect = async (): Promise<never> => {
+            throw new Error('scanner down');
+        };
+        const out = await redactJsonValue({ note: 'password=Zq9fakeMARKER_x1' }, { hits: [] }, { detect });
+        expect(out).toEqual({ note: 'password=[REDACTED:generic-keyword]' });
+    });
+
+    test('a throwing detector: text without a secret comes back unchanged' +
+        ' (no data lost)', async () => {
         const throwingDetect = async (): Promise<never> => {
             throw new Error('regex engine choked on: sk-supersecretvalue123456');
         };

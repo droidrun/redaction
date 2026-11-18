@@ -1,5 +1,7 @@
 /**
- * The fixed rule list `engine.ts` runs; built once at module load.
+ * The fixed rule list `engine.ts` runs; built once at module load. Only the
+ * upstream secretlint scanners: the JWT, Google, xAI and keyword rules are the
+ * sync rules (`../sync-rules.ts`), which the async path runs as well.
  *
  * 1. Exclude filter-comments so `secretlint-disable` comments in supplied
  *    content cannot suppress detection.
@@ -8,10 +10,6 @@
  */
 import { creator as presetRecommend } from '@secretlint/secretlint-rule-preset-recommend';
 import type { SecretLintCoreConfigRule } from '@secretlint/types';
-import { jwtRule } from './jwt-rule.js';
-import { genericKeywordRule } from './generic-keyword-rule.js';
-import { gcpApiKeyRule } from './gcp-api-key-rule.js';
-import { xaiApiKeyRule } from './xai-api-key-rule.js';
 
 const FILTER_COMMENTS_RULE_ID = '@secretlint/secretlint-rule-filter-comments';
 const AWS_RULE_ID = '@secretlint/secretlint-rule-aws';
@@ -24,13 +22,7 @@ function buildRules(): SecretLintCoreConfigRule[] {
             rule,
             options: rule.meta.id === AWS_RULE_ID ? { enableIDScanRule: true } : {},
         }));
-    return [
-        ...upstream,
-        { id: jwtRule.meta.id, rule: jwtRule, options: {} },
-        { id: genericKeywordRule.meta.id, rule: genericKeywordRule, options: {} },
-        { id: gcpApiKeyRule.meta.id, rule: gcpApiKeyRule, options: {} },
-        { id: xaiApiKeyRule.meta.id, rule: xaiApiKeyRule, options: {} },
-    ];
+    return upstream;
 }
 
 export const RULES = buildRules();

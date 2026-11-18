@@ -1,7 +1,7 @@
 {
   "name": "@droidrun/redaction",
-  "version": "0.1.1",
-  "description": "Secret detection and redaction for text and JSON values",
+  "version": "0.2.0",
+  "description": "Secret detection and redaction for text and JSON values, sync and async, with restore",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,10 +10,17 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
-    }
+    },
+    "./sync": {
+      "types": "./dist/sync.d.ts",
+      "import": "./dist/sync.js",
+      "default": "./dist/sync.js"
+    },
+    "./vectors/*.json": "./vectors/*.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "vectors"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

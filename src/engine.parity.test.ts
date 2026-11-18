@@ -3,12 +3,9 @@ import { lintSource } from '@secretlint/core';
 import { creator as presetRecommend } from '@secretlint/secretlint-rule-preset-recommend';
 import { scanText } from './engine.js';
 import { RULES } from './rules/index.js';
-import { jwtRule } from './rules/jwt-rule.js';
-import { genericKeywordRule } from './rules/generic-keyword-rule.js';
-import { gcpApiKeyRule } from './rules/gcp-api-key-rule.js';
-import { xaiApiKeyRule } from './rules/xai-api-key-rule.js';
 
-// Independent copy of the original service configuration, not the runner's
+// Independent copy of the upstream scanner configuration (the JWT, keyword, Google and
+// xAI rules are the sync rules, tested in redact-sync/vectors), not the runner's
 // RULES: an accidental omission or changed option must fail parity.
 const rules = [
     ...presetRecommend.rules
@@ -18,8 +15,6 @@ const rules = [
             rule,
             options: rule.meta.id === '@secretlint/secretlint-rule-aws' ? { enableIDScanRule: true } : {},
         })),
-    ...[jwtRule, genericKeywordRule, gcpApiKeyRule, xaiApiKeyRule]
-        .map((rule) => ({ id: rule.meta.id, rule, options: {} })),
 ];
 
 // This fake PEM has only a magic prefix and repeated base64 characters.
@@ -36,9 +31,7 @@ const fake1Password = 'ops_eyJmYWtlIjoibm90LWEtcmVhbC1jcmVkZW50aWFsIiwicGFkZGluZ
 type PositiveCase = [label: string, input: string, expectedRuleIds: string[], rangeOffset?: number];
 const positives: PositiveCase[] = [
     ['AWS ID', 'creds: AKIAQR7ZKT4MW2PLX9BD', ['@secretlint/secretlint-rule-aws']],
-    ['AWS secret and overlapping rules', `AWS_SECRET_ACCESS_KEY=${awsSecret}`, [
-        '@secretlint/secretlint-rule-aws', 'mobilerun-redaction/generic-keyword',
-    ]],
+    ['AWS secret', `AWS_SECRET_ACCESS_KEY=${awsSecret}`, ['@secretlint/secretlint-rule-aws']],
     ['OpenAI', `key is sk-${'a'.repeat(20)}T3BlbkFJ${'b'.repeat(20)}`, [
         '@secretlint/secretlint-rule-openai',
     ]],
@@ -46,41 +39,11 @@ const positives: PositiveCase[] = [
         '@secretlint/secretlint-rule-github',
     ]],
     ['bare GitHub', 'ghp_16C7e42F292c6912E7710c838347Ae178B4a', ['@secretlint/secretlint-rule-github']],
-    ['JWT', 'bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
-        'eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVadQssw5c', [
-        'mobilerun-redaction/jwt',
-    ]],
-    ['password', 'login: admin password: S0mmer2026!xTr0ub4dor', ['mobilerun-redaction/generic-keyword']],
-    ['bare password', 'password: S0mmer2026!xTr0ub4dor', ['mobilerun-redaction/generic-keyword']],
-    ['snake case', 'session_token: aB3xK9mQ2pL7wZ4v', ['mobilerun-redaction/generic-keyword']],
-    ['camel case', 'clientSecret=Zx9mK2pL7wQ4vB3xA1c', ['mobilerun-redaction/generic-keyword']],
     ['database', 'postgres://admin:hunter2secret@db.example.com:5432/app', [
         '@secretlint/secretlint-rule-database-connection-string',
     ]],
-    ['Google', 'GOOGLE_API_KEY=AIza3EiODjfjghFw2GS6-hZByGzeM386y6zvl5f', [
-        'mobilerun-redaction/generic-keyword', 'mobilerun-redaction/gcp-api-key',
-    ]],
-    ['xAI', 'XAI_API_KEY=xai-Y7a1R_QjyDLgpFegN9uQL6yMqjhAl9bXEqgWZtj2dXWHMsj5y' +
-        'skfHYLRe61tKKO_PW8NctSUR7m88X6R', [
-        'mobilerun-redaction/generic-keyword', 'mobilerun-redaction/xai-api-key',
-    ]],
-    ['Google trailing hyphen', 'the deploy log mentions AIzaE3ZVSHDBs43BRT3PrSvZ0KshZJRhDBmCji- in passing', [
-        'mobilerun-redaction/gcp-api-key',
-    ]],
-    ['comment bypass', '// secretlint-disable\npassword: S0mmer2026!xTr0ub4dor', [
-        'mobilerun-redaction/generic-keyword',
-    ]],
-    ['independent hits', 'first: ghp_16C7e42F292c6912E7710c838347Ae178B4a then password: ' +
-        'S0mmer2026!xTr0ub4dor', [
-        '@secretlint/secretlint-rule-github', 'mobilerun-redaction/generic-keyword',
-    ]],
-    ['short secret', 'pwd=Ab1!Ab1!', ['mobilerun-redaction/generic-keyword']],
-    // Exactly one full-size input: the match ends at the 100,000-character boundary.
-    ['100k boundary', 'w'.repeat(99_960) + ' apiKey=Vr8tGq3mXpL6bWc9zNe2sYh5fKd1uAoI', [
-        'mobilerun-redaction/generic-keyword',
-    ]],
     // Deliberate deviation: our BOM ranges refer to the original input; core strips its BOM.
-    ['BOM', '\ufeffpassword: S0mmer2026!xTr0ub4dor', ['mobilerun-redaction/generic-keyword'], 1],
+    ['BOM', '\ufeffghp_16C7e42F292c6912E7710c838347Ae178B4a', ['@secretlint/secretlint-rule-github'], 1],
     ['Slack', 'xoxb-111111111111-222222222222-fakefixture', ['@secretlint/secretlint-rule-slack']],
     ['npm', `npm_${'A'.repeat(36)}`, ['@secretlint/secretlint-rule-npm']],
     ['Anthropic', `sk-ant-api03-${'A'.repeat(93)}AA`, ['@secretlint/secretlint-rule-anthropic']],
