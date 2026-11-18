@@ -36,6 +36,8 @@ export type RedactTextOpts = {
     /** `strict` never passes an unscanned text: a scanner failure replaces the whole text and the
      *  part beyond the scan cap becomes `[REDACTED:size-limit]`. Default `compat`. */
     mode?: RedactMode;
+    /** `strict` only: a text longer than this is replaced whole by `[REDACTED:size-limit]` (default 4,000,000). */
+    maxChars?: number;
     /** Use the 0.1.1 placeholder `[REDACTED:<rule>:<last4>]` for matches of at least
      *  16 characters. Default: `[REDACTED:<rule>]`, which exposes nothing of the secret. */
     last4?: boolean;
@@ -133,17 +135,26 @@ function degradedRedaction(text: string): { text: string; hits: Hit[] } {
     }
 }
 
-/** Strict: no fallback and no unscanned rest. A failure replaces the whole text; what lies beyond
- *  the scan cap is replaced by `[REDACTED:size-limit]` (merged with any hit it overlaps). */
+/** Strict: no fallback and no unscanned rest. A text over `maxChars` is replaced whole; a failure replaces
+ *  the whole text; what lies beyond the scan cap is replaced by `[REDACTED:size-limit]` (merged with any hit
+ *  it overlaps). `last4` is ignored: no hit of the strict mode carries a character of the text. */
 async function redactTextStrict(text: string, opts: RedactTextOpts): Promise<{ text: string; hits: Hit[] }> {
+    const { sizeLimit } = ALGORITHMS_SPEC.ruleIds;
+    if (text.length > (opts.maxChars ?? ALGORITHMS_SPEC.strict.maxChars)) {
+        return {
+            text: buildReadPlaceholder(sizeLimit),
+            hits: [{ ruleId: sizeLimit, range: [0, text.length] }],
+        };
+    }
     try {
         const found = opts.detect ? await opts.detect(text) : await detectSecrets(text, opts);
-        const rest: Hit[] = text.length > MAX_TOTAL_SCAN_LEN
-            ? [{ ruleId: ALGORITHMS_SPEC.ruleIds.sizeLimit, range: [MAX_TOTAL_SCAN_LEN, text.length] }]
-            : [];
+        const rest: Hit[] = [];
+        if (text.length > MAX_TOTAL_SCAN_LEN) {
+            rest.push({ ruleId: sizeLimit, range: [MAX_TOTAL_SCAN_LEN, text.length] });
+        }
         const hits = dedupeRanges([...found, ...rest]);
         if (hits.length === 0) return { text, hits: [] };
-        return { text: applyHits(text, hits, opts.last4 === true), hits };
+        return { text: applyHits(text, hits), hits };
     } catch (err) {
         emitEvent(opts, 'redaction.detect.failed', {
             errorName: err instanceof Error ? err.constructor.name : typeof err,

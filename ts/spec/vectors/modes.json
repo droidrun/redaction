@@ -17,8 +17,7 @@
       "opts": {
         "maxChars": 10
       },
-      "expectedSync": "[REDACTED:size-limit]",
-      "expectedAsync": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa password=[REDACTED:generic-keyword]"
+      "expected": "[REDACTED:size-limit]"
     },
     {
       "name": "compat json deeper than maxDepth",

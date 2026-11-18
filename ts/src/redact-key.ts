@@ -2,7 +2,7 @@
  * redact-key.ts — the object-key scan shared by the sync, the async and the strict
  * walkers: a key that itself holds a secret is replaced through the sync rules.
  */
-import { applyHits, type Hit } from './hits.js';
+import { appendHits, applyHits, type Hit } from './hits.js';
 import { ALGORITHMS_SPEC } from './spec.js';
 import { detectSyncHits } from './sync-rules.js';
 
@@ -14,7 +14,7 @@ export function redactKey(key: string, hits: Hit[]): string {
     if (key.length < MIN_SCAN_LEN || key.length > MAX_KEY_CHARS) return key;
     const found = detectSyncHits(key);
     if (found.length === 0) return key;
-    hits.push(...found);
+    appendHits(hits, found);
     return applyHits(key, found);
 }
 

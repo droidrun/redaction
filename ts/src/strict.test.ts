@@ -105,3 +105,29 @@ test('strict text on the sync entry is the compat result (it already fails close
     const text = `a ${SECRET} b`;
     expect(redactTextSync(text, { mode: 'strict' })).toEqual(redactTextSync(text));
 });
+
+test('strict: last4 is ignored, no hit carries a character of the text', async () => {
+    const filler = 'ab '.repeat(666_700);
+    const text = `${filler} tail ${SECRET}`;
+    const strict = await redactText(text, { mode: 'strict', last4: true });
+    expect(strict.text.endsWith('ab[REDACTED:size-limit]')).toBe(true);
+    const keyed = await redactText('password: S0mmer2026!xTr0ub4dor', { mode: 'strict', last4: true });
+    expect(keyed.text).toBe('password: [REDACTED:generic-keyword]');
+});
+
+test('strict: a text over maxChars is replaced whole before any scan', async () => {
+    const strict = await redactText(`a ${SECRET}`, { mode: 'strict', maxChars: 10 });
+    expect(strict).toEqual({ text: '[REDACTED:size-limit]', hits: [{ ruleId: 'size-limit', range: [0, 28] }] });
+    const fits = await redactText(`a ${SECRET}`, { mode: 'strict', maxChars: 28 });
+    expect(fits.text).toBe('a password=[REDACTED:generic-keyword]');
+    const huge = await redactText('x '.repeat(2_000_001), { mode: 'strict' });
+    expect(huge.text).toBe('[REDACTED:size-limit]');
+});
+
+test('strict: 150000 hits in one value do not overflow the stack', () => {
+    const value = Array.from({ length: 150_000 }, () => SECRET);
+    const stats = { hits: [] as Array<{ ruleId: string }> };
+    const out = redactJsonValueSync(value, { mode: 'strict', stats: stats as { hits: never[] } }) as string[];
+    expect(out[149_999]).toBe('password=[REDACTED:generic-keyword]');
+    expect(stats.hits).toHaveLength(150_000);
+});
