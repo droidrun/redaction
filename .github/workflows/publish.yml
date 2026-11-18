@@ -5,7 +5,7 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: read
+  contents: write # pushes the Go tag go/vX.Y.Z
   packages: write
 
 jobs:
@@ -20,20 +20,19 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Check tag matches package version
-        run: |
-          package_version=$(node -p 'require("./package.json").version')
-          test "$GITHUB_REF_NAME" = "v$package_version"
       - name: Require tagged commit on main
         run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.4'
+      - name: The tag is the version of npm, Python and Go (all three are equal)
+        working-directory: .
+        run: tools/release-version --check "$GITHUB_REF_NAME"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24.22.1'
           registry-url: https://npm.pkg.github.com
           scope: '@droidrun'
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: '1.4.4'
       - name: Spec copies and hash match the spec on the tagged commit
         working-directory: .
         run: tools/sync-spec --check
@@ -61,6 +60,20 @@ jobs:
       - name: Pack and import from the tarball
         working-directory: .
         run: bun tools/check-pack.ts
+      - name: Tag the Go module on the same commit (go/vX.Y.Z; a re-run finds the tag and goes on)
+        working-directory: .
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          go_tag="go/$GITHUB_REF_NAME"
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          existing=$(git ls-remote "$remote" "refs/tags/$go_tag" | cut -f1)
+          if [ -z "$existing" ]; then
+            git push "$remote" "$GITHUB_SHA:refs/tags/$go_tag"
+          elif [ "$existing" != "$GITHUB_SHA" ]; then
+            echo "the tag $go_tag exists on another commit" >&2
+            exit 1
+          fi
       - run: pnpm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
