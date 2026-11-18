@@ -17,6 +17,12 @@ import { ALGORITHMS_SPEC, RULES_SPEC } from './spec.js';
 
 const FORMAT = ALGORITHMS_SPEC.placeholder;
 
+// TypeScript extension (SPEC section 13): the 0.1.1 `last4` form. It never changes what is detected.
+/** A match of at least this many units gets a `:last4` suffix when `last4` is asked for. */
+const LAST4_THRESHOLD = 16;
+/** Brackets would end a placeholder early, so they are masked in the last four units. */
+const LAST4_MASKED = ['[', ']'];
+
 /** Strip the `@secretlint/secretlint-rule-` / `mobilerun-redaction/` noise so
  *  the marker stays compact — e.g. `@secretlint/secretlint-rule-aws` -> `aws`. */
 export function shortenRuleId(ruleId: string): string {
@@ -28,12 +34,12 @@ export function shortenRuleId(ruleId: string): string {
 
 /** Brackets would end a placeholder early, so they are masked in the last4. */
 function safeLast4(matched: string): string {
-    return [...matched.slice(-4)].map((char) => (FORMAT.tsLast4Mask.includes(char) ? '*' : char)).join('');
+    return [...matched.slice(-4)].map((char) => (LAST4_MASKED.includes(char) ? '*' : char)).join('');
 }
 
 export function buildPlaceholder(ruleId: string, matched: string): string {
     const shortId = shortenRuleId(ruleId);
-    if (matched.length >= FORMAT.tsLast4Threshold) {
+    if (matched.length >= LAST4_THRESHOLD) {
         return `${FORMAT.open}${shortId}:${safeLast4(matched)}${FORMAT.close}`;
     }
     return `${FORMAT.open}${shortId}${FORMAT.close}`;

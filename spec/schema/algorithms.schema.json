@@ -13,8 +13,7 @@
     "docPlaceholder",
     "sync",
     "full",
-    "strict",
-    "upstream"
+    "strict"
   ],
   "properties": {
     "specVersion": {
@@ -82,9 +81,7 @@
       "required": [
         "open",
         "close",
-        "stripPrefixes",
-        "tsLast4Threshold",
-        "tsLast4Mask"
+        "stripPrefixes"
       ],
       "properties": {
         "open": {
@@ -96,19 +93,6 @@
           "minLength": 1
         },
         "stripPrefixes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "minItems": 1
-        },
-        "tsLast4Threshold": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100000000
-        },
-        "tsLast4Mask": {
           "type": "array",
           "items": {
             "type": "string",
@@ -308,39 +292,6 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 100000000
-        }
-      }
-    },
-    "upstream": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "package",
-        "version",
-        "excludeRules",
-        "ruleOptions"
-      ],
-      "properties": {
-        "package": {
-          "type": "string",
-          "minLength": 1
-        },
-        "version": {
-          "type": "string",
-          "minLength": 1
-        },
-        "excludeRules": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "ruleOptions": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object"
-          }
         }
       }
     }

@@ -534,9 +534,9 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
 **Tiers**:
 
 - `standard`: the rules of section 4.
-- `full`: the standard rules, plus the upstream secretlint preset (`algorithms.json` `upstream`: the
-  preset `@secretlint/secretlint-rule-preset-recommend` 13.0.4 without `filter-comments`, AWS ID scanning
-  on), merged with the standard hits. The upstream rules are specified in `INVENTORY.md`, not yet in this
+- `full`: the standard rules, plus the upstream secretlint preset (`@secretlint/secretlint-rule-preset-recommend`
+  13.0.4 without `filter-comments`, AWS ID scanning on; the engine configuration is a TypeScript constant,
+  section 13, not spec data), merged with the standard hits. The upstream rules are specified in `INVENTORY.md`, not yet in this
   document (a later slice ports them). **Until then only the TypeScript implementation has the full tier;
   another implementation's `full` equals `standard`**, and the vectors with different `expectedSync` and
   `expectedAsync` are the backlog. The upstream scanners see only the first `full.scanCap` (2,000,000)
@@ -679,11 +679,17 @@ These exist for compatibility with v0.2.0 and never change what is detected:
 - `restoreRedacted(redacted, stored)` and its options (restores values behind placeholders from a stored copy).
 - The 0.1.1 `last4` placeholder `[REDACTED:<rule>:<last4>]` for matches of at least 16 units (`opts.last4`);
   brackets in the last four units are replaced by `*`. `last4` has no effect in `strict`.
-- `CREDENTIAL_KEY_RE` (the 0.1.1 substring matcher, `keys.json` `tsExtensions`), `STRUCTURAL_SKIP_KEYS`.
+- `CREDENTIAL_KEY_RE` (the 0.1.1 substring matcher; a TypeScript constant, not spec data), `STRUCTURAL_SKIP_KEYS`.
 - Input shapes outside JSON in `compat`: `Date` is returned as is; typed arrays and buffers become
   `[REDACTED:size-limit]`; an `Error` is read as `{name, message, stack}`; an object with `toJSON` as its
   result; a cycle becomes `[REDACTED:circular]`; a non-string text is turned into a string.
 - `detect` override, `onEvent` callback, `skipKeys` option.
+- The configuration of the upstream secretlint engine (excluded rules, AWS options) and the `last4` threshold
+  (16) and masked characters (`[` and `]`).
+
+All data of these extensions is **TypeScript constants in `ts/src`**, outside the hashed spec files: changing
+one never changes the spec hash that Python and Go embed, and none of them affects detection of the standard
+tier.
 
 ## 14. Conformance vectors
 

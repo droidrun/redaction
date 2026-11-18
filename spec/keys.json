@@ -176,11 +176,5 @@
     "rate",
     "quota",
     "remaining"
-  ],
-  "tsExtensions": {
-    "credentialKeyRegex": {
-      "source": "password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|credential",
-      "flags": "i"
-    }
-  }
+  ]
 }

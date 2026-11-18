@@ -28,7 +28,6 @@ export type KeysSpec = {
     prefixWords: string[];
     passLastWord: string;
     countWords: string[];
-    tsExtensions: { credentialKeyRegex: { source: string; flags: string } };
 };
 export type AlgorithmsSpec = {
     specVersion: number;
@@ -41,25 +40,13 @@ export type AlgorithmsSpec = {
         error: string;
     };
     text: { minScanLength: number };
-    placeholder: {
-        open: string;
-        close: string;
-        stripPrefixes: string[];
-        tsLast4Threshold: number;
-        tsLast4Mask: string[];
-    };
+    placeholder: { open: string; close: string; stripPrefixes: string[] };
     evidence: { quoteChars: string; classes: string[]; minClasses: number; entropyThreshold: number };
     trivial: { words: string[]; maskChars: string[]; wrappers: string[][]; wrapperInner: string };
     docPlaceholder: { prefixes: string[]; suffixes: string[]; separator: string };
     sync: { maxChars: number; maxDepth: number; maxNodes: number; maxKeyChars: number };
     full: { scanWindow: number; scanOverlap: number; scanCap: number };
     strict: { maxChars: number; maxDepth: number; maxNodes: number };
-    upstream: {
-        package: string;
-        version: string;
-        excludeRules: string[];
-        ruleOptions: Record<string, Record<string, unknown>>;
-    };
 };
 
 const SPEC_SUPPORTED_VERSION = 1;

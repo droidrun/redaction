@@ -13,8 +13,7 @@
     "suffixWords",
     "prefixWords",
     "passLastWord",
-    "countWords",
-    "tsExtensions"
+    "countWords"
   ],
   "properties": {
     "specVersion": {
@@ -99,32 +98,6 @@
         "minLength": 1
       },
       "minItems": 1
-    },
-    "tsExtensions": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "credentialKeyRegex"
-      ],
-      "properties": {
-        "credentialKeyRegex": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "source",
-            "flags"
-          ],
-          "properties": {
-            "source": {
-              "type": "string",
-              "minLength": 1
-            },
-            "flags": {
-              "type": "string"
-            }
-          }
-        }
-      }
     }
   }
 }

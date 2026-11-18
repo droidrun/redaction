@@ -30,8 +30,11 @@ export const STRUCTURAL_SKIP_KEYS: ReadonlySet<string> = new Set(KEYS_SPEC.struc
  * `tokenizer` and misses `x-auth-token` and `Set-Cookie`. Use
  * `isSecretKeyName`. Kept exported unchanged for existing consumers.
  */
-const LEGACY = KEYS_SPEC.tsExtensions.credentialKeyRegex;
-export const CREDENTIAL_KEY_RE = new RegExp(LEGACY.source, LEGACY.flags);
+export const CREDENTIAL_KEY_RE = new RegExp(
+    'password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|' +
+        'private[_-]?key|client[_-]?secret|credential',
+    'i',
+);
 
 /** Rule id of every placeholder that was decided by a key name. */
 export const KEY_CONTEXT_RULE_ID = ALGORITHMS_SPEC.ruleIds.keyContext;

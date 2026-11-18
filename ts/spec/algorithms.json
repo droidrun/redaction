@@ -18,11 +18,6 @@
     "stripPrefixes": [
       "@secretlint/secretlint-rule-",
       "mobilerun-redaction/"
-    ],
-    "tsLast4Threshold": 16,
-    "tsLast4Mask": [
-      "[",
-      "]"
     ]
   },
   "evidence": {
@@ -94,17 +89,5 @@
     "maxChars": 4000000,
     "maxDepth": 64,
     "maxNodes": 500000
-  },
-  "upstream": {
-    "package": "@secretlint/secretlint-rule-preset-recommend",
-    "version": "13.0.4",
-    "excludeRules": [
-      "@secretlint/secretlint-rule-filter-comments"
-    ],
-    "ruleOptions": {
-      "@secretlint/secretlint-rule-aws": {
-        "enableIDScanRule": true
-      }
-    }
   }
 }
