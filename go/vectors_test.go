@@ -31,7 +31,6 @@ type vectorOpts struct {
 type vectorFile struct {
 	Description string       `json:"description"`
 	Tier        string       `json:"tier"`
-	Pending     string       `json:"pending"`
 	Cases       []vectorCase `json:"cases"`
 }
 
@@ -155,8 +154,8 @@ func TestVectorsAreIdempotent(t *testing.T) {
 
 func TestVectorFilesAreAllPresent(t *testing.T) {
 	want := []string{
-		"auth-headers", "base64", "entropy", "false-positives", "full", "key-formats", "key-names",
-		"keywords", "modes", "nested-json", "url-query",
+		"auth-headers", "base64", "entropy", "false-positives", "full", "full-keys", "key-collisions",
+		"key-formats", "key-names", "keywords", "modes", "nested-json", "url-query",
 	}
 	loaded := loadVectors(t)
 	if len(loaded) != len(want) {

@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-// defaultNumberMark is the number mark of a spec that does not name one yet (`placeholder.numberMark` is
-// added by the spec change that introduces numbered keys; this fallback goes when that spec is merged).
-const defaultNumberMark = "#"
-
 // placeholders knows the placeholder grammar of the spec (SPEC section 7).
 type placeholders struct {
 	prefix *anchored
@@ -37,9 +33,8 @@ func newPlaceholders(spec *loadedSpec, grammar string) (*placeholders, error) {
 		return nil, errors.New("redaction: spec pattern does not compile")
 	}
 	format := spec.algorithms.Placeholder
-	numberMark := format.NumberMark
-	if numberMark == "" {
-		numberMark = defaultNumberMark
+	if format.NumberMark == "" {
+		return nil, errSpecRejected
 	}
 	return &placeholders{
 		prefix:     prefix,
@@ -47,7 +42,7 @@ func newPlaceholders(spec *loadedSpec, grammar string) (*placeholders, error) {
 		all:        all,
 		open:       format.Open,
 		close:      format.Close,
-		numberMark: numberMark,
+		numberMark: format.NumberMark,
 		strip:      format.StripPrefixes,
 	}, nil
 }
