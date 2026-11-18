@@ -1,6 +1,7 @@
 /**
- * release-version.test.ts — the version is SemVer X.Y.Z (no leading zeros), is set and checked in every place, and a
- * place that differs fails the check. The script runs on a copy of the four files (RELEASE_VERSION_ROOT).
+ * release-version.test.ts — the version is SemVer X.Y.Z (no leading zeros), is set and checked in every
+ * place, and a place that differs fails the check. The script runs on a copy of the four files
+ * (RELEASE_VERSION_ROOT).
  */
 import { expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';

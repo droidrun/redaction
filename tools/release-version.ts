@@ -24,7 +24,7 @@ export function isVersion(text: string): boolean {
 
 type Place = { file: string; label: string; pattern: RegExp };
 
-/** `pattern` has the text before the version in group 1, the version in group 2 and the text after in group 3. */
+/** `pattern`: the text before the version is group 1, the version group 2, the text after group 3. */
 const PLACES: Place[] = [
     { file: 'ts/package.json', label: 'npm', pattern: /^(\s*"version":\s*")([^"]+)(")/m },
     {

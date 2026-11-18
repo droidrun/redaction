@@ -1,6 +1,6 @@
 /**
- * tag-go-module.test.ts — the Go tag step, run with a fake `gh` that answers like the GitHub API: a new tag is
- * created on the release commit; a lightweight or an annotated tag on the same commit is accepted (re-run);
+ * tag-go-module.test.ts — the Go tag step, run with a fake `gh` that answers like the GitHub API: a new
+ * tag is created on the release commit; a lightweight or an annotated tag on the same commit is accepted (re-run);
  * a tag on another commit fails; a missing tag is created exactly once.
  */
 import { expect, test } from 'bun:test';

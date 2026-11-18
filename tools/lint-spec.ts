@@ -3,8 +3,8 @@
  * lint-spec — checks the spec (SPEC.md section 11):
  *   1. JSON Schema validation of rules/keys/algorithms and every vector file;
  *   2. the portable grammar ban list and the rule-id pattern, on every expanded pattern;
- *   3. recheck (static ReDoS analysis): anything but "safe" fails, unless the attack string it produced does not
- *      grow super-linearly in the scaling harness (then it is a warning with the attack; lib/recheck-gate.ts);
+ *   3. recheck (static ReDoS analysis): anything but "safe" fails, unless the attack string it produced does
+ *      not grow super-linearly in the scaling harness (then a warning with the attack; lib/recheck-gate.ts);
  *   4. every pattern compiles in JS, Python (re.ASCII) and Go (regexp);
  *   5. scaling: attack strings at 100 KB and 1 MB run in JS and Python with near-linear time.
  *
@@ -500,7 +500,7 @@ async function selfTest(): Promise<Problem[]> {
     if (unplanted.length > 0) problems.push('self-test: the unmodified spec does not lint clean');
     const vulnerable = (await check('(a+)+b', '')).status === 'vulnerable';
     if (!vulnerable) problems.push('self-test: recheck did not flag (a+)+b');
-    // The gate: a real ReDoS without a nested group (grammar-clean) must fail with its attack; a safe pattern passes.
+    // The gate: a real ReDoS without a nested group (grammar-clean) fails with its attack; a safe one passes.
     const real = await recheckGate('planted a*a*a*a*b', 'a*a*a*a*b');
     if (!real.problem?.includes('confirms it') || !real.problem.includes('attack')) {
         problems.push('self-test: a planted real ReDoS did not fail the recheck gate with its attack string');
