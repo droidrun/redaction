@@ -1,0 +1,100 @@
+# redaction (Go)
+
+`github.com/droidrun/redaction/go` finds secrets in text and JSON values and replaces them with
+placeholders such as `[REDACTED:generic-keyword]`. It is the Go interpreter of the
+language-neutral [spec](../spec) and gives the same output as the TypeScript package
+(`@droidrun/redaction`). Standard library only, no cgo, no dependencies.
+
+## Install
+
+The repository is private. Allow the Go tool to fetch it, then add the module:
+
+```sh
+export GOPRIVATE=github.com/droidrun/*
+go get github.com/droidrun/redaction/go@go/vX.Y.Z   # a tag of the form go/vX.Y.Z
+```
+
+The module lives in the `go/` directory, so its tags are `go/vX.Y.Z`
+([Go modules reference](https://go.dev/ref/mod#vcs-version)). Go 1.26 or newer.
+
+## API
+
+```go
+import redaction "github.com/droidrun/redaction/go"
+
+text, result := redaction.RedactText(line, redaction.Options{})
+
+out, result, err := redaction.RedactJSON(body, redaction.Options{}) // compact JSON; err is ErrInvalidJSON
+
+redaction.IsSecretKeyName("x-auth-token") // true
+```
+
+- `RedactText(s string, opts Options) (string, Result)` redacts one text.
+- `RedactJSON(data []byte, opts Options) ([]byte, Result, error)` redacts one JSON value. A string
+  leaf is scanned; a string under a secret-named key (`password`, `apiKey`, `x-auth-token`, ...)
+  is replaced whole; so is a number under a singular secret key (`pin`, not `max_tokens`).
+  Object keys that hold a secret are redacted too. Output is compact JSON, object keys in
+  ECMAScript order (integer-like keys first), a repeated key keeps its last value, numbers are
+  written as ECMAScript writes the nearest double (`1.0` is `1`, `9007199254740993` is
+  `9007199254740992`). Input that is not one JSON value gives `ErrInvalidJSON`, which never quotes
+  the input.
+- `IsSecretKeyName(key string) bool` is the key-name predicate of the spec.
+- `Options{Mode, SkipKeys, MaxDepth, MaxNodes, MaxChars}`; a zero limit means the spec default
+  (so a limit of 0 cannot be asked for). `SkipKeys` replaces the default skip keys (`type`, `id`);
+  nil keeps them, an empty slice skips nothing.
+- `Result{Hits []RuleCount; Err string}` with `RuleCount{RuleID string; Count int}`. It holds rule
+  ids and counts only; ranges are not exposed because they reveal lengths. `Err` is the class of
+  the first fail-closed event of the call (`size-limit`, `depth-limit`, `redaction-failed`) or
+  empty; the output is safe either way.
+
+Redacted output keeps the text around the hits byte for byte. Input that is not valid UTF-8 is
+read with each invalid byte as one U+FFFD (never skipped), and the output holds that U+FFFD.
+
+## Modes
+
+- `Strict` (the zero value, the default): no path returns text that was not scanned. A text over
+  `MaxChars`, a value beyond `MaxDepth` or `MaxNodes`, an over-long key or an internal failure
+  gives `[REDACTED:size-limit]`, `[REDACTED:depth-limit]` or `[REDACTED:redaction-failed]`. A
+  string under a skip key is scanned like any other. The JSON walk is iterative: nesting costs no
+  stack.
+- `Compat` reproduces the TypeScript package v0.2.0 for the standard tier (a skip-key value is
+  kept as it is, an over-long key is left as it is). Use it only to match old output.
+
+## Limits
+
+Defaults come from the spec (`spec/algorithms.json`): 4,000,000 UTF-16 units per text or in total
+per JSON value, depth 64, 500,000 values, keys up to 4,096 units. Lengths and offsets count UTF-16
+code units, as the TypeScript package does (an astral character is two units). The whole input of
+`RedactJSON` is parsed into memory first; bound its size before the call.
+
+Matching uses Go's `regexp` (RE2, linear time). The spec patterns are written in a portable
+grammar that RE2 reads the same way as JavaScript and Python.
+
+## Not supported yet
+
+- The `full` tier (the secretlint preset); `Options` has no tier and only the standard tier runs.
+  A full-tier port follows in a later slice and plugs into the same interpreter.
+- `restoreRedacted` (restoring values from a stored copy).
+
+## Integrity
+
+The package embeds a copy of `rules.json`, `keys.json` and `algorithms.json` (`go:embed`) and a
+generated hash constant (`spec_hash_gen.go`). At start-up it checks the hash, the spec version and
+that the rule set is not empty, and panics with a generic message otherwise, so it processes no
+input from a broken copy. `tools/sync-spec` writes the copy and the constant from `spec/`;
+`tools/sync-spec --check` runs in CI.
+
+## Tests
+
+```sh
+cd go
+go vet ./... && gofmt -l .
+go test -race ./...                      # vectors, golden replay, unicode, strict, integrity
+go test -run TestAttackStrings ./...     # scaling at 100 KB and 1 MB (not under -race)
+go test -run XXX -fuzz FuzzRedactText -fuzztime 60s
+```
+
+`vectors_test.go` runs every case of `spec/vectors/*.json` on the standard tier; `golden_test.go`
+replays `spec/corpus/golden-b12879a.json.gz` against the recorded output of the TypeScript
+package. `testdata/attacks.json` is written by `bun go/testdata/gen-attacks.ts` from
+`tools/lib/attacks.ts`.
