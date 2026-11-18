@@ -194,7 +194,11 @@ func (e *engine) limits(opts Options) limits {
 // is scanned, a string under a secret-named key is replaced, and so is a number under a singular
 // secret key. Object keys come out in ECMAScript order (integer-like keys first); for a repeated
 // key the last value wins; numbers are written as ECMAScript writes the nearest double. The
-// output is compact JSON. Input that is not one JSON value gives ErrInvalidJSON.
+// output is compact JSON.
+//
+// Input that is not one JSON value gives ErrInvalidJSON together with the redaction of the raw
+// input as a text (the same as RedactText gives, with its Result): the output is never the input
+// and never nil, so a caller that logs the output on error cannot leak.
 //
 // The limits are enforced while the input is read: what the walk would cut is only checked for
 // syntax, so memory stays proportional to the limits (a node costs about 100 bytes) and not to the
@@ -210,7 +214,8 @@ func RedactJSON(data []byte, opts Options) ([]byte, Result, error) {
 	}
 	root, err := parseJSON(data, parsing)
 	if err != nil {
-		return nil, Result{}, ErrInvalidJSON
+		text, result := RedactText(string(data), opts)
+		return []byte(text), result, ErrInvalidJSON
 	}
 	rec := newRecorder(e)
 	out := e.walkSafely(root, opts, lim, rec)

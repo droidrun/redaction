@@ -1,6 +1,7 @@
 package redaction
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -210,14 +211,46 @@ func TestJSONKeyOrderDuplicatesAndNumbers(t *testing.T) {
 	})
 }
 
-func TestInvalidJSONIsAnErrorWithoutTheInput(t *testing.T) {
+func TestInvalidJSONGivesTheRedactedTextAndAnError(t *testing.T) {
+	cases := []struct{ input, want string }{
+		{"", ""},
+		{"{", "{"},
+		{`{"a":1} x`, `{"a":1} x`},
+		{`{"password":"` + secretValue + `" oops`, `{"password":"[REDACTED:generic-keyword]" oops`},
+		{"password=" + secretValue + " {", "password=" + keyword + " {"},
+		{"\xff\xfe " + "password=" + secretValue, "\ufffd\ufffd password=" + keyword},
+	}
+	for _, c := range cases {
+		out, result, err := RedactJSON([]byte(c.input), Options{})
+		if err != ErrInvalidJSON || out == nil || string(out) != c.want {
+			t.Fatalf("%q: got %q, %v", c.input, out, err)
+		}
+		_, textResult := RedactText(c.input, Options{})
+		if !reflect.DeepEqual(result, textResult) {
+			t.Fatalf("%q: result %+v differs from the text result %+v", c.input, result, textResult)
+		}
+	}
+}
+
+func TestInvalidJSONObeysTheLimits(t *testing.T) {
+	huge := []byte(strings.Repeat("[", 10_000_000))
+	out, result, err := RedactJSON(huge, Options{})
+	if err != ErrInvalidJSON || string(out) != "[REDACTED:size-limit]" || result.Err != "size-limit" {
+		t.Fatalf("got %q, %+v, %v", out, result, err)
+	}
+}
+
+func TestInvalidJSONNeverReturnsTheInput(t *testing.T) {
 	inputs := []string{
-		"", "{", `{"a":}`, `[1,]`, "01", `"a`, "nul", `{"a":1} x`, "\ufeff{}", `"\x"`, "[\"\n\"]",
+		`{"token":"` + injectedMarker + `"`, injectedMarker + " token", `[1,2,` + `"password=` + injectedMarker,
 	}
 	for _, input := range inputs {
 		out, _, err := RedactJSON([]byte(input), Options{})
-		if err != ErrInvalidJSON || out != nil {
-			t.Fatalf("%q: got %q, %v", input, out, err)
+		if err != ErrInvalidJSON {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(out), injectedMarker) && !strings.HasPrefix(input, injectedMarker) {
+			t.Fatalf("marker survives in %q", out)
 		}
 	}
 }

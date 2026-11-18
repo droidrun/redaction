@@ -49,12 +49,9 @@ func TestResultNeverHoldsMatchedText(t *testing.T) {
 func TestErrorsNameNoInput(t *testing.T) {
 	inputs := []string{`{"password":"` + injectedMarker + `"`, injectedMarker, `{"a":` + injectedMarker + `}`}
 	for _, input := range inputs {
-		_, result, err := RedactJSON([]byte(input), Options{})
+		_, _, err := RedactJSON([]byte(input), Options{})
 		if err == nil || strings.Contains(err.Error(), injectedMarker) {
 			t.Fatalf("got %v", err)
-		}
-		if len(result.Hits) != 0 || result.Err != "" {
-			t.Fatalf("got %+v", result)
 		}
 	}
 }
