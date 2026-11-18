@@ -331,6 +331,73 @@
           ]
         ]
       }
+    },
+    {
+      "name": "compat keeps a token under id and type unscanned",
+      "input": {
+        "id": "ghp_abcdefghijklmnopqrstuvwxyzABCDEF1234",
+        "type": "x password=Zq9abcDEF123ghi_x",
+        "n": {
+          "id": "ghp_abcdefghijklmnopqrstuvwxyzABCDEF1234"
+        }
+      },
+      "expected": {
+        "id": "ghp_abcdefghijklmnopqrstuvwxyzABCDEF1234",
+        "type": "x password=Zq9abcDEF123ghi_x",
+        "n": {
+          "id": "ghp_abcdefghijklmnopqrstuvwxyzABCDEF1234"
+        }
+      }
+    },
+    {
+      "name": "strict scans a token under id and type",
+      "input": {
+        "id": "ghp_abcdefghijklmnopqrstuvwxyzABCDEF1234",
+        "type": "x password=Zq9abcDEF123ghi_x",
+        "n": {
+          "id": "ghp_abcdefghijklmnopqrstuvwxyzABCDEF1234"
+        }
+      },
+      "mode": "strict",
+      "expected": {
+        "id": "[REDACTED:github]",
+        "type": "x password=[REDACTED:generic-keyword]",
+        "n": {
+          "id": "[REDACTED:github]"
+        }
+      }
+    },
+    {
+      "name": "strict keeps a plain string and a number under a skip key",
+      "input": {
+        "id": "rec-1",
+        "type": 7,
+        "password": {
+          "id": "plain"
+        }
+      },
+      "mode": "strict",
+      "expected": {
+        "id": "rec-1",
+        "type": 7,
+        "password": {
+          "id": "plain"
+        }
+      }
+    },
+    {
+      "name": "strict: a skip key does not make a secret key's value a key-context replacement",
+      "input": {
+        "password": {
+          "id": "abc"
+        }
+      },
+      "mode": "strict",
+      "expected": {
+        "password": {
+          "id": "abc"
+        }
+      }
     }
   ]
 }

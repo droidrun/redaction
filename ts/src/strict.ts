@@ -1,7 +1,8 @@
 /**
  * strict.ts — the strict-mode JSON walker: iterative (no recursion, so no stack
  * overflow on deep input), bounded by depth, node and total-character limits, and
- * it never returns text it did not scan. Whatever it cannot scan becomes a
+ * it never returns text it did not scan (also under skip keys: they only exempt a
+ * string from the key-context replacement, the leaf scanner still runs on it). Whatever it cannot scan becomes a
  * placeholder: `[REDACTED:size-limit]` past a node/character limit or for an over-long
  * key, `[REDACTED:depth-limit]` past the depth limit, `[REDACTED:circular]` for a
  * cycle, `[REDACTED:redaction-failed]` for a value outside the JSON model.
@@ -210,8 +211,13 @@ export function* strictWalk(
         const key = top.keys[index] as string;
         top.outKey = nextKey(key, state);
         if (state.skip.has(key) && isPrimitive(child)) {
-            state.nodes -= 1;
-            place(top, child);
+            // A skip key only exempts a value from the key-context replacement: a string is still scanned.
+            if (typeof child === 'string') {
+                pending = { value: child, verdict: 'none', depth: top.depth + 1 };
+            } else {
+                state.nodes -= 1;
+                place(top, child);
+            }
             continue;
         }
         const childVerdict = strongerVerdict(top.verdict, keyVerdict(key));

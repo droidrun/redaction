@@ -254,8 +254,9 @@ importable as `@droidrun/redaction/vectors/<name>.json`. `src/vectors.test.ts` i
 that was not scanned. A failing scanner replaces the whole text (`[REDACTED:error]`), the part of a
 text beyond the 2,000,000-character scan cap becomes `[REDACTED:size-limit]`, and JSON is walked
 without recursion within `maxDepth`, `maxNodes` and `maxChars` (the async entries take them in the
-options too); whatever it cannot scan is a placeholder. Values under `skipKeys` (default `type`, `id`)
-keep their exemption. The rules and their semantics are in [`../spec/SPEC.md`](../spec/SPEC.md).
+options too); whatever it cannot scan is a placeholder. Strings under `skipKeys` (default `type`, `id`)
+are scanned too (the skip keys only exempt them from the key-name replacement). The rules and their
+semantics are in [`../spec/SPEC.md`](../spec/SPEC.md).
 
 ## Limits
 

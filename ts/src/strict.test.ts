@@ -135,3 +135,33 @@ test('strict: a million hits in one value do not overflow the stack', () => {
     expect(out[1_049_999]).toBe('token=[REDACTED:generic-keyword]');
     expect(stats.hits).toHaveLength(1_050_000);
 }, 120_000);
+
+const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyzABCDEF1234';
+
+test('strict scans strings under the default skip keys, sync and async; compat keeps them', async () => {
+    const value = { id: TOKEN, type: `x ${SECRET}`, nested: { id: TOKEN } };
+    const scanned = {
+        id: '[REDACTED:github]',
+        type: 'x password=[REDACTED:generic-keyword]',
+        nested: { id: '[REDACTED:github]' },
+    };
+    expect(redactJsonValueSync(value, { mode: 'strict' })).toEqual(scanned);
+    expect(await redactJsonValue(value, { hits: [] }, { mode: 'strict' })).toEqual(scanned);
+    expect(redactJsonValueSync(value)).toEqual(value);
+});
+
+test('strict: a custom skip set scans too, and a skip key still exempts from key-context', () => {
+    const out = redactJsonValueSync(
+        { recordId: TOKEN, password: { id: 'plain', n: 1 } },
+        { mode: 'strict', skipKeys: new Set(['recordId', 'id']) },
+    );
+    expect(out).toEqual({
+        recordId: '[REDACTED:github]',
+        password: { id: 'plain', n: '[REDACTED:key-context]' },
+    });
+});
+
+test('strict: non-string primitives under a skip key are returned unchanged', () => {
+    const value = { id: 7, type: null, flag: true };
+    expect(redactJsonValueSync({ ...value, ok: false }, { mode: 'strict' })).toEqual({ ...value, ok: false });
+});
