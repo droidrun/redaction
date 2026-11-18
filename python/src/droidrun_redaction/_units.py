@@ -21,6 +21,11 @@ def _join_pair(match: re.Match[str]) -> str:
     return chr(0x10000 + ((ord(high) - 0xD800) << 10) + (ord(low) - 0xDC00))
 
 
+def unit_length(text: str) -> int:
+    """The length of `text` in UTF-16 code units, without building the unit string."""
+    return len(text) if text.isascii() else len(text.encode("utf-16-le", "surrogatepass")) // 2
+
+
 def to_units(text: str) -> str:
     """The text with every astral character written as its two surrogate units."""
     if _ASTRAL.search(text) is None:

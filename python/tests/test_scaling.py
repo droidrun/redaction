@@ -33,6 +33,8 @@ COMPOSITE_FACTOR = 20
 COMPOSITE_FLOOR_MS = 20
 PLAIN = {"name": "__plain", "unit": "a"}
 LONG_KEY_LIMIT_SECONDS = 2.0
+COLLISION_LIMIT_SECONDS = 20.0
+COLLISION_DEADLINE_SECONDS = 60
 
 
 def load_attacks():
@@ -99,3 +101,48 @@ def test_long_keys_are_cheap(mode):
         started = time.perf_counter()
         redact_json(value, mode=mode, max_chars=10**9)
         assert time.perf_counter() - started < LONG_KEY_LIMIT_SECONDS
+
+
+COLLISION_SNIPPET = """
+import json, sys, time
+from droidrun_redaction import redact_json
+
+count, reserved_count = int(sys.argv[1]), int(sys.argv[2])
+keys = {f"npm_{index:036d}".replace("0", "A"): index for index in range(count)}
+reserved = {f"[REDACTED:npm#{number}]": number for number in range(2, reserved_count + 2)}
+started = time.perf_counter()
+out = redact_json({**reserved, **keys}, tier="full").value
+print(json.dumps({"seconds": time.perf_counter() - started, "keys": list(out)}))
+"""
+
+
+def numbered_keys(count, reserved_count):
+    """Redact `count` different tokens (one placeholder) beside `reserved_count` keys written as numbered
+    placeholders, in a subprocess under an external deadline; returns (seconds, output keys)."""
+    completed = subprocess.run(
+        [sys.executable, "-c", COLLISION_SNIPPET, str(count), str(reserved_count)],
+        capture_output=True,
+        text=True,
+        timeout=COLLISION_DEADLINE_SECONDS,
+    )
+    assert completed.returncode == 0
+    result = json.loads(completed.stdout)
+    return result["seconds"], result["keys"]
+
+
+def test_colliding_keys_are_numbered_in_linear_time():
+    # 40,000 keys redact to one placeholder; a numbering that starts again at 2 for every key takes minutes.
+    seconds, keys = numbered_keys(40_000, 0)
+    assert seconds < COLLISION_LIMIT_SECONDS
+    assert len(keys) == 40_000
+    assert keys[:3] == ["[REDACTED:npm]", "[REDACTED:npm#2]", "[REDACTED:npm#3]"]
+    assert keys[-1] == "[REDACTED:npm#40000]"
+
+
+def test_numbering_skips_many_reserved_keys_in_linear_time():
+    # 8,000 keys that are written as numbered placeholders are reserved; 8,000 tokens are numbered past them.
+    seconds, keys = numbered_keys(8_000, 8_000)
+    assert seconds < COLLISION_LIMIT_SECONDS
+    assert len(keys) == 16_000
+    assert "[REDACTED:npm]" in keys
+    assert "[REDACTED:npm#8002]" in keys
