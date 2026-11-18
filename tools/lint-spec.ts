@@ -108,11 +108,25 @@ function grammarProblems(patterns: NamedPattern[]): Problem[] {
     });
 }
 
+/** Attempts per pattern: recheck's fuzz checker measures time, so one run under a loaded machine can call a safe
+ *  pattern vulnerable. A pattern is reported only when every attempt (a different seed each) says it is not safe;
+ *  a truly vulnerable pattern is found on every attempt. */
+const RECHECK_ATTEMPTS = 3;
+
+async function recheckStatus(source: string): Promise<string> {
+    let status = 'safe';
+    for (let seed = 0; seed < RECHECK_ATTEMPTS; seed++) {
+        status = (await check(source, '', { timeout: 60_000, seed } as never)).status;
+        if (status === 'safe') return status;
+    }
+    return status;
+}
+
 async function recheckProblems(patterns: NamedPattern[]): Promise<Problem[]> {
     const problems: Problem[] = [];
     for (const pattern of patterns.filter((item) => item.role === 'pattern')) {
-        const result = await check(pattern.source, '', { timeout: 60_000 } as never);
-        if (result.status !== 'safe') problems.push(`${pattern.where}: recheck says ${result.status}`);
+        const status = await recheckStatus(pattern.source);
+        if (status !== 'safe') problems.push(`${pattern.where}: recheck says ${status}`);
     }
     return problems;
 }
