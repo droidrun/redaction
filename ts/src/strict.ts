@@ -10,7 +10,7 @@
  * result, so one traversal serves the sync and the async entry points. Limits and
  * placeholder ids are the spec's (`strict`, `ruleIds`).
  */
-import { applyHits, type Hit } from './hits.js';
+import { appendHits, applyHits, type Hit } from './hits.js';
 import {
     KEY_CONTEXT_RULE_ID,
     keyVerdict,
@@ -19,6 +19,7 @@ import {
     type KeyVerdict,
 } from './key-names.js';
 import { setOwnKey } from './own-key.js';
+import { isPrimitive } from './primitive.js';
 import { buildReadPlaceholder } from './placeholder.js';
 import { isOverlongKey, redactKey } from './redact-key.js';
 import { ALGORITHMS_SPEC } from './spec.js';
@@ -65,10 +66,6 @@ function placeholderFor(ruleId: string, state: State): string {
     return buildReadPlaceholder(ruleId);
 }
 
-function isPrimitive(value: unknown): boolean {
-    return value === null || (typeof value !== 'object' && typeof value !== 'function');
-}
-
 /** A string, number, boolean, null, bigint or undefined: a leaf the walker can place as it is. */
 function isScalar(value: unknown): boolean {
     return isPrimitive(value) && typeof value !== 'symbol';
@@ -99,7 +96,7 @@ function* scanLeaf(value: string, verdict: KeyVerdict, state: State): Generator<
     }
     state.chars -= value.length;
     const scanned = yield value;
-    state.hits.push(...scanned.hits);
+    appendHits(state.hits, scanned.hits);
     return scanned.text;
 }
 

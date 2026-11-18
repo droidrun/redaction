@@ -5,7 +5,7 @@
  * Capitalized word ("Token expired", "Basic information" stay). A word shape counts
  * when the run of letters is followed by a non-word character or the end.
  */
-import { charTest, compile, type CharTest, type Range } from '../portable.js';
+import { charTest, compile, runEnd, type CharTest, type Range } from '../portable.js';
 import { isPlaceholderValue } from './placeholder-value.js';
 import type { Scanner } from './regex-rule.js';
 import type { Rule } from '../spec.js';
@@ -20,12 +20,6 @@ type AuthRule = Rule & {
     wordClass: string;
     plainWords: string[];
 };
-
-function runEnd(text: string, from: number, test: CharTest): number {
-    let end = from;
-    while (end < text.length && test(text[end] as string)) end += 1;
-    return end;
-}
 
 function prepareBearer(rule: AuthRule): Scanner {
     const pattern = compile(rule.bearer, 'gd');

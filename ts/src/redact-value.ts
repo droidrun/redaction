@@ -21,6 +21,7 @@
  *   - Skipped primitive values are never scanned, even if they contain
  *     secret-shaped content.
  */
+import { appendHits } from './hits.js';
 import { redactText, type Hit, type RedactTextOpts } from './redact-text.js';
 import { buildPlaceholder, buildReadPlaceholder } from './placeholder.js';
 import { ALGORITHMS_SPEC } from './spec.js';
@@ -35,6 +36,7 @@ import {
     type KeyVerdict,
 } from './key-names.js';
 import { setOwnKey } from './own-key.js';
+import { isPrimitive } from './primitive.js';
 import { redactKey } from './redact-key.js';
 
 export { CREDENTIAL_KEY_RE, STRUCTURAL_SKIP_KEYS };
@@ -43,8 +45,7 @@ export type RedactValueStats = { hits: Hit[] };
 
 export type RedactValueOpts = RedactTextOpts & {
     skipKeys?: ReadonlySet<string>;
-    /** Limits of `mode: 'strict'` (ignored in `compat`): total characters, container depth, values. */
-    maxChars?: number;
+    /** Limits of `mode: 'strict'` (ignored in `compat`): container depth and values; `maxChars` is the total. */
     maxDepth?: number;
     maxNodes?: number;
 };
@@ -69,15 +70,11 @@ async function redactJsonValueStrict(
     try {
         const walk = strictWalk(value, strictLimits(opts), opts.skipKeys ?? STRUCTURAL_SKIP_KEYS, hits);
         const out = await runStrictAsync(walk, (text) => redactText(text, opts));
-        stats.hits.push(...hits);
+        appendHits(stats.hits, hits);
         return out;
     } catch {
         return buildReadPlaceholder(ALGORITHMS_SPEC.ruleIds.failed);
     }
-}
-
-function isPrimitive(value: unknown): boolean {
-    return value === null || (typeof value !== 'object' && typeof value !== 'function');
 }
 
 async function visitString(
@@ -94,7 +91,7 @@ async function visitString(
         return keyed;
     }
     const { text, hits } = await redactText(value, opts);
-    stats.hits.push(...hits);
+    appendHits(stats.hits, hits);
     return text;
 }
 

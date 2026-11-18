@@ -15,6 +15,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { expandGen } from '../../tools/corpus/types.ts';
 import { redactJsonValue, redactJsonValueSync, redactText, redactTextSync } from './index.js';
 
 type Parts = { parts: Array<[string, number]> };
@@ -48,12 +49,8 @@ function loadVectors(): Array<[string, VectorFile]> {
         });
 }
 
-function expand(parts: Parts): string {
-    return parts.parts.map(([unit, times]) => unit.repeat(times)).join('');
-}
-
 function inputOf(vector: VectorCase): unknown {
-    return vector.inputGen === undefined ? vector.input : expand(vector.inputGen);
+    return vector.inputGen === undefined ? vector.input : expandGen(vector.inputGen);
 }
 
 async function runAsync(vector: VectorCase): Promise<unknown> {
@@ -70,12 +67,18 @@ function runSync(vector: VectorCase): unknown {
     return redactJsonValueSync(input, limits);
 }
 
+/** Equal values and equal key order (SPEC section 14: object key order is part of the output). */
+function expectSame(actual: unknown, expected: unknown): void {
+    expect(actual).toEqual(expected);
+    expect(JSON.stringify(actual)).toBe(JSON.stringify(expected));
+}
+
 const vectors = loadVectors();
 
 function expectedFor(vector: VectorCase, entry: 'sync' | 'async'): unknown {
     if (Object.hasOwn(vector, 'expected')) return vector.expected;
     const generated = entry === 'sync' ? vector.expectedGenSync : vector.expectedGenAsync;
-    if (generated !== undefined) return expand(generated);
+    if (generated !== undefined) return expandGen(generated);
     return entry === 'sync' ? vector.expectedSync : vector.expectedAsync;
 }
 
@@ -109,11 +112,11 @@ for (const [fileName, file] of vectors) {
     describe(`vectors/${fileName}`, () => {
         for (const vector of file.cases) {
             test(`sync: ${vector.name}`, () => {
-                expect(runSync(vector)).toEqual(expectedFor(vector, 'sync'));
+                expectSame(runSync(vector), expectedFor(vector, 'sync'));
             });
 
             test(`async: ${vector.name}`, async () => {
-                expect(await runAsync(vector)).toEqual(expectedFor(vector, 'async'));
+                expectSame(await runAsync(vector), expectedFor(vector, 'async'));
             });
 
             test(`idempotent on both entry points: ${vector.name}`, async () => {

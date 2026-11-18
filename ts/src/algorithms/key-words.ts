@@ -9,15 +9,11 @@
  *   3. a run of digits.
  * Only ASCII letters and digits form words.
  */
+import { runEnd } from '../portable.js';
+
 const isUpper = (unit: string | undefined): boolean => unit !== undefined && unit >= 'A' && unit <= 'Z';
 const isLower = (unit: string | undefined): boolean => unit !== undefined && unit >= 'a' && unit <= 'z';
 const isDigit = (unit: string | undefined): boolean => unit !== undefined && unit >= '0' && unit <= '9';
-
-function runEnd(key: string, from: number, test: (unit: string | undefined) => boolean): number {
-    let end = from;
-    while (end < key.length && test(key[end])) end += 1;
-    return end;
-}
 
 /** End of the word that starts at `start`, or `start` when none does. */
 function wordEnd(key: string, start: number): number {

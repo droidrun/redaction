@@ -15,7 +15,7 @@
  * become `[REDACTED:size-limit]`; an `Error` is read as name/message/stack and
  * an object with `toJSON` as its `toJSON()` result, then scanned.
  */
-import { applyHits, type Hit } from './hits.js';
+import { appendHits, applyHits, type Hit } from './hits.js';
 import type { RedactMode } from './mode.js';
 import {
     KEY_CONTEXT_RULE_ID,
@@ -26,6 +26,7 @@ import {
     type KeyVerdict,
 } from './key-names.js';
 import { setOwnKey } from './own-key.js';
+import { isPrimitive } from './primitive.js';
 import { redactKey } from './redact-key.js';
 import { buildReadPlaceholder } from './placeholder.js';
 import { ALGORITHMS_SPEC } from './spec.js';
@@ -111,7 +112,7 @@ function walkString(value: string, verdict: KeyVerdict, state: Walk): string {
     }
     state.chars -= value.length;
     const { text, hits } = scanText(value, Number.MAX_SAFE_INTEGER);
-    state.hits.push(...hits);
+    appendHits(state.hits, hits);
     return text;
 }
 
@@ -121,10 +122,6 @@ function walkPrimitive(value: unknown, verdict: KeyVerdict, state: Walk): unknow
     if (keyed === undefined) return value;
     state.hits.push({ ruleId: KEY_CONTEXT_RULE_ID, range: [0, 0] });
     return keyed;
-}
-
-function isPrimitive(value: unknown): boolean {
-    return value === null || (typeof value !== 'object' && typeof value !== 'function');
 }
 
 function walkEntries(
@@ -211,7 +208,7 @@ function redactJsonValueStrictSync(value: unknown, opts: RedactJsonSyncOpts): un
         const limits = strictLimits(opts);
         const skip = opts.skipKeys ?? STRUCTURAL_SKIP_KEYS;
         const out = runStrictSync(strictWalk(value, limits, skip, hits), strictLeaf);
-        opts.stats?.hits.push(...hits);
+        if (opts.stats) appendHits(opts.stats.hits, hits);
         return out;
     } catch {
         return buildReadPlaceholder(FAILED);
@@ -235,7 +232,7 @@ export function redactJsonValueSync(value: unknown, opts: RedactJsonSyncOpts = {
     };
     try {
         const out = walk(value, 0, 'none', state);
-        opts.stats?.hits.push(...state.hits);
+        if (opts.stats) appendHits(opts.stats.hits, state.hits);
         return out;
     } catch {
         return buildReadPlaceholder(FAILED);

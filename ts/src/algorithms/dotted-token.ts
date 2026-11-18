@@ -8,7 +8,7 @@
  * The last segment takes the longest length of at least `minSegment` that ends on a word
  * boundary (a trailing `-` is left out, as the backtracking expression does).
  */
-import { charTest, type CharTest, type Range } from '../portable.js';
+import { charTest, runEnd, type Range } from '../portable.js';
 import type { Scanner } from './regex-rule.js';
 import type { Rule } from '../spec.js';
 
@@ -22,12 +22,6 @@ type DottedRule = Rule & {
 };
 
 type Match = { end: number } | { failedRunEnd: number };
-
-function runEnd(text: string, from: number, test: CharTest): number {
-    let end = from;
-    while (end < text.length && test(text[end] as string)) end += 1;
-    return end;
-}
 
 export function prepareDottedToken(rule: DottedRule): Scanner {
     const isSegment = charTest(rule.segmentClass);

@@ -31,3 +31,10 @@ export function containsTest(classPattern: string): (text: string) => boolean {
 export function foldLower(text: string): string {
     return text.replace(/[A-ZK]/g, (char) => (char === 'K' ? 'k' : char.toLowerCase()));
 }
+
+/** End of the run of units that satisfy `test`, starting at `from` and at most `max` units long. */
+export function runEnd(text: string, from: number, test: CharTest, max = Number.POSITIVE_INFINITY): number {
+    let end = from;
+    while (end < text.length && end - from < max && test(text[end] as string)) end += 1;
+    return end;
+}
