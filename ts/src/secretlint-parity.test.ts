@@ -18,6 +18,17 @@ import { detectFullHits } from './full-rules.js';
 import { oracleHits, withAwsCorrection } from './secretlint-oracle.fixture.ts';
 import { nearMisses } from './secretlint-fuzz.fixture.ts';
 
+// The oracle's lookbehind `(?<!\p{L})` must see an astral letter (U+1D400) before a token. Bun before 1.4
+// (JavaScriptCore) does not: the upstream rules would then report tokens the Unicode 15.0 table refuses, and this
+// parity test would fail for a reason that is not in the package. Fail at load, with the reason.
+const runtimeSeesAstralLetters = !/(?<!\p{L})a/u.test('\u{1d400}a');
+if (!runtimeSeesAstralLetters) {
+    throw new Error(
+        `the parity test needs a runtime whose \\p{L} lookbehind reads astral letters (Bun >= 1.4 or Node); ` +
+            `this one is ${typeof Bun === 'undefined' ? process.version : `Bun ${Bun.version}`}`,
+    );
+}
+
 const SPEC_DIR = join(import.meta.dir, '..', '..', 'spec');
 const FIXTURES = join(SPEC_DIR, 'corpus', 'secretlint-13.0.4');
 const GOLDEN = join(SPEC_DIR, 'corpus', 'golden-b12879a.json.gz');

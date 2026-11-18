@@ -1,7 +1,7 @@
 /**
  * sync-rules.ts — the deterministic, regex-only rule set, and the ONE rule
- * source of both entry points (the async path adds the upstream secretlint
- * scanners on top). The rules, their order and their parameters are the spec's
+ * source of both entry points (the async path adds the full-tier rules of
+ * `full-rules.ts` on top). The rules, their order and their parameters are the spec's
  * (`spec/rules.json` pipeline); this module only runs them: each rule kind maps
  * to one interpreter under `algorithms/`.
  *
