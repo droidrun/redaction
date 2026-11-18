@@ -80,7 +80,81 @@
           "set"
         ]
       ]
-    }
+    },
+      "CI_HTTPS": {
+        "join": "",
+        "words": [
+          [
+            "https"
+          ]
+        ]
+      },
+      "CI_HOOKS_SLACK_COM": {
+        "join": "\\.",
+        "words": [
+          [
+            "hooks",
+            "slack",
+            "com"
+          ]
+        ]
+      },
+      "CI_SERVICES": {
+        "join": "",
+        "words": [
+          [
+            "services"
+          ]
+        ]
+      },
+      "CI_MONGODB": {
+        "join": "",
+        "words": [
+          [
+            "mongodb"
+          ]
+        ]
+      },
+      "CI_SRV": {
+        "join": "",
+        "words": [
+          [
+            "srv"
+          ]
+        ]
+      },
+      "CI_JDBC": {
+        "join": "",
+        "words": [
+          [
+            "jdbc"
+          ]
+        ]
+      },
+      "CI_MYSQL": {
+        "join": "",
+        "words": [
+          [
+            "mysql"
+          ]
+        ]
+      },
+      "CI_POSTGRES": {
+        "join": "",
+        "words": [
+          [
+            "postgres"
+          ]
+        ]
+      },
+      "CI_QL": {
+        "join": "",
+        "words": [
+          [
+            "ql"
+          ]
+        ]
+      }
   },
   "patterns": {
     "placeholder": "\\[REDACTED(?::[^\\[\\]:{{WS}}]+(?::[^\\[\\]]*)?)?\\]"
@@ -231,6 +305,769 @@
       "nestedLimit": 4096,
       "decodeBudget": 1000000,
       "dropPlaceholder": true
+    }
+  ],
+  "full": [
+    {
+      "id": "aws",
+      "kind": "regex",
+      "pattern": "\\b(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}\\b",
+      "ignoreEquals": [
+        "AKIAIOSFODNN7EXAMPLE"
+      ]
+    },
+    {
+      "id": "aws",
+      "kind": "regex",
+      "pattern": "[\"']?(?:AWS|aws|Aws)?_?(?:ACCOUNT|account|Account)_?(?:ID|id|Id)?[\"']?[{{WS}}]*(?::|=>|=)[{{WS}}]*[\"']?[0-9]{4}-?[0-9]{4}-?[0-9]{4}[\"']?\\b"
+    },
+    {
+      "id": "aws",
+      "kind": "regex",
+      "pattern": "[\"']?(?:AWS|aws|Aws)?_?(?:SECRET|secret|Secret)_?(?:ACCESS|access|Access)_?(?:KEY|key|Key)[\"']?[{{WS}}]*(?::|=>|=)[{{WS}}]*[\"']?([A-Za-z0-9/+=]{40})[\"']?\\b",
+      "group": 1,
+      "ignoreEquals": [
+        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+      ]
+    },
+    {
+      "id": "privatekey",
+      "kind": "pem-key",
+      "header": "-----BEGIN[ ]?(?:(?:RSA|DSA|EC|OPENSSH|PGP) )?PRIVATE KEY(?: BLOCK)?-----",
+      "footer": "-----END[ ]?(?:(?:RSA|DSA|EC|OPENSSH|PGP) )?PRIVATE KEY(?: BLOCK)?-----",
+      "bodyClass": "[A-Za-z0-9+/={{WS}}\\\\]",
+      "minBody": 100,
+      "maxBody": 10000,
+      "newline": "\n",
+      "stripClass": "[{{WS}}]",
+      "stripLiteral": "\\n",
+      "contentClass": "[A-Za-z0-9+/]",
+      "padChar": "[=]",
+      "minContent": 100,
+      "magic": [
+        "MI",
+        "b3BlbnNzaC1rZXktdjE"
+      ]
+    },
+    {
+      "id": "npm",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "npm_"
+        },
+        {
+          "runClass": "[A-Za-z0-9_]",
+          "min": 36,
+          "max": 36
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_]"
+    },
+    {
+      "id": "basicauth",
+      "kind": "credential-uri",
+      "pattern": "(?:https?|ftps?)://([-a-zA-Z0-9_]{1,256}):([-a-zA-Z0-9_]{1,256})@[-a-zA-Z0-9%._+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b",
+      "userMin": 2,
+      "passwordMin": 4,
+      "userIgnoreContains": [
+        "localhost",
+        "127.0.0.1",
+        "password",
+        "mypassword",
+        "myusername",
+        "{password}",
+        "${password}",
+        "{{password}}",
+        "{username}",
+        "${username}",
+        "{{username}}",
+        "YOUR_PASSWORD",
+        "YOUR_USERNAME",
+        "REPLACE_WITH_PASSWORD",
+        "REPLACE_WITH_USERNAME"
+      ],
+      "passwordIgnoreContains": [
+        "localhost",
+        "127.0.0.1",
+        "password",
+        "mypassword",
+        "myusername",
+        "{password}",
+        "${password}",
+        "{{password}}",
+        "{username}",
+        "${username}",
+        "{{username}}",
+        "YOUR_PASSWORD",
+        "YOUR_USERNAME",
+        "REPLACE_WITH_PASSWORD",
+        "REPLACE_WITH_USERNAME"
+      ],
+      "repeatRun": 4
+    },
+    {
+      "id": "slack",
+      "kind": "dash-chain",
+      "leads": [
+        "xoxb",
+        "xoxp",
+        "xapp",
+        "xoxa",
+        "xoxo",
+        "xoxr"
+      ],
+      "separator": "-",
+      "segmentClass": "[a-zA-Z0-9]",
+      "wordClass": "[A-Za-z0-9_]",
+      "maxSegment": 40,
+      "minSegments": 2
+    },
+    {
+      "id": "slack",
+      "kind": "regex",
+      "pattern": "{{CI_HTTPS}}://{{CI_HOOKS_SLACK_COM}}/{{CI_SERVICES}}/[tT][a-zA-Z0-9]{1,40}/[bB][a-zA-Z0-9]{1,40}/[a-zA-Z0-9]{1,40}"
+    },
+    {
+      "id": "sendgrid",
+      "kind": "sendgrid-key",
+      "lead": "SG.",
+      "separator": ".",
+      "wordClass": "[A-Za-z0-9_]",
+      "dash": "-",
+      "maxSegment": 128,
+      "length": 69
+    },
+    {
+      "id": "shopify",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "alt": [
+            "shppa",
+            "shpca",
+            "shpat",
+            "shpss"
+          ]
+        },
+        {
+          "lit": "_"
+        },
+        {
+          "runClass": "[a-zA-Z0-9]",
+          "min": 32,
+          "max": 64
+        }
+      ],
+      "notAfter": "[a-zA-Z0-9]"
+    },
+    {
+      "id": "stripe",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "alt": [
+            "sk_live",
+            "sk_test",
+            "rk_live",
+            "rk_test"
+          ]
+        },
+        {
+          "lit": "_"
+        },
+        {
+          "runClass": "[a-zA-Z0-9]",
+          "min": 24,
+          "max": 99
+        }
+      ],
+      "notAfter": "[a-zA-Z0-9]"
+    },
+    {
+      "id": "github",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "alt": [
+            "ghp",
+            "gho",
+            "ghu",
+            "ghs",
+            "ghr"
+          ]
+        },
+        {
+          "lit": "_"
+        },
+        {
+          "runClass": "[A-Za-z0-9_]",
+          "min": 36,
+          "max": 36
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_]"
+    },
+    {
+      "id": "github",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "github_pat_"
+        },
+        {
+          "runClass": "[A-Za-z0-9_]",
+          "min": 82,
+          "max": 82
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_]"
+    },
+    {
+      "id": "github",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "ghs_"
+        },
+        {
+          "runClass": "[0-9]",
+          "min": 1,
+          "max": 20
+        },
+        {
+          "lit": "_"
+        },
+        {
+          "runClass": "[A-Za-z0-9_-]",
+          "min": 1,
+          "max": 1000
+        },
+        {
+          "lit": "."
+        },
+        {
+          "runClass": "[A-Za-z0-9_-]",
+          "min": 1,
+          "max": 10000
+        },
+        {
+          "lit": "."
+        },
+        {
+          "runClass": "[A-Za-z0-9_-]",
+          "min": 1,
+          "max": 1000
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_-]"
+    },
+    {
+      "id": "gitlab",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "glpat-"
+        },
+        {
+          "runClass": "[A-Za-z0-9_-]",
+          "min": 20,
+          "max": 128
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_-]"
+    },
+    {
+      "id": "grafana",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "glc_"
+        },
+        {
+          "runClass": "[A-Za-z0-9+/]",
+          "min": 32,
+          "max": 400
+        },
+        {
+          "runClass": "[=]",
+          "min": 0,
+          "max": 2
+        }
+      ],
+      "notAfter": "[A-Za-z0-9+/=]"
+    },
+    {
+      "id": "grafana",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "glsa_"
+        },
+        {
+          "runClass": "[A-Za-z0-9]",
+          "min": 32,
+          "max": 32
+        },
+        {
+          "lit": "_"
+        },
+        {
+          "runClass": "[A-Fa-f0-9]",
+          "min": 8,
+          "max": 8
+        }
+      ],
+      "notAfter": "[A-Fa-f0-9]"
+    },
+    {
+      "id": "openai",
+      "kind": "regex",
+      "pattern": "sk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})\\b|sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20}"
+    },
+    {
+      "id": "anthropic",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "sk-ant-api0"
+        },
+        {
+          "runClass": "[0-9]",
+          "min": 1,
+          "max": 1
+        },
+        {
+          "lit": "-"
+        },
+        {
+          "runClass": "[A-Za-z0-9_-]",
+          "min": 90,
+          "max": 128,
+          "tails": [
+            "AA"
+          ]
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_-]"
+    },
+    {
+      "id": "groq",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "gsk_"
+        },
+        {
+          "runClass": "[a-zA-Z0-9]",
+          "min": 52,
+          "max": 52
+        }
+      ],
+      "notAfter": "[a-zA-Z0-9]"
+    },
+    {
+      "id": "huggingface",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "hf_"
+        },
+        {
+          "runClass": "[a-zA-Z]",
+          "min": 34,
+          "max": 34
+        }
+      ],
+      "notAfter": "[a-zA-Z]"
+    },
+    {
+      "id": "linear",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "lin_api_"
+        },
+        {
+          "runClass": "[a-zA-Z0-9_]",
+          "min": 32,
+          "max": 128
+        }
+      ],
+      "notAfter": "[a-zA-Z0-9_]"
+    },
+    {
+      "id": "notion",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "ntn_"
+        },
+        {
+          "runClass": "[0-9]",
+          "min": 11,
+          "max": 11
+        },
+        {
+          "runClass": "[A-Za-z0-9]",
+          "min": 35,
+          "max": 35
+        }
+      ],
+      "notAfter": "[A-Za-z0-9]"
+    },
+    {
+      "id": "1password",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "ops_ey"
+        },
+        {
+          "runClass": "[A-Za-z0-9+/=]",
+          "min": 100,
+          "max": 1280,
+          "tails": [
+            "fQ==",
+            "fQ=",
+            "fQ"
+          ]
+        }
+      ],
+      "notAfter": "[A-Za-z0-9+/=]",
+      "check": "base64-json",
+      "checkFrom": 4
+    },
+    {
+      "id": "database-connection-string",
+      "kind": "credential-uri",
+      "pattern": "{{CI_MONGODB}}(?:\\+{{CI_SRV}})?://(?:([^:/{{WS}}]{1,100}):([^@/{{WS}}]{1,200})@)?[^/{{WS}}?]{1,100}(?:/[^?{{WS}}]{0,100})?(?:\\?[^{{WS}}]{0,500})?",
+      "passwordMin": 4,
+      "passwordIgnoreEquals": [
+        "localhost",
+        "127.0.0.1",
+        "example.com",
+        "example.org",
+        "test.com",
+        "password",
+        "username",
+        "secret",
+        "mypassword",
+        "myusername",
+        "root",
+        "admin",
+        "user",
+        "pass",
+        "{password}",
+        "${password}",
+        "{{password}}",
+        "{username}",
+        "${username}",
+        "{{username}}",
+        "YOUR_PASSWORD",
+        "YOUR_USERNAME",
+        "REPLACE_WITH_PASSWORD"
+      ],
+      "userEqualsPassword": true,
+      "variablePatterns": [
+        "\\$\\{[^}]{1,50}\\}",
+        "\\{\\{[^}]{1,50}\\}\\}",
+        "\\{[^}]{1,50}\\}",
+        "%[A-Z_]{1,30}%",
+        "\\$[A-Z_]{1,30}",
+        "\\$\\([^)]{1,50}\\)"
+      ],
+      "repeatRun": 4
+    },
+    {
+      "id": "database-connection-string",
+      "kind": "credential-uri",
+      "pattern": "(?:{{CI_JDBC}}:)?{{CI_MYSQL}}(?:[xX])?://(?:([^:/{{WS}}]{1,100}):([^@/{{WS}}]{1,200})@)?[^/{{WS}}?]{1,100}(?:/[^?{{WS}}]{0,100})?(?:\\?[^{{WS}}]{0,500})?",
+      "passwordMin": 4,
+      "passwordIgnoreEquals": [
+        "localhost",
+        "127.0.0.1",
+        "example.com",
+        "example.org",
+        "test.com",
+        "password",
+        "username",
+        "secret",
+        "mypassword",
+        "myusername",
+        "root",
+        "admin",
+        "user",
+        "pass",
+        "{password}",
+        "${password}",
+        "{{password}}",
+        "{username}",
+        "${username}",
+        "{{username}}",
+        "YOUR_PASSWORD",
+        "YOUR_USERNAME",
+        "REPLACE_WITH_PASSWORD"
+      ],
+      "userEqualsPassword": true,
+      "variablePatterns": [
+        "\\$\\{[^}]{1,50}\\}",
+        "\\{\\{[^}]{1,50}\\}\\}",
+        "\\{[^}]{1,50}\\}",
+        "%[A-Z_]{1,30}%",
+        "\\$[A-Z_]{1,30}",
+        "\\$\\([^)]{1,50}\\)"
+      ],
+      "repeatRun": 4
+    },
+    {
+      "id": "database-connection-string",
+      "kind": "credential-uri",
+      "pattern": "{{CI_POSTGRES}}(?:{{CI_QL}})?://(?:([^:/{{WS}}]{1,100}):([^@/{{WS}}]{1,200})@)?[^/{{WS}}?]{1,100}(?:/[^?{{WS}}]{0,100})?(?:\\?[^{{WS}}]{0,500})?",
+      "passwordMin": 4,
+      "passwordIgnoreEquals": [
+        "localhost",
+        "127.0.0.1",
+        "example.com",
+        "example.org",
+        "test.com",
+        "password",
+        "username",
+        "secret",
+        "mypassword",
+        "myusername",
+        "root",
+        "admin",
+        "user",
+        "pass",
+        "{password}",
+        "${password}",
+        "{{password}}",
+        "{username}",
+        "${username}",
+        "{{username}}",
+        "YOUR_PASSWORD",
+        "YOUR_USERNAME",
+        "REPLACE_WITH_PASSWORD"
+      ],
+      "userEqualsPassword": true,
+      "variablePatterns": [
+        "\\$\\{[^}]{1,50}\\}",
+        "\\{\\{[^}]{1,50}\\}\\}",
+        "\\{[^}]{1,50}\\}",
+        "%[A-Z_]{1,30}%",
+        "\\$[A-Z_]{1,30}",
+        "\\$\\([^)]{1,50}\\)"
+      ],
+      "repeatRun": 4
+    },
+    {
+      "id": "hashicorp-vault",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "hvs."
+        },
+        {
+          "runClass": "[A-Za-z0-9_-]",
+          "min": 90,
+          "max": 120
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_-]"
+    },
+    {
+      "id": "hashicorp-vault",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "hvb."
+        },
+        {
+          "runClass": "[A-Za-z0-9_-]",
+          "min": 138,
+          "max": 300
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_-]"
+    },
+    {
+      "id": "hashicorp-vault",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "hvr."
+        },
+        {
+          "runClass": "[A-Za-z0-9_-]",
+          "min": 90,
+          "max": 120
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_-]"
+    },
+    {
+      "id": "vercel",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "alt": [
+            "vcp",
+            "vci",
+            "vca",
+            "vcr",
+            "vck"
+          ]
+        },
+        {
+          "lit": "_"
+        },
+        {
+          "runClass": "[A-Za-z0-9]",
+          "min": 20,
+          "max": 60
+        }
+      ],
+      "notAfter": "[A-Za-z0-9]"
+    },
+    {
+      "id": "databricks",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "dapi"
+        },
+        {
+          "runClass": "[A-Fa-f0-9]",
+          "min": 32,
+          "max": 32
+        },
+        {
+          "opt": [
+            {
+              "lit": "-"
+            },
+            {
+              "runClass": "[0-9]",
+              "min": 1,
+              "max": 1
+            }
+          ]
+        }
+      ],
+      "notAfter": "[A-Fa-f0-9]"
+    },
+    {
+      "id": "docker",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "dckr_pat_"
+        },
+        {
+          "runClass": "[A-Za-z0-9_-]",
+          "min": 27,
+          "max": 27
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_-]"
+    },
+    {
+      "id": "figma",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "figd_"
+        },
+        {
+          "runClass": "[A-Za-z0-9_-]",
+          "min": 40,
+          "max": 200
+        }
+      ],
+      "notAfter": "[A-Za-z0-9_-]"
+    },
+    {
+      "id": "cloudflare",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "alt": [
+            "cfk",
+            "cfut",
+            "cfat"
+          ]
+        },
+        {
+          "lit": "_"
+        },
+        {
+          "runClass": "[A-Za-z0-9]",
+          "min": 40,
+          "max": 40
+        },
+        {
+          "runClass": "[0-9a-f]",
+          "min": 8,
+          "max": 8
+        }
+      ],
+      "notAfter": "[A-Za-z0-9]"
+    },
+    {
+      "id": "tailscale",
+      "kind": "token",
+      "letterGuard": true,
+      "parts": [
+        {
+          "lit": "tskey-"
+        },
+        {
+          "runClass": "[a-z]",
+          "min": 2,
+          "max": 20
+        },
+        {
+          "lit": "-"
+        },
+        {
+          "runClass": "[0-9A-Za-z_]",
+          "min": 8,
+          "max": 40
+        },
+        {
+          "lit": "-"
+        },
+        {
+          "runClass": "[0-9A-Za-z_]",
+          "min": 16,
+          "max": 60
+        }
+      ],
+      "notAfter": "[0-9A-Za-z_]"
     }
   ]
 }
