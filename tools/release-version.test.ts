@@ -26,6 +26,11 @@ function withCopy<T>(run: (root: string) => T): T {
     }
 }
 
+/** The version the copy holds now (the tests must not break at every release). */
+function current(root: string): string {
+    return script(root, '--print').out.trim();
+}
+
 function script(root: string, ...args: string[]): { status: number | null; out: string } {
     const result = spawnSync('bun', [join(REPO, 'tools', 'release-version.ts'), ...args], {
         env: { ...process.env, RELEASE_VERSION_ROOT: root },
@@ -66,9 +71,10 @@ test('a version that is set shows in all four places and passes the check, with 
 
 test('a leading-zero version found in all places fails the check', () => {
     withCopy((root) => {
+        const version = current(root);
         for (const file of FILES) {
             const path = join(root, file);
-            writeFileSync(path, readFileSync(path, 'utf8').replaceAll('0.2.0', '01.2.3'));
+            writeFileSync(path, readFileSync(path, 'utf8').replaceAll(version, '01.2.3'));
         }
         const result = script(root, '--check');
         expect(result.status).not.toBe(0);
@@ -79,7 +85,7 @@ test('a leading-zero version found in all places fails the check', () => {
 test('one place that differs fails the check and names the places', () => {
     withCopy((root) => {
         const path = join(root, 'go/version.go');
-        writeFileSync(path, readFileSync(path, 'utf8').replace('0.2.0', '0.2.1'));
+        writeFileSync(path, readFileSync(path, 'utf8').replace(current(root), '9.9.9'));
         const result = script(root, '--check');
         expect(result.status).not.toBe(0);
         expect(result.out).toContain('the versions differ');
