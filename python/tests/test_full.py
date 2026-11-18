@@ -8,9 +8,10 @@ import json
 
 import droidrun_redaction
 import pytest
-from droidrun_redaction import _detect, _scan_support, redact_json, redact_text
+from droidrun_redaction import _detect, _scan_support, key_verdict, redact_json, redact_text
 from droidrun_redaction._base64_json import decode_base64, is_base64_json
 from droidrun_redaction._letters import is_letter, passes_letter_guard
+from droidrun_redaction._placeholder import is_whole_placeholder
 
 NPM = "npm_" + "A" * 36
 GITHUB = "ghp_" + "a" * 36
@@ -405,9 +406,77 @@ def test_a_key_that_is_a_one_password_or_slack_token_is_replaced():
     assert out == {"[REDACTED:slack]": 1, "[REDACTED:1password]": 2}
 
 
-def test_keys_colliding_after_a_full_scan_keep_the_later_value():
-    other = "npm_" + "B" * 36
-    assert redact_json({NPM: 1, other: 2}, tier="full").value == {"[REDACTED:npm]": 2}
+DB_URL = "postgres://user:Zq9abcDEF123ghi_x@db.example.test:5432/app"
+OTHER_DB_URL = "postgres://other:Qw8rtyUIO456jkl_z@db2.example.test:5432/app"
+THIRD_DB_URL = "mongodb://third:Mn7opqRST890uvw_y@db3.example.test/app"
+
+
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_two_database_url_keys_keep_both_values(mode):
+    out = redact_json({DB_URL: "first", OTHER_DB_URL: "second"}, tier="full", mode=mode)
+    assert out.value == {
+        "[REDACTED:database-connection-string]": "first",
+        "[REDACTED:database-connection-string#2]": "second",
+    }
+    assert out.hits == (("database-connection-string", 2),)
+
+
+@pytest.mark.parametrize("mode", ["strict", "compat"])
+def test_colliding_keys_are_numbered_in_iteration_order(mode):
+    value = {DB_URL: 1, "x": 2, OTHER_DB_URL: 3, THIRD_DB_URL: 4, NPM: 5, "npm_" + "B" * 36: 6}
+    assert list(redact_json(value, tier="full", mode=mode).value.items()) == [
+        ("[REDACTED:database-connection-string]", 1),
+        ("x", 2),
+        ("[REDACTED:database-connection-string#2]", 3),
+        ("[REDACTED:database-connection-string#3]", 4),
+        ("[REDACTED:npm]", 5),
+        ("[REDACTED:npm#2]", 6),
+    ]
+
+
+def test_the_standard_tier_keeps_both_values_of_two_standard_secret_keys():
+    value = {f"password={SECRET}": 1, "password=Qw8rtyUIO456jkl_z": 2, "password=Mn7opqRST890uvw_y": 3}
+    assert list(redact_json(value, mode="compat").value) == [
+        "password=[REDACTED:generic-keyword]",
+        "password=[REDACTED:generic-keyword#2]",
+        "password=[REDACTED:generic-keyword#3]",
+    ]
+
+
+def test_a_number_under_a_secret_key_and_a_key_context_collision_keep_every_value():
+    value = {"a": {DB_URL: {"pin": 1}, OTHER_DB_URL: {"pin": 2}}}
+    out = redact_json(value, tier="full").value
+    assert out == {
+        "a": {
+            "[REDACTED:database-connection-string]": {"pin": "[REDACTED:key-context]"},
+            "[REDACTED:database-connection-string#2]": {"pin": "[REDACTED:key-context]"},
+        }
+    }
+
+
+def test_a_key_that_already_is_the_plain_placeholder_makes_the_redacted_one_take_the_number():
+    value = {"[REDACTED:npm]": "literal", NPM: "token"}
+    assert redact_json(value, tier="full").value == {
+        "[REDACTED:npm]": "literal",
+        "[REDACTED:npm#2]": "token",
+    }
+
+
+def test_a_numbered_key_is_a_placeholder_and_the_output_is_a_fixed_point():
+    value = {DB_URL: "first", OTHER_DB_URL: "second", NPM: "third", f"password={SECRET}": "x"}
+    once = redact_json(value, tier="full")
+    twice = redact_json(once.value, tier="full")
+    assert twice.value == once.value
+    assert twice.hits == ()
+    assert is_whole_placeholder("[REDACTED:npm#2]")
+    assert redact_text("[REDACTED:npm#2]", tier="full").value == "[REDACTED:npm#2]"
+    assert redact_json({"k": "[REDACTED:npm#2]"}, tier="full").value == {"k": "[REDACTED:npm#2]"}
+    assert redact_json({"password": "[REDACTED:npm#2]"}).value == {"password": "[REDACTED:npm#2]"}
+
+
+def test_a_numbered_key_is_read_without_its_placeholder_for_the_key_verdict():
+    assert key_verdict("[REDACTED:generic-keyword#2]") == "none"
+    assert key_verdict("password=[REDACTED:generic-keyword#2]") == "any"
 
 
 def test_a_failing_key_scan_is_reported(monkeypatch):

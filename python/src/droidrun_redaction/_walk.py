@@ -12,7 +12,7 @@ from typing import Any
 
 from ._detect import Hit
 from ._keys import key_verdict, stronger_verdict
-from ._placeholder import build_read_placeholder, is_whole_placeholder
+from ._placeholder import build_read_placeholder, is_whole_placeholder, number_last_placeholder
 from ._scan import (
     RULE_IDS,
     is_overlong_key,
@@ -231,11 +231,24 @@ def _next_key(key: str, state: WalkState) -> str:
     return key if not hits else from_units(redacted)
 
 
+def _free_key(out: dict[str, Any], key: str) -> str:
+    """`key`, or when an earlier entry of `out` already has it (two keys redacted to the same text) the key
+    numbered inside its last placeholder, `[REDACTED:npm#2]`, `#3`, ...: no value is lost (SPEC L-P)."""
+    if key not in out:
+        return key
+    number = 2
+    while (numbered := number_last_placeholder(key, number)) is not None:
+        if numbered not in out:
+            return numbered
+        number += 1
+    return key
+
+
 def _place(frame: _Frame, value: Any) -> None:
     if frame.keys is None:
         frame.out.append(value)
     else:
-        frame.out[frame.out_key] = value
+        frame.out[_free_key(frame.out, frame.out_key)] = value
 
 
 def _nodes_exhausted(frame: _Frame, state: WalkState) -> None:

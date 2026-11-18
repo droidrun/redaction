@@ -40,6 +40,16 @@ def is_placeholder_value(text: str, start: int, end: int) -> bool:
     return placeholder_end != -1 and placeholder_end >= end
 
 
+def number_last_placeholder(text: str, number: int) -> str | None:
+    """`text` with `#<number>` put inside its last placeholder (`[REDACTED:npm]` -> `[REDACTED:npm#2]`), or
+    None when it holds no placeholder."""
+    found = list(_PLACEHOLDER.finditer(text))
+    if not found:
+        return None
+    close = found[-1].end() - 1
+    return f"{text[:close]}#{number}{text[close:]}"
+
+
 def literal_segments(text: str) -> list[str]:
     """The text between placeholders: one element more than there are placeholders, empty ones kept."""
     return _PLACEHOLDER.split(text)

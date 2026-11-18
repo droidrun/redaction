@@ -113,9 +113,12 @@ def test_keys_keep_the_ecmascript_order():
     assert keys == ["2", "10", "4294967294", "b", "a", "01", "4294967295"]
 
 
-def test_a_key_that_holds_a_secret_is_redacted_and_colliding_keys_merge():
+def test_a_key_that_holds_a_secret_is_redacted_and_colliding_keys_keep_both_values():
     value = {"password=Zq9abcDEF123ghi_x": 1, "password=Zq9abcDEF123ghi_y": 2}
-    assert redact_json(value, mode="compat").value == {f"password={PLACEHOLDER}": "[REDACTED:key-context]"}
+    assert redact_json(value, mode="compat").value == {
+        f"password={PLACEHOLDER}": "[REDACTED:key-context]",
+        "password=[REDACTED:generic-keyword#2]": "[REDACTED:key-context]",
+    }
 
 
 def test_numbers_equal_the_typescript_output_as_doubles():

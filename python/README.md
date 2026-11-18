@@ -39,7 +39,10 @@ result.value   # {'user': 'a', 'api_key': '[REDACTED:key-context]', 'note': 'Bea
   - `value` is a parsed JSON value: `dict`, `list`, `str`, `int`, `float`, `bool`, `None`.
   - Strings are scanned. A string under a secret key name (`password`, `x-auth-token`, `clientSecret`, ...)
     is replaced whole, and so is a number under a singular secret key (`pin`; not `max_tokens`).
-  - Keys that themselves hold a secret are redacted.
+  - Keys that themselves hold a secret are redacted. When two or more keys of one object redact to the
+    same text, no value is lost: the first keeps the key, each further one gets a number inside its last
+    placeholder, `[REDACTED:npm]`, `[REDACTED:npm#2]`, `[REDACTED:npm#3]`, in iteration order. A numbered
+    placeholder is a placeholder like the plain one (it is never redacted again).
   - Output keys keep the ECMAScript order (integer-like keys ascending first), as the TypeScript
     package returns them.
   - `skip_keys` (default `type` and `id`): a scalar under such a key is not replaced because of a secret
