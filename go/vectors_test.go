@@ -101,7 +101,7 @@ func TestVectorsStandardTier(t *testing.T) {
 		for _, c := range file.Cases {
 			t.Run(name+"/"+c.Name, func(t *testing.T) {
 				got := run(t, c.inputJSON(t), c.options())
-				if !sameValue(t, got, c.expectedJSON(t)) {
+				if !sameJSONText(t, got, c.expectedJSON(t)) {
 					t.Fatalf("output differs from the vector (%d bytes)", len(got))
 				}
 			})
@@ -115,7 +115,7 @@ func TestVectorsAreIdempotent(t *testing.T) {
 			t.Run(name+"/"+c.Name, func(t *testing.T) {
 				want := c.expectedJSON(t)
 				got := run(t, want, Options{Mode: c.options().Mode})
-				if !sameValue(t, got, want) {
+				if !sameJSONText(t, got, want) {
 					t.Fatal("redacting the expected output changed it")
 				}
 			})

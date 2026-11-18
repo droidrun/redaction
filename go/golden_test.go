@@ -107,8 +107,8 @@ type digest struct {
 	Length int    `json:"length"`
 }
 
-// matchesRecord compares the output with the recorded one (a value, or the digest and length of
-// its JSON text for a large output).
+// matchesRecord compares the output bytes with the recorded JSON text (or, for a large output,
+// its digest and length).
 func matchesRecord(t *testing.T, got []byte, recorded json.RawMessage) bool {
 	t.Helper()
 	var summary digest
@@ -117,7 +117,7 @@ func matchesRecord(t *testing.T, got []byte, recorded json.RawMessage) bool {
 		length := len(utf16.Encode([]rune(string(got))))
 		return hex.EncodeToString(sum[:]) == summary.Digest && length == summary.Length
 	}
-	return sameValue(t, got, recorded)
+	return bytes.Equal(got, recorded)
 }
 
 func sameCounts(a map[string]int, b map[string]int) bool {

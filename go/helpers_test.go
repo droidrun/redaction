@@ -1,10 +1,10 @@
 package redaction
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 )
 
@@ -18,9 +18,15 @@ func parseTree(t *testing.T, raw []byte) *node {
 	return tree
 }
 
-func sameValue(t *testing.T, got []byte, want []byte) bool {
+// sameJSONText compares bytes. The expected value of a vector is pretty-printed in its file, so it
+// is compacted first (which keeps key order, number text and string escapes as written).
+func sameJSONText(t *testing.T, got []byte, pretty []byte) bool {
 	t.Helper()
-	return reflect.DeepEqual(parseTree(t, got), parseTree(t, want))
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, pretty); err != nil {
+		t.Fatal(err)
+	}
+	return bytes.Equal(got, compact.Bytes())
 }
 
 type genParts struct {
