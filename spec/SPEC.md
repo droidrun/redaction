@@ -33,8 +33,12 @@ counts code units.
   done by mapping every unit in D800 to DFFF to a character that no pattern of the spec mentions
   (for example U+F0000 + (unit minus D800)); every pattern class is either an explicit list of
   BMP characters or a negated list, so any injective mapping of surrogate units to unlisted
-  characters gives the same matches. Offsets are unit offsets. Go MUST match over the whole text
-  with offsets, never over slices.
+  characters gives the same matches. Offsets are unit offsets. An implementation MAY search a slice of
+  the text only when no pattern can observe context outside the slice. With the anchor-free grammar of
+  section 2 the only context-sensitive token is the word boundary `\b` (the linter bans `^`, `$`, `\B`,
+  `\A`, `\Z`, `\G` and lookaround), so a search of a slice MUST give `\b` the real neighbouring character
+  of the whole text at both slice edges (Go does this); the simple way is to search the whole text with
+  offsets.
 - Output is the input with ranges replaced (section 7). Characters outside the ranges are copied
   exactly.
 
@@ -166,6 +170,10 @@ Fields: `pattern`, optional `group` (default 0), `notBefore`, `notAfter`, `requi
    restarted: the match was consumed).
 4. Output the surviving candidates in order.
 
+**A `regex` rule has either a capture `group` or guards, never both.** The guarded path reports whole matches
+(it restarts one unit after a refused match, which is exact only for a fixed-length whole match), so a group
+there is ambiguous; `tools/lint-spec` rejects the combination.
+
 A match of `group` where the capture group **did not participate** in the match (it is in an alternative
 that was not taken) has no span: the match is dropped, nothing is output for it. A rule pattern never matches
 the empty string (the linter rejects such patterns), so the empty-match case does not arise; if an engine
@@ -199,10 +207,18 @@ Fields: `header`, `footer`, `footerMarker`, `bodyChar`, `bodyLimit`.
 1. Find all matches of `header` first (left to right, non-overlapping). Let `covered = 0`.
 2. For each header match `[s, b)` in order: skip it if `s < covered`. Let `limit = min(length, b +
    bodyLimit)`. Let `bodyEnd` be the first index in `[b, limit)` whose unit is not in `bodyChar`,
-   or `limit`. Let `f` be the first index at or after `b` where the literal `footerMarker`
-   occurs in the whole text. If `f` exists, `f < bodyEnd`, and `footer` matches exactly at `f`
-   (anchored there), then `covered = ` end of that match; otherwise `covered = bodyEnd`.
+   or `limit`. Let `f` be the first index `i` in `[b, bodyEnd)` where the literal `footerMarker` starts
+   (the marker may run past `bodyEnd`, but it must **start** before it). If `f` exists and `footer`
+   matches exactly at `f` (anchored there), then `covered = ` end of that match; otherwise
+   `covered = bodyEnd`.
 3. Output `[s, covered)`.
+
+**The footer search is bounded**: it looks only at starts in `[b, bodyEnd)`, never to the end of the text. A
+search to the end of the text finds the same `f` whenever one counts, but costs time proportional to the whole
+remaining text per header, which is quadratic on `-----BEGIN PRIVATE KEY-----!` repeated. With the bound, the
+windows of successive headers overlap by less than the marker length (the next header starts at or after
+`covered >= bodyEnd`), so the rule is linear. An implementation MAY additionally cache the next marker
+position, but the bound is what the spec requires.
 
 An unterminated block is therefore redacted through the end of its body-looking run (fail
 closed). The body class includes `\`, so keys written with literal `\n` in JSON text are covered.
@@ -355,8 +371,9 @@ Start of the identifier that holds the keyword at `k`: `s = k`; while `s > 0` an
 ### 5.3 `trimQueryValue(label, [a, b))`
 
 Inside a URL query a value ends at the next `&`. If `text[label - 1]` is not `?` and not `&` (or `label
-== 0`), return `[a, b)`. Otherwise let `i` be the first index `>= a` of `&`; if it exists and `i < b`,
-return `[a, i)`; else `[a, b)`.
+== 0`), return `[a, b)`. Otherwise let `i` be the first index in `[a, b)` of `&`; if there is one, return `[a, i)`; else `[a, b)`.
+**The search stays inside the value range**: looking for the next `&` to the end of the text (and only then
+comparing with `b`) gives the same result but is quadratic on `?token=` repeated.
 
 ### 5.4 Value evidence
 
@@ -467,8 +484,15 @@ Otherwise `any`. So `pin` is `any`, `max_tokens` is `string`, `tokens` is `strin
 when empty or a whole placeholder, else the placeholder `[REDACTED:key-context]`. A number: the placeholder
 when `verdict` is `any`, otherwise none. Any other primitive (`null`, boolean): none.
 
-The default **skip keys** are `type` and `id` (`structuralSkipKeys`): a primitive value under such a key is
-kept byte for byte and never scanned; containers under them are walked.
+The default **skip keys** are `type` and `id` (`structuralSkipKeys`): in `compat` a primitive value under such
+a key is kept byte for byte and never scanned; in `strict` a string is scanned (9.3). Containers under skip
+keys are walked.
+
+**Public API.** `isSecretKeyName(key)` and `keyVerdict(key)` are public in every language. The verdict (`none`,
+`string`, `any`) is the value-shape rule behind `max_tokens` staying visible while `pin` and `password` numbers
+are replaced; a caller that redacts structured data of its own (headers, form fields) needs it, so a language
+MUST NOT hide it behind the JSON walker. Names follow the language (`keyVerdict`, `key_verdict`, `KeyVerdict`);
+the results are the strings `none`, `string`, `any`.
 
 ## 7. Placeholders, hits and splicing
 
@@ -518,14 +542,22 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
   double: a JSON number is parsed to the nearest double, and **equality of outputs is value equality** of
   those doubles. A serializer writes a double the way ECMAScript `Number::toString` does, so `1.0` is written
   `1`, `1e2` is `100`, `1E+21` is `1e+21`, `-0` is `0`, and an integer beyond 2^53 is the nearest double
-  (`9007199254740993` becomes `9007199254740992`). An implementation that keeps the source token or an
-  arbitrary-precision integer (Python `int`, Go `json.Number`) MUST convert to a double and use that.
-  `NaN` and the infinities are not JSON. Vectors and the corpus compare parsed values, never number text.
+  (`9007199254740993` becomes `9007199254740992`). `NaN` and the infinities are not JSON.
+  **Equality across languages is compared at double level**: vectors and the corpus compare parsed values
+  converted to doubles, never number text. A language with exact integers (Python `int`, Go `json.Number`)
+  MUST return every number it does not replace **unchanged and exact** (the integer `9007199254740993` stays
+  `9007199254740993`); it does not round to a double. TypeScript has only doubles and is unchanged: its output
+  is the double. A differential run converts both sides to doubles before comparing.
 - `null` and booleans are untouched. The empty string is untouched.
 - **Strings** are scanned as texts (4) and a string under a secret key is replaced whole (section 6 and 9).
 - **Keys** are redacted: a key of length from 8 up to 4096 is scanned with the standard rules (`detect`)
   and spliced when it holds a secret (it can hold one, e.g. `{"password=hunter2xx": 1}`); a shorter key
   cannot match and a longer one is left as it is in `compat` (strict: section 9).
+- **Invalid JSON.** A JSON entry point that takes JSON **text** (Python and Go; the TypeScript entry points take
+  values, not JSON text, so this does not apply to them) and receives text that is not valid JSON returns, as
+  its value, the text-tier redaction of the raw input (section 9.1, so nothing unscanned is returned), together
+  with an invalid-JSON error indication in the language's idiom (Go: the redacted bytes and `ErrInvalidJSON`;
+  Python: a result flag or an exception that carries the redacted text). It never returns the raw input.
 - Non-JSON values (`NaN`, infinities, functions, symbols, dates, class instances, cycles) are out of
   contract. TypeScript handles them as section 13 says; other languages MAY reject them.
 
@@ -701,6 +733,20 @@ These exist for compatibility with v0.2.0 and never change what is detected:
 All data of these extensions is **TypeScript constants in `ts/src`**, outside the hashed spec files: changing
 one never changes the spec hash that Python and Go embed, and none of them affects detection of the standard
 tier.
+
+## 13a. Per-language API notes
+
+The contract is language neutral; these points keep the languages from drifting in details a signature
+can hide:
+
+- **An explicit limit of 0 means 0.** `maxChars`, `maxDepth`, `maxNodes` (and any other numeric limit) given as
+  0 are applied as 0 (a text over 0 characters is replaced whole); only an **omitted** limit means the default.
+  A language whose zero value is indistinguishable from omitted (Go) takes pointer-valued limits, with a small
+  helper to build them, instead of treating 0 as unset. (TypeScript uses `??`, so an explicit 0 already
+  counts.)
+- Defaults of the limits are the values of section 9; an implementation never hard-codes another default.
+- `strict` is the default mode in Python and Go and an option in TypeScript (section 9).
+- The key predicate and verdict are public (section 6).
 
 ## 14. Conformance vectors
 
