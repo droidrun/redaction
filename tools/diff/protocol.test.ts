@@ -57,3 +57,30 @@ test('a line with U+2028 and U+2029 stays one line through toLine and lines', as
     for await (const item of lines(chunks())) out.push(item);
     expect(out).toEqual([line, 'second half']);
 });
+
+test.each([
+    '{"a"=1}',
+    '{"a" 1}',
+    '{"a":1,}',
+    '{,}',
+    '{a:1}',
+    '{"a":1 "b":2}',
+    '[1 2]',
+    '[1,]',
+    '[,1]',
+    '[1;2]',
+    '{"a":1]',
+    '[1}',
+    '"unterminated',
+    '[01]',
+    '{"a":1',
+    '[',
+])('malformed JSON %s is refused', (text) => {
+    expect(() => canonicalJson(text)).toThrow();
+});
+
+test('well-formed punctuation with spaces and nesting is accepted', () => {
+    expect(canonicalJson('{ "a" : [ 1 , { "b" : null } ] , "c" : "x" }')).toBe(
+        '{"a":[1,{"b":null}],"c":"x"}',
+    );
+});

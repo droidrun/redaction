@@ -100,7 +100,7 @@ class Reader {
         if (char === '{') return this.object(out);
         if (char === '[') return this.array(out);
         if (char === '"') return void out.push(JSON.stringify(this.string()));
-        const word = /^(?:true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(
+        const word = /^(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(
             this.text.slice(this.at, this.at + 400),
         );
         if (!word) throw new Error('bad JSON value');
@@ -115,11 +115,32 @@ class Reader {
 
     private string(): string {
         const start = this.at;
+        if (this.text[this.at] !== '"') throw new Error('JSON: a string was expected');
         this.at += 1;
-        while (this.text[this.at] !== '"') this.at += this.text[this.at] === '\\' ? 2 : 1;
+        while (this.text[this.at] !== '"') {
+            if (this.at >= this.text.length) throw new Error('JSON: unterminated string');
+            this.at += this.text[this.at] === '\\' ? 2 : 1;
+        }
         this.at += 1;
-        // JSON.parse decodes the escapes of one string; a lone surrogate escape stays a lone surrogate.
+        // JSON.parse decodes (and validates) the escapes of one string; a lone surrogate escape stays one.
         return JSON.parse(this.text.slice(start, this.at)) as string;
+    }
+
+    /** Consumes `char` (after optional space), or throws: the punctuation of JSON is checked, not skipped. */
+    private expect(char: string): void {
+        this.space();
+        if (this.text[this.at] !== char) throw new Error(`JSON: ${char} was expected at ${this.at}`);
+        this.at += 1;
+    }
+
+    /** After an element: `,` (more follow) gives true, the closing character gives false, anything else throws. */
+    private more(close: string): boolean {
+        this.space();
+        const next = this.text[this.at];
+        this.at += 1;
+        if (next === ',') return true;
+        if (next === close) return false;
+        throw new Error(`JSON: , or ${close} was expected at ${this.at - 1}`);
     }
 
     private object(out: string[]): void {
@@ -130,18 +151,15 @@ class Reader {
             this.at += 1;
             return void out.push('}');
         }
-        for (let first = true; ; first = false) {
-            if (!first) out.push(',');
+        do {
             this.space();
             out.push(JSON.stringify(this.string()), ':');
-            this.space();
-            this.at += 1; // the colon
+            this.expect(':');
             this.value(out);
-            this.space();
-            const next = this.text[this.at];
-            this.at += 1;
-            if (next === '}') return void out.push('}');
-        }
+            const more = this.more('}');
+            if (!more) return void out.push('}');
+            out.push(',');
+        } while (true);
     }
 
     private array(out: string[]): void {
@@ -152,13 +170,11 @@ class Reader {
             this.at += 1;
             return void out.push(']');
         }
-        for (let first = true; ; first = false) {
-            if (!first) out.push(',');
+        do {
             this.value(out);
-            this.space();
-            const next = this.text[this.at];
-            this.at += 1;
-            if (next === ']') return void out.push(']');
-        }
+            const more = this.more(']');
+            if (!more) return void out.push(']');
+            out.push(',');
+        } while (true);
     }
 }

@@ -60,11 +60,17 @@ that they are equal (`tools/release-version --check`).
    X.Y.Z`), open a PR, get it reviewed and merged into `main`. Nothing else changes in that PR.
 2. **Tag.** Push the tag `vX.Y.Z` on the merge commit (`git tag vX.Y.Z <sha> && git push origin vX.Y.Z`). Only
    the owner pushes release tags.
-3. **The workflow** (`publish.yml`, trigger: tag `v*`) checks that the tag equals the version of all three
-   packages, that the commit is on `main`, then `sync-spec --check`, typecheck, tests, build, `lint-spec`,
-   `gen-letters --check` (Unicode table) and `check-pack`. Then it pushes the tag `go/vX.Y.Z` on the same
-   commit (the Go module lives in `go/`, so its tag carries the `go/` prefix) and publishes the npm package.
-   A re-run finds an existing `go/vX.Y.Z` on the same commit and goes on; on another commit it fails.
+3. **The workflow** (`publish.yml`, trigger: tag `v*`) has three jobs, each with only the permission it needs.
+   `check` (read only) verifies that the tag equals the version of all three packages and that the commit is on
+   `main`, then runs `sync-spec --check`, typecheck, tests, build, `lint-spec`, `gen-letters --check` (Unicode
+   table) and `check-pack`. `tag` (the only job with `contents: write`, no checkout and no install) pushes the
+   tag `go/vX.Y.Z` on the same commit through the API (the Go module lives in `go/`, so its tag carries the `go/`
+   prefix); a re-run finds an existing tag on the same commit, lightweight or annotated, and goes on; on another
+   commit it fails. `publish` (`packages: write`) builds and publishes the npm package. The Go tag comes first
+   because a tag step can be re-run and an npm publish cannot.
+   **If `publish` reports a failure, check the registry before re-running**: an upload that succeeded before the
+   failure was reported makes a re-run fail on the existing version (`npm view @droidrun/redaction@X.Y.Z
+   --registry https://npm.pkg.github.com`); then the release is done and nothing is published twice.
 4. **Python** is not published to an index. Consumers pin the full commit SHA of the release commit
    (`rev = "<40-character SHA>"`, `subdirectory = "python"`, see [`python/README.md`](python/README.md)).
 5. **Go** consumers use `github.com/droidrun/redaction/go@vX.Y.Z`.

@@ -1,17 +1,21 @@
 name: Publish
 
+# A release is the tag vX.Y.Z on a commit of main. Three jobs, each with only the permission it needs:
+#   check   (read)            every check, install, test, build, pack; no write permission
+#   tag     (contents: write) pushes go/vX.Y.Z on the same commit through the API; no checkout, no install
+#   publish (packages: write) publishes the npm package; runs after the Go tag
+# The Go tag comes before the npm publish on purpose: a tag step can be re-run, an npm publish cannot.
 on:
   push:
     tags: ['v*']
 
 permissions:
-  contents: write # pushes the Go tag go/vX.Y.Z
-  packages: write
+  contents: read
 
 jobs:
-  publish:
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: ts
@@ -31,8 +35,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24.22.1'
-          registry-url: https://npm.pkg.github.com
-          scope: '@droidrun'
       - name: Spec copies and hash match the spec on the tagged commit
         working-directory: .
         run: tools/sync-spec --check
@@ -60,20 +62,46 @@ jobs:
       - name: Pack and import from the tarball
         working-directory: .
         run: bun tools/check-pack.ts
-      - name: Tag the Go module on the same commit (go/vX.Y.Z; a re-run finds the tag and goes on)
-        working-directory: .
+
+  tag:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # the only write permission of the release: the tag go/vX.Y.Z
+    steps:
+      - name: The tag go/vX.Y.Z on the same commit (a re-run finds it and goes on)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          go_tag="go/$GITHUB_REF_NAME"
-          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          existing=$(git ls-remote "$remote" "refs/tags/$go_tag" | cut -f1)
-          if [ -z "$existing" ]; then
-            git push "$remote" "$GITHUB_SHA:refs/tags/$go_tag"
-          elif [ "$existing" != "$GITHUB_SHA" ]; then
-            echo "the tag $go_tag exists on another commit" >&2
-            exit 1
-          fi
+          # The script is read from the tagged commit through the API: this job has no checkout.
+          gh api "repos/$GITHUB_REPOSITORY/contents/tools/tag-go-module?ref=$GITHUB_SHA" \
+            -H 'Accept: application/vnd.github.raw' > "$RUNNER_TEMP/tag-go-module"
+          sh "$RUNNER_TEMP/tag-go-module"
+
+  publish:
+    needs: tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        working-directory: ts
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.22.1'
+          registry-url: https://npm.pkg.github.com
+          scope: '@droidrun'
+      - name: Setup pnpm
+        run: corepack enable && corepack prepare pnpm@10.18.1 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
       - run: pnpm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
