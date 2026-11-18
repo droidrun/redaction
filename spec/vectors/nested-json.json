@@ -118,6 +118,51 @@
         "b": [],
         "c": ""
       }
+    },
+    {
+      "name": "placeholder followed by LF is not a placeholder",
+      "input": {
+        "token": "[REDACTED]\n"
+      },
+      "expected": {
+        "token": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "placeholder followed by CR is not a placeholder",
+      "input": {
+        "token": "[REDACTED]\r"
+      },
+      "expected": {
+        "token": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "placeholder followed by U+2028 is not a placeholder",
+      "input": {
+        "token": "[REDACTED] "
+      },
+      "expected": {
+        "token": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "placeholder followed by U+2029 is not a placeholder",
+      "input": {
+        "token": "[REDACTED] "
+      },
+      "expected": {
+        "token": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "placeholder alone is kept",
+      "input": {
+        "token": "[REDACTED]"
+      },
+      "expected": {
+        "token": "[REDACTED]"
+      }
     }
   ]
 }

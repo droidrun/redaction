@@ -60,6 +60,21 @@
       "name": "plain sentence",
       "input": "The quick brown fox jumps over the lazy dog 1234567890 times",
       "expected": "The quick brown fox jumps over the lazy dog 1234567890 times"
+    },
+    {
+      "name": "astral key inside angle stand-in",
+      "input": "password=<🔑>",
+      "expected": "password=<🔑>"
+    },
+    {
+      "name": "astral inside quoted angle stand-in",
+      "input": "password=\"<😀abcdefg>\"",
+      "expected": "password=\"<😀abcdefg>\""
+    },
+    {
+      "name": "lone high surrogate inside angle stand-in",
+      "input": "password=<\ud83d>",
+      "expected": "password=<\ud83d>"
     }
   ]
 }

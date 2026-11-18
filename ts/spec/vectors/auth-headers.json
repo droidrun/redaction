@@ -96,6 +96,26 @@
       "name": "guard: bearer scheme prose",
       "input": "Use the Bearer scheme in the Authorization header",
       "expected": "Use the Bearer scheme in the Authorization header"
+    },
+    {
+      "name": "cookie value stops at escaped upper-case N",
+      "input": "Cookie: a=b\\Nxyz tail",
+      "expected": "Cookie: [REDACTED:cookie]\\Nxyz tail"
+    },
+    {
+      "name": "cookie value stops at escaped upper-case R",
+      "input": "Cookie: a=b\\Rxyz tail",
+      "expected": "Cookie: [REDACTED:cookie]\\Rxyz tail"
+    },
+    {
+      "name": "cookie value stops at escaped lower-case n",
+      "input": "Set-Cookie: sid=Zq9abcDEF123ghi\\nxyz",
+      "expected": "Set-Cookie: [REDACTED:cookie]\\nxyz"
+    },
+    {
+      "name": "cookie value continues past another escape",
+      "input": "Cookie: a=b\\Xxyz tail",
+      "expected": "Cookie: [REDACTED:cookie]"
     }
   ]
 }

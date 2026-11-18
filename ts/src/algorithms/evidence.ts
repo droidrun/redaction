@@ -33,12 +33,19 @@ function isMask(value: string): boolean {
     return value.length > 0 && trivial.maskChars.some((mask) => [...value].every((char) => char === mask));
 }
 
+/** True when every UTF-16 unit of `inner` is allowed between the wrapper characters. */
+function hasOnlyInnerUnits(inner: string): boolean {
+    for (let i = 0; i < inner.length; i++) {
+        if (!INNER_UNIT.test(inner[i] as string)) return false;
+    }
+    return true;
+}
+
 function isWrapped(value: string): boolean {
     return trivial.wrappers.some(([open, close]) => {
-        const inner = value.slice(1, -1);
         const isWrapper =
             value.length >= 2 && value.startsWith(open as string) && value.endsWith(close as string);
-        return isWrapper && [...inner].every((unit) => INNER_UNIT.test(unit));
+        return isWrapper && hasOnlyInnerUnits(value.slice(1, -1));
     });
 }
 

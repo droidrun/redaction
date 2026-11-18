@@ -165,7 +165,7 @@
       "kind": "cookie-lines",
       "prefix": "\\b(?:{{SET}}-)?{{COOKIE}}[{{WS}}]*:[{{WS}}]*",
       "plainChar": "[^\r\n\\\\\"]",
-      "escapeStop": "[nr\"']",
+      "escapeStop": "[nNrR\"']",
       "requireLiteral": "=",
       "dropPlaceholder": true
     },
