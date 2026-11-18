@@ -65,6 +65,8 @@ function goldenCases(): Case[] {
 }
 
 const word = (char: string, count: number): string => char.repeat(count);
+// A key name whose secret is the text that begins at the key name: the secret also occurs at offset 0.
+const AWS_PERIODIC = `SecretAccessKey=${'SecretAccessKey='.repeat(3)}`.slice(0, 56);
 const AWS_KEY = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYSECRETSKEY';
 const PEM_BODY = `MI${word('A', 150)}`;
 const HAND_WRITTEN: Case[] = [
@@ -138,6 +140,7 @@ const HAND_WRITTEN: Case[] = [
     { name: 'tailscale', text: `tskey-auth-${word('a', 12)}-${word('b', 30)}` },
     { name: 'cloudflare', text: `cfut_${word('A', 40)}${word('a', 8)}` },
     { name: 'AWS correction', text: `AWS_SECRET_ACCESS_KEY = ${AWS_KEY}\n` },
+    { name: 'AWS secret equal to the text before it', text: AWS_PERIODIC },
 ];
 
 function fuzzCases(): Case[] {
@@ -218,6 +221,16 @@ describe('the full tier equals the secretlint 13.0.4 preset', () => {
         const text = `AWS_SECRET_ACCESS_KEY = ${AWS_KEY}\n`;
         expect((await oracleHits(text)).map((hit) => hit.range)).toEqual([[0, 40]]);
         expect(detectFullHits(text)).toEqual([{ ruleId: 'aws', range: [24, 64] }]);
+    });
+
+    test('the AWS secret is found by position, not by its text, when the secret also occurs earlier', async () => {
+        const text = AWS_PERIODIC;
+        const secretStart = 'SecretAccessKey='.length;
+        expect((await oracleHits(text)).map((hit) => hit.range)).toEqual([[0, 40]]);
+        expect(withAwsCorrection(await oracleHits(text), text)).toEqual([
+            ['aws', secretStart, secretStart + 40],
+        ]);
+        expect(detectFullHits(text)).toEqual([{ ruleId: 'aws', range: [secretStart, secretStart + 40] }]);
     });
 });
 

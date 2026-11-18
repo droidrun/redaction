@@ -63,15 +63,28 @@ export async function oracleHits(content: string): Promise<OracleHit[]> {
     });
 }
 
+/** The upstream expression of the AWS secret access key (preset 13.0.4, `reportAWSSecretAccessKey`), group 1 = the
+ *  secret. Sticky and with indices: it is run at the start of a report to find where the secret is. */
+const AWS = '(?:AWS|aws|Aws)?_?';
+const QUOTE = '["\']?';
+const CONNECT = '\\s*(?::|=>|=)\\s*';
+const AWS_SECRET = new RegExp(
+    `${QUOTE}${AWS}(?:SECRET|secret|Secret)_?(?:ACCESS|access|Access)_?(?:KEY|key|Key)${QUOTE}${CONNECT}` +
+        `${QUOTE}([A-Za-z0-9/+=]{40})${QUOTE}\\b`,
+    'dy',
+);
+
 /**
- * The documented deviation of the AWS secret access key (Lutz L-K, SPEC 4.1): upstream reports
+ * The documented deviation of the AWS secret access key (Lutz L-K, SPEC 4.17): upstream reports
  * `[match start, match start + 40]`, which begins at the key name; the full tier reports the 40 units of the
- * secret. The secret follows the key name, so its first occurrence at or after the match start is the value.
+ * secret. The secret is group 1 of the upstream match that starts where the report starts.
  */
 export function withAwsCorrection(hits: OracleHit[], content: string): Array<[string, number, number]> {
     return hits.map((hit) => {
         if (hit.secret === undefined) return [hit.ruleId, hit.range[0], hit.range[1]];
-        const start = content.indexOf(hit.secret, hit.range[0]);
-        return [hit.ruleId, start, start + hit.secret.length];
+        AWS_SECRET.lastIndex = hit.range[0];
+        const group = AWS_SECRET.exec(content)?.indices?.[1];
+        if (group === undefined) throw new Error('the AWS report has no upstream match at its start');
+        return [hit.ruleId, group[0], group[1]];
     });
 }
