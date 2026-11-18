@@ -62,7 +62,7 @@ function validateSchemas(dir: string, schemaDir: string): Problem[] {
     return problems;
 }
 
-/** A `regex` rule takes either a capture `group` or guards, never both (SPEC 4.1: the guarded path reports whole matches). */
+/** A `regex` rule takes a capture `group` or guards, never both (SPEC 4.1: guarded matches are whole). */
 function ruleShapeProblems(dir: string): Problem[] {
     return readSpecDir(dir).rules.pipeline.flatMap((rule, index) => {
         const hasGuard = rule.notBefore !== undefined || rule.notAfter !== undefined;
