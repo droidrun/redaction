@@ -11,7 +11,7 @@ import (
 // parseTree reads JSON the way the package does (order kept, duplicate keys applied).
 func parseTree(t *testing.T, raw []byte) *node {
 	t.Helper()
-	tree, err := parseJSON(raw)
+	tree, err := parseJSON(raw, parseLimits{nodes: unbounded, depth: unbounded, chars: unbounded})
 	if err != nil {
 		t.Fatalf("test data is not JSON: %v", err)
 	}

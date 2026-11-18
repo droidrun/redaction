@@ -122,8 +122,7 @@ func orDefault(value *int, fallback int) int {
 func RedactText(s string, opts Options) (string, Result) {
 	e := theEngine
 	rec := newRecorder(e)
-	maxChars := orDefault(opts.MaxChars, e.limits(opts.Mode).maxChars)
-	return e.redactTextSafely(s, maxChars, rec), rec.result()
+	return e.redactTextSafely(s, e.limits(opts).maxChars, rec), rec.result()
 }
 
 func (e *engine) redactTextSafely(s string, maxChars int, rec *recorder) (out string) {
@@ -173,13 +172,22 @@ type limits struct {
 	maxNodes int
 }
 
-func (e *engine) limits(mode Mode) limits {
-	if mode == Compat {
-		sync := e.spec.algorithms.Sync
-		return limits{sync.MaxChars, sync.MaxDepth, sync.MaxNodes}
+// limits are the limits of a call: the options of the caller over the spec defaults of the mode.
+func (e *engine) limits(opts Options) limits {
+	defaults := limits{
+		e.spec.algorithms.Strict.MaxChars,
+		e.spec.algorithms.Strict.MaxDepth,
+		e.spec.algorithms.Strict.MaxNodes,
 	}
-	strict := e.spec.algorithms.Strict
-	return limits{strict.MaxChars, strict.MaxDepth, strict.MaxNodes}
+	if opts.Mode == Compat {
+		sync := e.spec.algorithms.Sync
+		defaults = limits{sync.MaxChars, sync.MaxDepth, sync.MaxNodes}
+	}
+	return limits{
+		maxChars: orDefault(opts.MaxChars, defaults.maxChars),
+		maxDepth: orDefault(opts.MaxDepth, defaults.maxDepth),
+		maxNodes: orDefault(opts.MaxNodes, defaults.maxNodes),
+	}
 }
 
 // RedactJSON redacts a JSON value with the standard tier and the key-name rules: a string leaf
@@ -187,18 +195,29 @@ func (e *engine) limits(mode Mode) limits {
 // secret key. Object keys come out in ECMAScript order (integer-like keys first); for a repeated
 // key the last value wins; numbers are written as ECMAScript writes the nearest double. The
 // output is compact JSON. Input that is not one JSON value gives ErrInvalidJSON.
+//
+// The limits are enforced while the input is read: what the walk would cut is only checked for
+// syntax, so memory stays proportional to the limits (a node costs about 100 bytes) and not to the
+// size of the input.
 func RedactJSON(data []byte, opts Options) ([]byte, Result, error) {
 	e := theEngine
-	root, err := parseJSON(data)
+	lim := e.limits(opts)
+	parsing := parseLimits{
+		nodes:        lim.maxNodes,
+		depth:        lim.maxDepth,
+		chars:        lim.maxChars,
+		elideStrings: opts.Mode != Compat,
+	}
+	root, err := parseJSON(data, parsing)
 	if err != nil {
 		return nil, Result{}, ErrInvalidJSON
 	}
 	rec := newRecorder(e)
-	out := e.walkSafely(root, opts, rec)
+	out := e.walkSafely(root, opts, lim, rec)
 	return marshal(out), rec.result(), nil
 }
 
-func (e *engine) walkSafely(root *node, opts Options, rec *recorder) (out *node) {
+func (e *engine) walkSafely(root *node, opts Options, lim limits, rec *recorder) (out *node) {
 	defer func() {
 		if recover() != nil {
 			failed := e.spec.algorithms.RuleIDs.Failed
@@ -206,17 +225,16 @@ func (e *engine) walkSafely(root *node, opts Options, rec *recorder) (out *node)
 			out = stringNode(e.placeholders.readUnits(failed))
 		}
 	}()
-	return e.newWalker(opts, rec).walk(root)
+	return e.newWalker(opts, lim, rec).walk(root)
 }
 
-func (e *engine) newWalker(opts Options, rec *recorder) *walker {
-	defaults := e.limits(opts.Mode)
+func (e *engine) newWalker(opts Options, lim limits, rec *recorder) *walker {
 	w := &walker{
 		e:        e,
 		strict:   opts.Mode != Compat,
-		nodes:    orDefault(opts.MaxNodes, defaults.maxNodes),
-		chars:    orDefault(opts.MaxChars, defaults.maxChars),
-		maxDepth: orDefault(opts.MaxDepth, defaults.maxDepth),
+		nodes:    lim.maxNodes,
+		chars:    lim.maxChars,
+		maxDepth: lim.maxDepth,
 		skip:     e.skipKeys,
 		rec:      rec,
 	}

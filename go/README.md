@@ -65,8 +65,16 @@ read with each invalid byte as one U+FFFD (never skipped), and the output holds 
 
 Defaults come from the spec (`spec/algorithms.json`): 4,000,000 UTF-16 units per text or in total
 per JSON value, depth 64, 500,000 values, keys up to 4,096 units. Lengths and offsets count UTF-16
-code units, as the TypeScript package does (an astral character is two units). The whole input of
-`RedactJSON` is parsed into memory first; bound its size before the call.
+code units, as the TypeScript package does (an astral character is two units).
+
+`RedactJSON` enforces the limits while it reads the input: what the walk would cut is only checked
+for syntax, so a call allocates a bounded amount (about 100 bytes per node up to the node limit,
+and in strict mode the string content up to the character limit) however large the input is.
+Compat keeps strings whole, as the TypeScript package does, so there its memory follows the size
+of the strings. Strict charges every string against the character limit while it reads, including
+one under a secret-named key (the walk replaces it for free), so a document with more than the
+limit in strings can lose strings to `[REDACTED:size-limit]` a little earlier than the TypeScript
+package does.
 
 Matching uses Go's `regexp` (RE2, linear time). The spec patterns are written in a portable
 grammar that RE2 reads the same way as JavaScript and Python.

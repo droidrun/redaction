@@ -20,6 +20,7 @@ type frame struct {
 	depth   int
 	outKey  []uint16
 	index   map[string]int
+	cutDone bool
 }
 
 // indexAbove is the member count from which an output object keeps a key map.
@@ -88,7 +89,7 @@ func (w *walker) leafReplacement(v verdict, value *node) *node {
 	}
 	switch value.kind {
 	case kindString:
-		if len(value.str) == 0 || w.e.placeholders.isWhole(value.str) {
+		if value.strLen() == 0 || w.e.placeholders.isWhole(value.str) {
 			return nil
 		}
 	case kindNumber:
@@ -104,17 +105,18 @@ func (w *walker) leafReplacement(v verdict, value *node) *node {
 }
 
 func (w *walker) scanLeaf(value *node, v verdict) *node {
-	if len(value.str) == 0 {
+	length := value.strLen()
+	if length == 0 {
 		return value
 	}
 	if replaced := w.leafReplacement(v, value); replaced != nil {
 		return replaced
 	}
-	if len(value.str) > w.chars {
+	if value.strSize > 0 || length > w.chars {
 		w.chars = 0
 		return w.limit(w.e.spec.algorithms.RuleIDs.SizeLimit)
 	}
-	w.chars -= len(value.str)
+	w.chars -= length
 	return stringNode(w.scanUnits(value.str))
 }
 
@@ -184,17 +186,28 @@ func (w *walker) strictKey(key []uint16) []uint16 {
 	return w.redactKey(key)
 }
 
-// cut closes a frame early when the node budget is spent.
-func (w *walker) cut(top *frame) {
+// cut closes a frame early: what is left of it collapses into one size-limit marker. `rawKey` is
+// the key of the first entry that was not visited (an object; compat keeps it as it was).
+func (w *walker) cut(top *frame, rawKey []uint16) {
 	marker := w.limit(w.e.spec.algorithms.RuleIDs.SizeLimit)
 	if !top.isArray() {
-		top.outKey = top.src.members[top.idx].key
+		top.outKey = rawKey
 		if w.strict {
 			top.outKey = marker.str
 		}
 	}
 	top.place(marker)
 	top.idx = entryCount(top.src)
+	top.cutDone = true
+}
+
+// cutHere cuts a frame whose next entry is built but cannot be visited: the node budget is spent.
+func (w *walker) cutHere(top *frame) {
+	if top.isArray() {
+		w.cut(top, nil)
+		return
+	}
+	w.cut(top, top.src.members[top.idx].key)
 }
 
 func (w *walker) descend(top *frame, value *node, v verdict) *frame {
@@ -249,6 +262,10 @@ func (w *walker) walk(root *node) *node {
 	stack := []*frame{opened}
 	for {
 		top := stack[len(stack)-1]
+		if top.done() && top.src.cut && !top.cutDone {
+			w.cut(top, top.src.cutKey)
+			continue
+		}
 		if top.done() {
 			stack = stack[:len(stack)-1]
 			if len(stack) == 0 {
@@ -258,7 +275,7 @@ func (w *walker) walk(root *node) *node {
 			continue
 		}
 		if w.nodes <= 0 {
-			w.cut(top)
+			w.cutHere(top)
 			continue
 		}
 		if child := w.step(top); child != nil {

@@ -20,13 +20,20 @@ const (
 
 // node is a JSON value. Strings are UTF-16 units (a lone surrogate survives); objects keep their
 // members in the contract order of SPEC section 8.
+//
+// The parser stops building at the limits of the call (see parseLimits). A container that was cut
+// short has cut set (and, for an object, cutKey: the key of the first entry that was left out);
+// a string that is longer than the character limit has no units and its size in strSize.
 type node struct {
 	kind    kind
 	flag    bool
 	num     float64
 	str     []uint16
+	strSize int
 	items   []*node
 	members []member
+	cut     bool
+	cutKey  []uint16
 }
 
 type member struct {
@@ -41,10 +48,32 @@ func (n *node) isPrimitive() bool {
 	return n.kind != kindArray && n.kind != kindObject
 }
 
+// strLen is the length in units of a string node, also one whose units were not kept.
+func (n *node) strLen() int {
+	if n.strSize > 0 {
+		return n.strSize
+	}
+	return len(n.str)
+}
+
+// parseLimits bound what the parser builds, so memory stays proportional to the limits and not to
+// the input: past the node budget the rest is only checked for syntax (the walk would cut it
+// anyway) and a container deeper than depth is checked but not built. With elideStrings (strict)
+// the units of all strings and keys are charged against `chars` in document order, and a string
+// that does not fit is counted but not kept; the walk then cuts it, as it does a string that
+// does not fit its own budget. Keys are always kept. What the walk would visit is built as is.
+type parseLimits struct {
+	nodes        int
+	depth        int
+	chars        int
+	elideStrings bool
+}
+
 // parser reads one JSON value iteratively, so nesting depth costs no stack.
 type parser struct {
-	data []byte
-	at   int
+	data   []byte
+	at     int
+	limits parseLimits
 }
 
 type openContainer struct {
@@ -78,12 +107,12 @@ func (p *parser) take(c byte) bool {
 	return false
 }
 
-func (p *parser) literal(word string, value *node) (*node, error) {
+func (p *parser) literal(word string) error {
 	if p.at+len(word) > len(p.data) || string(p.data[p.at:p.at+len(word)]) != word {
-		return nil, ErrInvalidJSON
+		return ErrInvalidJSON
 	}
 	p.at += len(word)
-	return value, nil
+	return nil
 }
 
 func (p *parser) unicodeEscape() (uint16, error) {
@@ -122,34 +151,57 @@ func (p *parser) escape() (uint16, error) {
 	return unit, nil
 }
 
-// str reads a string after its opening quote.
-func (p *parser) str() ([]uint16, error) {
-	var units []uint16
+// unitBuffer collects the units of a string, up to `keep` of them; it counts every unit.
+type unitBuffer struct {
+	units []uint16
+	count int
+	keep  int
+}
+
+func (b *unitBuffer) add(unit uint16) {
+	b.count++
+	if b.count <= b.keep {
+		b.units = append(b.units, unit)
+		return
+	}
+	b.units = nil
+}
+
+// str reads a string after its opening quote. It keeps at most `keep` units (a negative keep
+// keeps none) and returns the number of units the string has.
+func (p *parser) str(keep int) ([]uint16, int, error) {
+	buffer := unitBuffer{keep: keep}
 	for p.at < len(p.data) {
 		c := p.data[p.at]
 		switch {
 		case c == '"':
 			p.at++
-			return units, nil
+			return buffer.units, buffer.count, nil
 		case c < 0x20:
-			return nil, ErrInvalidJSON
+			return nil, 0, ErrInvalidJSON
 		case c == '\\':
 			p.at++
 			unit, err := p.escape()
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
-			units = append(units, unit)
+			buffer.add(unit)
 		case c < utf8.RuneSelf:
-			units = append(units, uint16(c))
+			buffer.add(uint16(c))
 			p.at++
 		default:
 			r, size := utf8.DecodeRune(p.data[p.at:])
-			units = appendRune(units, r)
 			p.at += size
+			if r < 0x10000 {
+				buffer.add(uint16(r))
+				continue
+			}
+			r -= 0x10000
+			buffer.add(uint16(0xD800 + (r >> 10)))
+			buffer.add(uint16(0xDC00 + (r & 0x3FF)))
 		}
 	}
-	return nil, ErrInvalidJSON
+	return nil, 0, ErrInvalidJSON
 }
 
 func isDigitByte(c byte) bool {
@@ -181,8 +233,8 @@ func (p *parser) exponent() bool {
 	return p.digits()
 }
 
-// number reads the JSON number grammar and converts it to the nearest double.
-func (p *parser) number() (*node, error) {
+// numberToken reads the JSON number grammar and returns its text.
+func (p *parser) numberToken() ([]byte, error) {
 	start := p.at
 	p.take('-')
 	if !p.take('0') && !p.digits() {
@@ -191,11 +243,44 @@ func (p *parser) number() (*node, error) {
 	if !p.fraction() || !p.exponent() {
 		return nil, ErrInvalidJSON
 	}
-	value, err := strconv.ParseFloat(string(p.data[start:p.at]), 64)
+	return p.data[start:p.at], nil
+}
+
+// number reads a number and converts it to the nearest double.
+func (p *parser) number() (*node, error) {
+	token, err := p.numberToken()
+	if err != nil {
+		return nil, err
+	}
+	value, err := strconv.ParseFloat(string(token), 64)
 	if err != nil && !errors.Is(err, strconv.ErrRange) {
 		return nil, ErrInvalidJSON
 	}
 	return &node{kind: kindNumber, num: value}, nil
+}
+
+// charge takes units off the character budget (strict only; the budget does not go below zero).
+func (p *parser) charge(units int) {
+	if p.limits.elideStrings {
+		p.limits.chars = max(0, p.limits.chars-units)
+	}
+}
+
+func (p *parser) stringNode() (*node, error) {
+	keep := unbounded
+	if p.limits.elideStrings {
+		keep = p.limits.chars
+	}
+	units, count, err := p.str(keep)
+	if err != nil {
+		return nil, err
+	}
+	if units == nil && count > 0 {
+		p.limits.chars = 0
+		return &node{kind: kindString, strSize: count}, nil
+	}
+	p.charge(count)
+	return &node{kind: kindString, str: units}, nil
 }
 
 // scalar reads a value that is not a container.
@@ -207,27 +292,161 @@ func (p *parser) scalar() (*node, error) {
 	switch {
 	case c == '"':
 		p.at++
-		units, err := p.str()
-		return &node{kind: kindString, str: units}, err
+		return p.stringNode()
 	case c == 't':
-		return p.literal("true", &node{kind: kindBool, flag: true})
+		return &node{kind: kindBool, flag: true}, p.literal("true")
 	case c == 'f':
-		return p.literal("false", &node{kind: kindBool})
+		return &node{kind: kindBool}, p.literal("false")
 	case c == 'n':
-		return p.literal("null", &node{kind: kindNull})
+		return &node{kind: kindNull}, p.literal("null")
 	case c == '-' || isDigitByte(c):
 		return p.number()
 	}
 	return nil, ErrInvalidJSON
 }
 
+// skipScalar checks a scalar without building it.
+func (p *parser) skipScalar() error {
+	c, ok := p.peek()
+	if !ok {
+		return ErrInvalidJSON
+	}
+	switch {
+	case c == '"':
+		p.at++
+		_, _, err := p.str(-1)
+		return err
+	case c == 't':
+		return p.literal("true")
+	case c == 'f':
+		return p.literal("false")
+	case c == 'n':
+		return p.literal("null")
+	case c == '-' || isDigitByte(c):
+		_, err := p.numberToken()
+		return err
+	}
+	return ErrInvalidJSON
+}
+
+// bitStack is a stack of booleans, one bit each: the kind of every open container while a value
+// is only checked.
+type bitStack struct {
+	words []uint64
+	size  int
+}
+
+func (s *bitStack) push(isObject bool) {
+	if s.size%64 == 0 {
+		s.words = append(s.words, 0)
+	}
+	if isObject {
+		s.words[s.size/64] |= 1 << (s.size % 64)
+	} else {
+		s.words[s.size/64] &^= 1 << (s.size % 64)
+	}
+	s.size++
+}
+
+func (s *bitStack) top() bool {
+	return s.words[(s.size-1)/64]&(1<<((s.size-1)%64)) != 0
+}
+
+func (s *bitStack) pop() {
+	s.size--
+	if s.size%64 == 0 {
+		s.words = s.words[:s.size/64]
+	}
+}
+
+func closerFor(isObject bool) byte {
+	if isObject {
+		return '}'
+	}
+	return ']'
+}
+
+// skipKey reads `"key":` without keeping the key.
+func (p *parser) skipKey() error {
+	p.skipSpace()
+	if !p.take('"') {
+		return ErrInvalidJSON
+	}
+	if _, _, err := p.str(-1); err != nil {
+		return err
+	}
+	p.skipSpace()
+	if !p.take(':') {
+		return ErrInvalidJSON
+	}
+	return nil
+}
+
+// skipOpen reads a value; for a container with entries it reads the first key and reports that the
+// container is now open.
+func (p *parser) skipOpen(open *bitStack) error {
+	p.skipSpace()
+	c, ok := p.peek()
+	if !ok {
+		return ErrInvalidJSON
+	}
+	if c != '[' && c != '{' {
+		return p.skipScalar()
+	}
+	p.at++
+	p.skipSpace()
+	isObject := c == '{'
+	if p.take(closerFor(isObject)) {
+		return nil
+	}
+	open.push(isObject)
+	if isObject {
+		return p.skipKey()
+	}
+	return nil
+}
+
+// skipValue checks one value for syntax and builds nothing; memory is one bit per nesting level.
+func (p *parser) skipValue() error {
+	var open bitStack
+	for {
+		before := open.size
+		if err := p.skipOpen(&open); err != nil {
+			return err
+		}
+		if open.size > before {
+			continue
+		}
+		for {
+			if open.size == 0 {
+				return nil
+			}
+			isObject := open.top()
+			p.skipSpace()
+			if p.take(closerFor(isObject)) {
+				open.pop()
+				continue
+			}
+			if !p.take(',') {
+				return ErrInvalidJSON
+			}
+			if isObject {
+				if err := p.skipKey(); err != nil {
+					return err
+				}
+			}
+			break
+		}
+	}
+}
+
 // parseJSON reads exactly one JSON value (RFC 8259 grammar, as ECMAScript JSON.parse reads it).
-func parseJSON(data []byte) (*node, error) {
-	p := &parser{data: data}
+func parseJSON(data []byte, limits parseLimits) (*node, error) {
+	p := &parser{data: data, limits: limits}
 	var stack []*openContainer
 	for {
 		p.skipSpace()
-		value, container, err := p.value()
+		value, container, err := p.value(len(stack))
 		if err != nil {
 			return nil, err
 		}
@@ -247,7 +466,8 @@ func parseJSON(data []byte) (*node, error) {
 }
 
 // unwind attaches a finished value to the open containers, closing every one that ends. It
-// returns more=true when the next value of an open container is to be read.
+// returns more=true when the next value of an open container is to be read. A nil value is one
+// that was left out; its container is marked cut.
 func (p *parser) unwind(stack []*openContainer, value *node) ([]*openContainer, *node, bool, error) {
 	for len(stack) > 0 {
 		next, done, err := p.closeOrContinue(stack, value)
@@ -268,19 +488,35 @@ func (p *parser) finish(value *node) (*node, error) {
 	if p.at != len(p.data) {
 		return nil, ErrInvalidJSON
 	}
+	if value == nil {
+		return &node{kind: kindNull}, nil
+	}
 	return value, nil
 }
 
 // value reads a scalar, or opens a container (and reads its first key). A container that closes
-// at once is returned as a finished value.
-func (p *parser) value() (*node, *openContainer, error) {
+// at once is returned as a finished value. When the node budget is spent the value is checked
+// and left out: the result is nil. A container at or below the depth limit is checked and kept
+// empty (the walk cuts it before it looks inside).
+func (p *parser) value(depth int) (*node, *openContainer, error) {
 	c, ok := p.peek()
 	if !ok {
 		return nil, nil, ErrInvalidJSON
 	}
+	if p.limits.nodes <= 0 {
+		return nil, nil, p.skipValue()
+	}
+	p.limits.nodes--
 	if c != '[' && c != '{' {
 		value, err := p.scalar()
 		return value, nil, err
+	}
+	if depth >= p.limits.depth {
+		kept := &node{kind: kindArray}
+		if c == '{' {
+			kept.kind = kindObject
+		}
+		return kept, nil, p.skipValue()
 	}
 	p.at++
 	p.skipSpace()
@@ -302,7 +538,7 @@ func (p *parser) memberKey(open *openContainer) error {
 	if !p.take('"') {
 		return ErrInvalidJSON
 	}
-	key, err := p.str()
+	key, count, err := p.str(unbounded)
 	if err != nil {
 		return err
 	}
@@ -310,6 +546,7 @@ func (p *parser) memberKey(open *openContainer) error {
 	if !p.take(':') {
 		return ErrInvalidJSON
 	}
+	p.charge(count)
 	open.key = key
 	return nil
 }
@@ -319,17 +556,9 @@ func (p *parser) memberKey(open *openContainer) error {
 func (p *parser) closeOrContinue(stack []*openContainer, value *node) (*node, bool, error) {
 	top := stack[len(stack)-1]
 	isObject := top.node.kind == kindObject
-	if isObject {
-		top.node.members = append(top.node.members, member{key: top.key, val: value})
-	} else {
-		top.node.items = append(top.node.items, value)
-	}
+	attach(top, value)
 	p.skipSpace()
-	closer := byte(']')
-	if isObject {
-		closer = '}'
-	}
-	if p.take(closer) {
+	if p.take(closerFor(isObject)) {
 		finishObject(top.node)
 		return top.node, true, nil
 	}
@@ -340,6 +569,22 @@ func (p *parser) closeOrContinue(stack []*openContainer, value *node) (*node, bo
 		return nil, false, p.memberKey(top)
 	}
 	return nil, false, nil
+}
+
+// attach adds a finished value to its container; a value that was left out marks the container
+// cut (an object remembers the key of the first entry that was left out).
+func attach(top *openContainer, value *node) {
+	switch {
+	case value == nil:
+		if !top.node.cut && top.node.kind == kindObject {
+			top.node.cutKey = top.key
+		}
+		top.node.cut = true
+	case top.node.kind == kindObject:
+		top.node.members = append(top.node.members, member{key: top.key, val: value})
+	default:
+		top.node.items = append(top.node.items, value)
+	}
 }
 
 // finishObject applies the duplicate-key rule (last value wins, first position stays) and the
