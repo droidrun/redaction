@@ -154,7 +154,7 @@ func sameCounts(a map[string]int, b map[string]int) bool {
 // numberedKey matches a key with a collision number inside a placeholder: `[REDACTED:rule#2]`.
 var numberedKey = regexp.MustCompile(`#[0-9]+\]`)
 
-// withoutNumberedKeys is a copy of the tree without the members whose key is numbered (L-P, L-Q).
+// withoutNumberedKeys is a copy of the tree without the members whose key is numbered.
 func withoutNumberedKeys(n *node) *node {
 	copied := &node{kind: n.kind, raw: n.raw, str: n.str, flag: n.flag}
 	for _, item := range n.items {
@@ -171,7 +171,7 @@ func withoutNumberedKeys(n *node) *node {
 
 // collisionCases is the number of cases of the family `key-collision` whose output differs from the
 // recorded 0.2.0 output on both sides, because keys that redact to the same key are now numbered and
-// no value is lost (decided 2026-11-18, L-P and L-Q); the recorded output kept the later value only.
+// no value is lost (decided 2026-11-18); the recorded output kept the later value only.
 const collisionCases = 120
 
 // isNumberingOnly: the output is the recorded one plus members with numbered keys, and the hits are
@@ -221,7 +221,7 @@ var awsCorrection = struct {
 }
 
 // keyCases are the cases whose full-tier result differs from the recorded 0.2.0 output because an
-// object key is scanned with the full rules (decided 2026-11-18, L-N): the key holds a full-tier-only
+// object key is scanned with the full rules (decided 2026-11-18): the key holds a full-tier-only
 // secret and is now replaced by the placeholder of that rule (a connection string used to read
 // `url-credentials`, the others were kept). `placeholder` is the key the output must hold, `count`
 // how many times (and so how many hits of that rule). More redaction only: every other part of the
@@ -295,7 +295,7 @@ func sameValuesIgnoringKeys(a *node, b *node) bool {
 // the spec id (`github`, as before). Output and counts equal the recorded ones: they are not key cases.
 var alreadyRedactedKeys = []string{"sample-29", "sample-41", "sample-44", "sample-47", "sample-50"}
 
-// checkKeyCase pins what an L-N case changed: the placeholder key, how often it occurs, the hit
+// checkKeyCase pins what a key case changed: the placeholder key, how often it occurs, the hit
 // count of its rule, and nothing but the keys.
 func checkKeyCase(t *testing.T, id string, got []byte, result Result, recorded goldenOutcome) {
 	t.Helper()

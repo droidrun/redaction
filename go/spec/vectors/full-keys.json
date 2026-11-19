@@ -1,5 +1,5 @@
 {
-  "description": "Object keys in the full tier (SPEC 8, 9.4): a key that is itself a secret of the full tier is replaced by its placeholder, in compat and strict. `expectedSync` is the standard tier, which does not know the full-tier formats (npm, 1password, ...); `expectedAsync` the full tier. Keys that collide after replacement keep every value (SPEC 8, L-P and L-Q): the full-tier tokens collide like the standard ones. ",
+  "description": "Object keys in the full tier (SPEC 8, 9.4): a key that is itself a secret of the full tier is replaced by its placeholder, in compat and strict. `expectedSync` is the standard tier, which does not know the full-tier formats (npm, 1password, ...); `expectedAsync` the full tier. Keys that collide after replacement keep every value (SPEC 8): the full-tier tokens collide like the standard ones. ",
   "tier": "full",
   "cases": [
     {

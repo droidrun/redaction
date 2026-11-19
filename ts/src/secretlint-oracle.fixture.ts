@@ -75,7 +75,7 @@ const AWS_SECRET = new RegExp(
 );
 
 /**
- * The documented deviation of the AWS secret access key (Lutz L-K, SPEC 4.17): upstream reports
+ * The documented deviation of the AWS secret access key (decided 2026-11-18, SPEC 4.17): upstream reports
  * `[match start, match start + 40]`, which begins at the key name; the full tier reports the 40 units of the
  * secret. The secret is group 1 of the upstream match that starts where the report starts.
  */

@@ -7,7 +7,7 @@ import (
 
 // Two or more different object keys that redact to the same key keep their values: the first keeps
 // the plain key, each further one gets a number inside the brackets of the placeholder, in contract
-// order (decided 2026-11-18, L-P).
+// order (decided 2026-11-18).
 
 func collisionCase(name string, tier Tier, input string, want string) jsonCase {
 	return jsonCase{name: name, input: input, opts: Options{Tier: tier}, expected: want}

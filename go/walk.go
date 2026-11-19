@@ -53,7 +53,7 @@ func (f *frame) addMember(key []uint16, value *node) {
 }
 
 // place stores a finished value under the current output key of the frame (or appends it to an
-// array). SPEC 8, key collisions (L-P, L-Q): a key that redaction leaves unchanged keeps its own name, and
+// array). SPEC 8, key collisions: a key that redaction leaves unchanged keeps its own name, and
 // that name is reserved for it before any numbering, wherever the entry stands in the object (also when the
 // entry is left out under a node limit). A changed key whose name is taken (by an earlier entry, or
 // reserved) gets a number inside its last placeholder, `[REDACTED:rule#2]`, `#3`, ... in contract order,

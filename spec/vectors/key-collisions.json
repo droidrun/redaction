@@ -1,6 +1,6 @@
 {
-  "description": "Object keys that collide after replacement (SPEC 8, L-P and L-Q, decided by Lutz 2026-11-18), standard tier: no value is lost. A key that redaction leaves as it is keeps its own name (also a key written as a placeholder); of the changed keys the first keeps its key, the next ones get `#2`, `#3` inside their last placeholder. `pending` marks a file that Python and Go skip until they implement it (the TypeScript package runs it).",
-  "pending": "L-P",
+  "description": "Object keys that collide after replacement (SPEC 8, decided 2026-11-18), standard tier: no value is lost. A key that redaction leaves as it is keeps its own name (also a key written as a placeholder); of the changed keys the first keeps its key, the next ones get `#2`, `#3` inside their last placeholder. `pending` marks a file that Python and Go skip until they implement it (the TypeScript package runs it).",
+  "pending": "key-collision numbering",
   "cases": [
     {
       "name": "keys that collide after replacement keep every value: #2 and #3 inside the placeholder",

@@ -7,11 +7,11 @@
  * entry points, and for the behaviour probes (`last4`, `detect`, `onEvent`, failures, values
  * that are not JSON, exported constants and helpers). Current output and hits must equal it, with these
  * enumerated exceptions (each list below is literal and each case is checked, not only counted):
- *  - the AWS secret access key, which the full tier now reports over the whole secret (SPEC 4.17, Lutz L-K);
+ *  - the AWS secret access key, which the full tier now reports over the whole secret (SPEC 4.17, decided 2026-11-18);
  *  - 24 cases whose object key is itself a full-tier secret: the async path scans keys with the full rules and the
- *    key is now its placeholder (SPEC 9.4, L-N); 5 more differ only in the hit id of such a key;
+ *    key is now its placeholder (SPEC 9.4); 5 more differ only in the hit id of such a key;
  *  - 120 key-collision cases (both tiers): keys that redact to one key keep every value, the later ones are
- *    numbered `#2`, `#3` (SPEC 8, L-P and L-Q); the recorded output lost values.
+ *    numbered `#2`, `#3` (SPEC 8); the recorded output lost values.
  */
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -40,7 +40,7 @@ const AWS_CORRECTION = {
     },
 };
 
-/** Async result changed because an object key is a full-tier secret (L-N): the key is now its placeholder. */
+/** Async result changed because an object key is a full-tier secret: the key is now its placeholder. */
 const KEY_CASES = [
     'sample-68',
     'sample-119',
@@ -71,7 +71,7 @@ const KEY_CASES = [
 /** Same key, same value; only the hit ids differ (a full-tier hit wins the tie and carries its 0.2.0 id). */
 const HIT_ID_CASES = ['sample-29', 'sample-41', 'sample-44', 'sample-47', 'sample-50'];
 
-/** Keys that redact to one key: L-P and L-Q number the later ones, the recorded output lost values. */
+/** Keys that redact to one key: the numbering rule numbers the later ones, the recorded output lost values. */
 const COLLISION_CASES = [
     0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27, 28, 30, 31, 33, 34, 36, 37, 39, 40,
     42, 43, 45, 46, 48, 49, 51, 52, 54, 55, 57, 58, 60, 61, 63, 64, 66, 67, 69, 70, 72, 73, 75, 76, 78, 79,

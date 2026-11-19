@@ -508,7 +508,7 @@ service account), `openai`, `anthropic`, `groq`, `huggingface`, `linear`, `notio
 `(rule id, start, end)`, stable-sorted by `start`, then by `end` (equal pairs keep rule order). The full tier's
 `detect` is `merge(detectFull(text) ++ detect(text))` (section 7): the full-tier hits come first, so on an equal
 start their rule id wins. The AWS secret access key rule reports the 40 units of the secret (`group` 1), not
-`[match start, match start + 40]` as the upstream rule does (decided by Lutz, 2026-11-18, L-K); this is the only
+`[match start, match start + 40]` as the upstream rule does (decided 2026-11-18); this is the only
 deviation from the upstream preset, and the parity test names it. Not ported (INVENTORY.md): `gcp`,
 `filter-comments`, and the two `npm` branches that need a `package.json` or `.npmrc` file name, which the package
 never supplies.
@@ -692,7 +692,7 @@ implementation uses a full-string match (`fullmatch`, `\A...\Z`); Python `$` and
 `literalSegments(text)` is `text` split by every (non-overlapping, left to right) placeholder; it has
 one more element than there are placeholders; empty elements are kept.
 
-**Numbered form (L-P, decided by Lutz 2026-11-18).** The rule part of a placeholder may end with `#<n>`
+**Numbered form (decided 2026-11-18).** The rule part of a placeholder may end with `#<n>`
 (`[REDACTED:npm#2]`): the grammar above already admits it (`#` is a unit of the rule class), and it is a
 placeholder like any other (whole-placeholder tests, `isPlaceholderValue`, idempotence, `literalSegments`,
 restore). Only object-key collisions write it (section 8, **key collisions**; it goes inside the last
@@ -725,7 +725,7 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
 - **Duplicate keys.** The input has been parsed, so for duplicate keys the last value wins and the key
   keeps the position of its first occurrence (as in ECMAScript); only the surviving value is walked.
   Two different keys can also become the same key after redaction (two keys that each held a secret
-  give the same placeholder text). **Key collisions (L-P, L-Q, decided by Lutz 2026-11-18): no value is lost.**
+  give the same placeholder text). **Key collisions (decided 2026-11-18): no value is lost.**
   Let the *output key* of an entry be its key after redaction (the key scan of section 9, size-limit
   placeholders included), and call a key **changed** when its output key is not the key itself. The rules, for
   one object, in contract order:
@@ -859,7 +859,7 @@ The walk is **iterative** (explicit stack; no recursion, no stack overflow) and 
   `[REDACTED:key-context]` even when an ancestor key is secret; a number, boolean or `null` under a skip key is
   returned unchanged (there is nothing in it to scan). Strict therefore **never returns text that was not
   scanned, without exception**. `compat` is unchanged (9.2: the skip-key string is returned as it is).
-- **Decided by Lutz, 2026-11-18:** the strict details above are accepted as written: a `Date` or class instance
+- **Decided 2026-11-18:** the strict details above are accepted as written: a `Date` or class instance
   (anything that is not a plain object, array or primitive) becomes `[REDACTED:redaction-failed]`, keys count
   against `maxChars`, and the rest of a node-exhausted object collapses into one `[REDACTED:size-limit]` key.
 
@@ -871,8 +871,8 @@ Everything else (order, verdicts, number handling, key redaction) is as in 9.2.
   over the whole text, merged (4.17); splice. A detector failure emits the event `redaction.detect.failed` with the
   error class only, then returns the result of `detect` alone, or `[REDACTED:error]` with the hit `(error,
   0, 0)` if that fails too. JSON: each string leaf is a text of this kind; **keys are scanned with the full tier's `detect`
-  (4.17, no windows: a key has at most `sync.maxKeyChars` units), not only the standard rules** (decided by Lutz,
-  2026-11-18, L-N), with the key rules of section 8 otherwise unchanged; no depth, node or character limit (a TypeScript behaviour kept for compatibility).
+  (4.17, no windows: a key has at most `sync.maxKeyChars` units), not only the standard rules** (decided
+  2026-11-18), with the key rules of section 8 otherwise unchanged; no depth, node or character limit (a TypeScript behaviour kept for compatibility).
 - `strict`: text: **first** the total-character cap as in 9.1: a text longer than `strict.maxChars`
   (4,000,000) is replaced whole by `[REDACTED:size-limit]` with the hit `(size-limit, 0, length)`, before any scan
   (no scan work is spent on it). Then as `compat`, except that a detector failure returns `[REDACTED:error]`
@@ -946,7 +946,7 @@ These exist for compatibility with v0.2.0 and never change what is detected:
 
 - Async signatures and `bigint` values (a `bigint` counts as a number).
 - `restoreRedacted(redacted, stored)` and its options (restores values behind placeholders from a stored copy). It
-  also maps **placeholder keys** back (L-R): an incoming key that is or contains a placeholder (plain or numbered)
+  also maps **placeholder keys** back: an incoming key that is or contains a placeholder (plain or numbered)
   is replaced by the one stored key of the same object whose redaction, named as in section 8 with the standard
   rules or the full tier, is exactly that key, and its value is restored against the stored value. No such stored
   key, more than one, or one that an earlier incoming key already took: the incoming key stays and the path is
@@ -980,7 +980,7 @@ can hide:
 - Defaults of the limits are the values of section 9; an implementation never hard-codes another default.
 - `strict` is the default mode in Python and Go and an option in TypeScript (section 9).
 - The key predicate and verdict are public (section 6).
-- **Go: two deviations beyond the limits are allowed** (decided by Lutz, 2026-11-18), both fail closed and never
+- **Go: two deviations beyond the limits are allowed** (decided 2026-11-18), both fail closed and never
   leave text unscanned: (1) the strict parse budget of `RedactJSON` counts the strings of secret-named keys too
   (the other languages receive a parsed value, so they cannot meet this limit earlier than the walk does); (2) when
   the node limit cuts a container, the cut is made in document order (the order Go's streaming decoder sees the

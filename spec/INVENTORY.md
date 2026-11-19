@@ -25,7 +25,7 @@ has to pin one Unicode version in all three languages (an ASCII-only guard would
 | # | rule id | what it matches | class | needs | in this package |
 |---|---|---|---|---|---|
 | 1 | aws | Access Key ID (`AKIA`, `ASIA`, `A3T?`, `AGPA`, `AIDA`, `AROA`, `AIPA`, `ANPA`, `ANVA` + 16), account id with a key name, `AWS_SECRET_ACCESS_KEY = <40>` | portable-regex | explicit `\s`; two built-in allow-list literals; **range quirk**: the secret-key hit is `[match start, match start + 40]`, i.e. it begins at the key name and ends 40 characters later, not at the secret | live (ID scan on) |
-| 2 | gcp | service-account JSON (`JSON.parse`, `private_key_id` + PEM `private_key`) and `.p12` files (PKCS#12 MAC check with the password `notasecret`) | not-portable | JSON parse of the whole content, file system read, Web Crypto | inert: only for `.json` / `.p12` extensions; out of scope, decided by Lutz 2026-11-18 |
+| 2 | gcp | service-account JSON (`JSON.parse`, `private_key_id` + PEM `private_key`) and `.p12` files (PKCS#12 MAC check with the password `notasecret`) | not-portable | JSON parse of the whole content, file system read, Web Crypto | inert: only for `.json` / `.p12` extensions; out of scope, decided 2026-11-18 |
 | 3 | privatekey | PEM private key blocks, body 100 to 10000 base64 characters | named-algorithm | body bound above 1000; body validation (strip whitespace and `\n`, base64 shape, length at least 100, starts with `MI` or `b3BlbnNzaC1rZXktdjE`) | live |
 | 4 | npm | `npm_` + 36 token; `x-oauth-basic@github.com` URL; `_authToken=` in `.npmrc` | named-algorithm | letter-guard | only the `npm_` token is live; the other two need a `package.json` / `.npmrc` file path |
 | 5 | basicauth | `http(s)`/`ftp(s)` URL with `user:password@host` | named-algorithm | named groups; back-reference `^(.)\1{3,}$` (repeated character); substring placeholder list; variable-shape tests (`${x}`, `{{x}}`, `%X%`, `$X`) | live |
@@ -51,7 +51,7 @@ has to pin one Unicode version in all three languages (an ASCII-only guard would
 | 25 | figma | `figd_` + 40 to 200 | named-algorithm | letter-guard; trailing negative lookahead | live |
 | 26 | cloudflare | `cfk`/`cfut`/`cfat` + 40 + 8 hex | named-algorithm | letter-guard; trailing negative lookahead | live |
 | 27 | tailscale | `tskey-<type>-<8..40>-<16..60>` | named-algorithm | letter-guard; trailing negative lookahead | live |
-| 28 | filter-comments | `secretlint-disable` / `-enable` comments that switch rules off | not-portable | suppression feature: it lets text switch detection off | excluded on purpose (TypeScript engine configuration, `ts/src/rules/index.ts`); must stay absent; decided by Lutz 2026-11-18 |
+| 28 | filter-comments | `secretlint-disable` / `-enable` comments that switch rules off | not-portable | suppression feature: it lets text switch detection off | excluded on purpose (TypeScript engine configuration, `ts/src/rules/index.ts`); must stay absent; decided 2026-11-18 |
 
 ## Counts
 
@@ -69,13 +69,13 @@ exact-length filter (sendgrid), run with literal tail (anthropic), long middle s
 
 ## Decisions
 
-Decided by Lutz, 2026-11-18:
+Decided 2026-11-18:
 
 1. **gcp**: stays out (needs `JSON.parse` of the whole content, file access and crypto; the branches are
    inert here anyway). Accepted.
 2. **filter-comments**: stays out by design. Accepted.
 
-Decided by Lutz, 2026-11-18 (S4):
+Decided 2026-11-18 (full-tier port):
 
 3. **letter-guard**: a fixed Unicode 15.0.0 letter table (Lu, Ll, Lt, Lm, Lo) generated into the
    spec (`algorithms.json` `letters`, `tools/gen-letters.ts`), never the runtime's `\p{L}` (SPEC 5.6).
@@ -92,8 +92,8 @@ All 26 rules other than `gcp` and `filter-comments` are `full`-tier rules in `sp
 
 | rule | kind in `full` | note |
 |---|---|---|
-| aws | `regex` x3 (key id, account id, secret access key) | key id: example value ignored; secret: range is the secret (L-K) |
-| gcp | not ported | decided by Lutz 2026-11-18 |
+| aws | `regex` x3 (key id, account id, secret access key) | key id: example value ignored; secret: range is the secret |
+| gcp | not ported | decided 2026-11-18 |
 | privatekey | `pem-key` | 4.14 |
 | npm | `token` | only the `npm_` token; the `x-oauth-basic` URL and `_authToken` branches need a `package.json` / `.npmrc` file name the package never gives (inert upstream here) |
 | basicauth | `credential-uri` | 4.15 |
@@ -108,4 +108,4 @@ All 26 rules other than `gcp` and `filter-comments` are `full`-tier rules in `sp
 | anthropic | `token` | run with literal tail `AA` |
 | 1password | `token` with `check: base64-json` | 5.7 |
 | database-connection-string | `credential-uri` x3 | MongoDB, MySQL, PostgreSQL |
-| filter-comments | not ported (by design) | decided by Lutz 2026-11-18 |
+| filter-comments | not ported (by design) | decided 2026-11-18 |
