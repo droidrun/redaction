@@ -714,6 +714,56 @@
         "x [REDACTED:npm] y [REDACTED:npm] z": 1,
         "x [REDACTED:npm] y [REDACTED:npm#2] z": 2
       }
+    },
+    {
+      "name": "strict: a number under a secret key and a key-context collision keep every value",
+      "input": {
+        "a": {
+          "postgres://user:Zq9abcDEF123ghi_x@db.example.test:5432/app": {
+            "pin": 1
+          },
+          "postgres://other:Qw8rtyUIO456jkl_z@db2.example.test:5432/app": {
+            "pin": 2
+          }
+        }
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "a": {
+          "postgres://user:[REDACTED:url-credentials]@db.example.test:5432/app": {
+            "pin": "[REDACTED:key-context]"
+          },
+          "postgres://other:[REDACTED:url-credentials]@db2.example.test:5432/app": {
+            "pin": "[REDACTED:key-context]"
+          }
+        }
+      },
+      "expectedAsync": {
+        "a": {
+          "[REDACTED:database-connection-string]": {
+            "pin": "[REDACTED:key-context]"
+          },
+          "[REDACTED:database-connection-string#2]": {
+            "pin": "[REDACTED:key-context]"
+          }
+        }
+      }
+    },
+    {
+      "name": "strict: a key with a placeholder inside that is unchanged is reserved",
+      "input": {
+        "label npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "label [REDACTED:npm]": 2
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "label npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "label [REDACTED:npm]": 2
+      },
+      "expectedAsync": {
+        "label [REDACTED:npm#2]": 1,
+        "label [REDACTED:npm]": 2
+      }
     }
   ]
 }

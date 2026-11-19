@@ -18,6 +18,8 @@ type frame struct {
 	out     *node
 	verdict Verdict
 	depth   int
+	// budget is what was left of the character budget when the frame opened (strict reservation).
+	budget  int
 	outKey  []uint16
 	index   map[string]int
 	cutDone bool
@@ -94,18 +96,7 @@ func (w *walker) isTaken(f *frame, key []uint16) bool {
 // isReserved: the object has an input key of that name that redaction leaves unchanged.
 func (w *walker) isReserved(f *frame, key []uint16) bool {
 	if f.inputNames == nil {
-		f.inputNames = make(map[string][]uint16, len(f.src.members))
-		for _, entry := range f.src.members {
-			f.inputNames[unitsKey(entry.key)] = entry.key
-		}
-		if first := f.src.firstLeftOut(); first != nil { // known also without room for the others
-			f.inputNames[unitsKey(first)] = first
-		}
-		if f.src.left != nil {
-			for _, left := range f.src.left.keys {
-				f.inputNames[unitsKey(left)] = left
-			}
-		}
+		f.inputNames = w.reservableNames(f)
 		f.unchanged = make(map[string]bool)
 	}
 	name := unitsKey(key)
@@ -119,6 +110,34 @@ func (w *walker) isReserved(f *frame, key []uint16) bool {
 		f.unchanged[name] = unchanged
 	}
 	return unchanged
+}
+
+// reservableNames are the input keys of the object by name that can be reserved (SPEC 8 rule 1). In
+// strict mode only a key that fits the character budget, counted over the keys in contract order, can
+// be left as it is: a later one becomes the size-limit placeholder, so it is not reserved.
+func (w *walker) reservableNames(f *frame) map[string][]uint16 {
+	names := make(map[string][]uint16, len(f.src.members))
+	total := 0
+	fits := func(key []uint16) bool {
+		total += len(key)
+		return !w.mode.strict || total <= f.budget
+	}
+	for _, entry := range f.src.members {
+		if fits(entry.key) {
+			names[unitsKey(entry.key)] = entry.key
+		}
+	}
+	if first := f.src.firstLeftOut(); first != nil && fits(first) { // known also without room for the others
+		names[unitsKey(first)] = first
+	}
+	if f.src.left != nil {
+		for _, left := range f.src.left.keys {
+			if fits(left) {
+				names[unitsKey(left)] = left
+			}
+		}
+	}
+	return names
 }
 
 // wouldChange: key redaction changes this key (it holds a secret, or it is over the limit in strict
@@ -268,7 +287,7 @@ func (w *walker) enter(value *node, v Verdict, depth int) (*node, *frame) {
 		return w.limit(ruleIDs.DepthLimit), nil
 	}
 	out := &node{kind: value.kind}
-	return nil, &frame{src: value, out: out, verdict: v, depth: depth}
+	return nil, &frame{src: value, out: out, verdict: v, depth: depth, budget: w.chars}
 }
 
 func (w *walker) isSkipKey(key []uint16) bool {
