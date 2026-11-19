@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+Preparation for making the repository public. No change to what is detected, except where noted.
+
+- **MIT license.** `LICENSE` at the root and in `ts/`, `python/` and `go/`; license fields in the npm and Python
+  metadata; the wheel and the npm package carry `LICENSE` and `NOTICE`.
+- **Third-party notices.** `THIRD_PARTY_NOTICES.md` (also `NOTICE` in each package): secretlint 13.0.4 (MIT; the full
+  tier is ported from its rules, the fixtures in `spec/corpus/secretlint-13.0.4/` come from it) and the Unicode 15.0.0
+  data of the letter table.
+- **Install docs for a public repository.** Python over https (`git+https://github.com/droidrun/redaction.git@<sha>`),
+  Go through the public Go proxy without `GOPRIVATE`; npm stays on GitHub Packages (needs a `read:packages` token).
+- **Platform token rule.** The kind part of the `srt2` token is any lower-case word instead of a fixed list, so it
+  redacts the same tokens or more.
+- **Repository hygiene.** Internal names removed from comments, docs and tests; decision notes keep their dates, not
+  their ids; `SECURITY.md`; `.github/secret_scanning.yml` for the synthetic fixtures; the CI uv is pinned to a newer
+  version.
+
 ## 0.3.0
 
 The redaction rules now live once, in a language-neutral spec, and three implementations follow it: TypeScript

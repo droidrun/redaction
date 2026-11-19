@@ -7,15 +7,15 @@ oracle only). No consumer-side dependency patch is needed.
 
 ## Install
 
-This package is private and published to GitHub Packages. Add to your project's `.npmrc`:
+The package is published to GitHub Packages, not to the public npm registry. GitHub Packages needs a token
+for every npm install, also for a public package: a GitHub token with `read:packages`. Add to your project's `.npmrc`:
 
 ```ini
 @droidrun:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
 ```
 
-Provide `NODE_AUTH_TOKEN` through your secret manager using a GitHub token with
-`read:packages` and access to this package, then install:
+Provide `NODE_AUTH_TOKEN` through your secret manager (a GitHub token with `read:packages`), then install:
 
 ```sh
 pnpm add @droidrun/redaction@0.3.0
@@ -315,6 +315,7 @@ marker in values, keys, escaped JSON, URL userinfo, nested queries, cookies; ide
 round trip, also after deleting, inserting and reordering items), the perf and adversarial budgets,
 a 0.1.1 export-compat test, the golden replay, and the spec-integrity tests.
 
-After merge, a `v<version>` tag (for example `v0.3.0`) triggers publishing to GitHub Packages. The workflow
+After merge, a `v<version>` tag (for example `v0.3.0`) triggers publishing to GitHub Packages (the repository is
+MIT-licensed, see `LICENSE`; third-party notices are in `NOTICE`). The workflow
 checks the tag against `package.json`, requires the tagged commit to be on `main`,
 runs typecheck and tests, and uses `GITHUB_TOKEN` with `packages:write`.

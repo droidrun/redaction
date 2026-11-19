@@ -7,7 +7,7 @@ limits. It has no runtime dependencies and needs Python 3.11 or newer.
 
 ## Install
 
-The repository is private. Add it as a git dependency over ssh, pinned to a full commit SHA, with
+The package is not on a package index. Add it as a git dependency over https, pinned to a full commit SHA, with
 `subdirectory = "python"`. For release 0.3.0 the SHA is the commit of the tag `v0.3.0`
 (`git rev-parse v0.3.0^{commit}`):
 
@@ -16,10 +16,10 @@ The repository is private. Add it as a git dependency over ssh, pinned to a full
 dependencies = ["droidrun-redaction"]
 
 [tool.uv.sources]
-droidrun-redaction = { git = "ssh://git@github.com/droidrun/redaction.git", rev = "<40-character SHA of the commit of tag v0.3.0>", subdirectory = "python" }
+droidrun-redaction = { git = "https://github.com/droidrun/redaction.git", rev = "<40-character SHA of the commit of tag v0.3.0>", subdirectory = "python" }
 ```
 
-The build and CI environments need an ssh key that can read the repository.
+With pip: `pip install "droidrun-redaction @ git+https://github.com/droidrun/redaction.git@<40-character SHA>#subdirectory=python"`.
 
 ## API
 

@@ -72,6 +72,7 @@ that they are equal (`tools/release-version --check`).
    failure was reported makes a re-run fail on the existing version (`npm view @droidrun/redaction@X.Y.Z
    --registry https://npm.pkg.github.com`); then the release is done and nothing is published twice.
 4. **Python** is not published to an index. Consumers pin the full commit SHA of the release commit
-   (`rev = "<40-character SHA>"`, `subdirectory = "python"`, see [`python/README.md`](python/README.md)).
-5. **Go** consumers use `github.com/droidrun/redaction/go@vX.Y.Z`.
+   (`git = "https://github.com/droidrun/redaction.git"`, `rev = "<40-character SHA>"`, `subdirectory = "python"`, see
+   [`python/README.md`](python/README.md)).
+5. **Go** consumers use `github.com/droidrun/redaction/go@vX.Y.Z`, resolved by the public Go proxy.
 
