@@ -13,7 +13,8 @@ The detection patterns and algorithms of the full tier (`spec/rules.json`, secti
 derive from, the secretlint rules named in `spec/INVENTORY.md`. The files under `spec/corpus/secretlint-13.0.4/`
 are test fixtures copied unchanged from the secretlint repository (they carry the same license text in
 `spec/corpus/secretlint-13.0.4/LICENSE`). `@secretlint/core` and the preset are used as a development-time
-test oracle only; no secretlint code is shipped in the packages.
+test oracle only: the secretlint packages are development-only dependencies, and the shipped ports are covered
+by this notice.
 
 ```
 Copyright (c) 2020 azu
