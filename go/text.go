@@ -24,23 +24,40 @@ type text struct {
 }
 
 const (
-	surrogateStart = 0xD800
-	surrogateEnd   = 0xDFFF
-	mappedBase     = 0xF0000
+	highSurrogateStart = 0xD800
+	highSurrogateEnd   = 0xDBFF
+	lowSurrogateStart  = 0xDC00
+	lowSurrogateEnd    = 0xDFFF
+	astralBase         = 0x10000
+	surrogateBits      = 10
+	surrogateMask      = 1<<surrogateBits - 1
+	mappedBase         = 0xF0000
 )
 
 var errTextTooLarge = errors.New("redaction: text too large")
 
 func isSurrogate(unit uint16) bool {
-	return unit >= surrogateStart && unit <= surrogateEnd
+	return unit >= highSurrogateStart && unit <= lowSurrogateEnd
 }
 
 func isHighSurrogate(unit uint16) bool {
-	return unit >= 0xD800 && unit <= 0xDBFF
+	return unit >= highSurrogateStart && unit <= highSurrogateEnd
 }
 
 func isLowSurrogate(unit uint16) bool {
-	return unit >= 0xDC00 && unit <= 0xDFFF
+	return unit >= lowSurrogateStart && unit <= lowSurrogateEnd
+}
+
+// pairPoint is the code point of a surrogate pair.
+func pairPoint(high, low uint16) rune {
+	lead := rune(high) - highSurrogateStart
+	return astralBase + lead<<surrogateBits + rune(low) - lowSurrogateStart
+}
+
+// surrogatePair splits a code point above the BMP into its two units.
+func surrogatePair(r rune) (high, low uint16) {
+	r -= astralBase
+	return uint16(highSurrogateStart + r>>surrogateBits), uint16(lowSurrogateStart + r&surrogateMask)
 }
 
 // decodeUTF8 turns a Go string into code units. A byte sequence that is not valid UTF-8 becomes
@@ -56,11 +73,11 @@ func decodeUTF8(s string) []uint16 {
 }
 
 func appendRune(units []uint16, r rune) []uint16 {
-	if r < 0x10000 {
+	if r < astralBase {
 		return append(units, uint16(r))
 	}
-	r -= 0x10000
-	return append(units, uint16(0xD800+(r>>10)), uint16(0xDC00+(r&0x3FF)))
+	high, low := surrogatePair(r)
+	return append(units, high, low)
 }
 
 func isASCIIUnits(units []uint16) bool {
@@ -74,7 +91,7 @@ func isASCIIUnits(units []uint16) bool {
 
 func mappedRune(unit uint16) rune {
 	if isSurrogate(unit) {
-		return mappedBase + rune(unit-surrogateStart)
+		return mappedBase + rune(unit-highSurrogateStart)
 	}
 	return rune(unit)
 }
@@ -141,9 +158,8 @@ func isWordByte(b byte) bool {
 // into "start of text" for \b. A slice is exact when that character is not a word character; if
 // it is, the pattern is run with one arbitrary character in front, taken from the text itself.
 type searcher struct {
-	source string
-	plain  *regexp.Regexp
-	ctx    *regexp.Regexp
+	plain *regexp.Regexp
+	ctx   *regexp.Regexp
 	// needs are literals of which every match holds one (lower-cased); empty when there are none.
 	needs []string
 }
@@ -161,7 +177,7 @@ func newSearcher(source string) (*searcher, error) {
 	if err != nil {
 		return nil, errors.New("redaction: spec pattern does not parse")
 	}
-	return &searcher{source: source, plain: plain, ctx: ctx, needs: needs}, nil
+	return &searcher{plain: plain, ctx: ctx, needs: needs}, nil
 }
 
 // find returns the leftmost-first match that starts at or after unit `from`, as unit offsets

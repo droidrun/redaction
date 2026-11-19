@@ -7,6 +7,12 @@ import { buildPlaceholder, buildReadPlaceholder } from './placeholder.js';
 
 export type Hit = { ruleId: string; range: readonly [number, number] };
 
+/** A limit marker has no range in the text: record a hit at [0, 0] and return its placeholder. */
+export function limitPlaceholder(ruleId: string, hits: Hit[]): string {
+    hits.push({ ruleId, range: [0, 0] });
+    return buildReadPlaceholder(ruleId);
+}
+
 /** Sort ascending by start, then MERGE overlapping/touching ranges into their
  *  union — two rules firing on overlapping spans (e.g. an AWS-shaped match
  *  plus a generic-keyword match starting mid-way through it) must never be

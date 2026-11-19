@@ -56,21 +56,23 @@ def merge_hits(hits: list[Hit]) -> list[Hit]:
     return merged
 
 
-def detect(units: str) -> list[Hit]:
-    """The merged hits of the standard rules over the whole unit string."""
+def _collect(entries: list[tuple[str, _rules.Scanner]], units: str) -> list[Hit]:
+    """Every rule of the list over the text, in order, each range tagged with its rule id."""
     hits: list[Hit] = []
-    for rule_id, scan in _PIPELINE:
+    for rule_id, scan in entries:
         ranges: list[Range] = scan(units)
         hits.extend((rule_id, start, end) for start, end in ranges)
-    return merge_hits(hits)
+    return hits
+
+
+def detect(units: str) -> list[Hit]:
+    """The merged hits of the standard rules over the whole unit string."""
+    return merge_hits(_collect(_PIPELINE, units))
 
 
 def detect_full_rules(units: str) -> list[Hit]:
     """The hits of the full-tier rules over one unit string (no windows), by start, then end (SPEC 4.17)."""
-    hits: list[Hit] = []
-    for rule_id, scan in _FULL_PIPELINE:
-        hits.extend((rule_id, start, end) for start, end in scan(units))
-    return sorted(hits, key=lambda hit: (hit[1], hit[2]))
+    return sorted(_collect(_FULL_PIPELINE, units), key=lambda hit: (hit[1], hit[2]))
 
 
 def splice(units: str, hits: list[Hit]) -> str:

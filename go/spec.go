@@ -117,20 +117,22 @@ type specFileSet struct {
 	algorithms []byte
 }
 
+// contents are the file contents in the order of hashedFiles.
+func (f *specFileSet) contents() [3]*[]byte {
+	return [3]*[]byte{&f.rules, &f.keys, &f.algorithms}
+}
+
 var errSpecRejected = errors.New("redaction: embedded spec rejected")
 var errSpecIntegrity = errors.New("redaction: embedded spec failed the integrity check")
 
 func readEmbedded() (specFileSet, error) {
 	var files specFileSet
-	var err error
-	if files.rules, err = specFiles.ReadFile("spec/rules.json"); err != nil {
-		return files, errSpecRejected
-	}
-	if files.keys, err = specFiles.ReadFile("spec/keys.json"); err != nil {
-		return files, errSpecRejected
-	}
-	if files.algorithms, err = specFiles.ReadFile("spec/algorithms.json"); err != nil {
-		return files, errSpecRejected
+	for i, content := range files.contents() {
+		data, err := specFiles.ReadFile("spec/" + hashedFiles[i])
+		if err != nil {
+			return files, errSpecRejected
+		}
+		*content = data
 	}
 	return files, nil
 }
@@ -138,11 +140,10 @@ func readEmbedded() (specFileSet, error) {
 // specDigest is SHA-256 of `name NUL bytes NUL` for the three files in order, as lower-case hex.
 func specDigest(files specFileSet) string {
 	sum := sha256.New()
-	contents := [][]byte{files.rules, files.keys, files.algorithms}
-	for i, name := range hashedFiles {
-		sum.Write([]byte(name))
+	for i, content := range files.contents() {
+		sum.Write([]byte(hashedFiles[i]))
 		sum.Write([]byte{0})
-		sum.Write(contents[i])
+		sum.Write(*content)
 		sum.Write([]byte{0})
 	}
 	return hex.EncodeToString(sum.Sum(nil))

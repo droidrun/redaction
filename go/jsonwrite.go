@@ -30,8 +30,7 @@ func appendString(out []byte, units []uint16) []byte {
 		case unit < 0x20:
 			out = appendUnicodeEscape(out, unit)
 		case isHighSurrogate(unit) && i+1 < len(units) && isLowSurrogate(units[i+1]):
-			point := 0x10000 + (rune(unit)-0xD800)<<10 + (rune(units[i+1]) - 0xDC00)
-			out = utf8.AppendRune(out, point)
+			out = utf8.AppendRune(out, pairPoint(unit, units[i+1]))
 			i++
 		case isSurrogate(unit):
 			out = appendUnicodeEscape(out, unit)

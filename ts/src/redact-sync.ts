@@ -15,7 +15,7 @@
  * become `[REDACTED:size-limit]`; an `Error` is read as name/message/stack and
  * an object with `toJSON` as its `toJSON()` result, then scanned.
  */
-import { appendHits, applyHits, type Hit } from './hits.js';
+import { appendHits, applyHits, limitPlaceholder, type Hit } from './hits.js';
 import type { RedactMode } from './mode.js';
 import {
     KEY_CONTEXT_RULE_ID,
@@ -25,13 +25,12 @@ import {
     strongerVerdict,
     type KeyVerdict,
 } from './key-names.js';
-import { setOwnKey } from './own-key.js';
 import { keysHoldingPlaceholder, newPlacer, placeKey } from './place-key.js';
 import { isPrimitive } from './primitive.js';
 import { redactKey } from './redact-key.js';
 import { buildReadPlaceholder } from './placeholder.js';
 import { ALGORITHMS_SPEC } from './spec.js';
-import { runStrictSync, spliceHits, strictLimits, strictWalk, type LeafResult } from './strict.js';
+import { runStrictSync, strictLimits, strictWalk, type LeafResult } from './strict.js';
 import { detectSyncHits } from './sync-rules.js';
 
 const { sync: SYNC_LIMITS, ruleIds: RULE_IDS, text: TEXT_SPEC } = ALGORITHMS_SPEC;
@@ -92,11 +91,6 @@ type Walk = {
     ancestors: WeakSet<object>;
 };
 
-function limit(ruleId: string, state: Walk): string {
-    state.hits.push({ ruleId, range: [0, 0] });
-    return buildReadPlaceholder(ruleId);
-}
-
 function walkString(value: string, verdict: KeyVerdict, state: Walk): string {
     if (value.length === 0) return value;
     const keyed = leafPlaceholder(verdict, value);
@@ -106,7 +100,7 @@ function walkString(value: string, verdict: KeyVerdict, state: Walk): string {
     }
     if (value.length > state.chars) {
         state.chars = 0;
-        return limit(SIZE_LIMIT, state);
+        return limitPlaceholder(SIZE_LIMIT, state.hits);
     }
     state.chars -= value.length;
     const { text, hits } = scanText(value, Number.MAX_SAFE_INTEGER);
@@ -134,7 +128,7 @@ function walkEntries(
     const placer = newPlacer(new Set(reserved));
     for (const key of keys) {
         if (state.nodes <= 0) {
-            placeKey(out, placer, key, false, limit(SIZE_LIMIT, state));
+            placeKey(out, placer, key, false, limitPlaceholder(SIZE_LIMIT, state.hits));
             break;
         }
         const child = (value as Record<string, unknown>)[key];
@@ -154,7 +148,7 @@ function walkArray(value: unknown[], depth: number, verdict: KeyVerdict, state: 
     const out: unknown[] = [];
     for (let index = 0; index < value.length; index++) {
         if (state.nodes <= 0) {
-            out.push(limit(SIZE_LIMIT, state));
+            out.push(limitPlaceholder(SIZE_LIMIT, state.hits));
             break;
         }
         out.push(walk(value[index], depth + 1, verdict, state));
@@ -170,7 +164,7 @@ function plainView(value: object): unknown {
 }
 
 function walkContainer(value: object, depth: number, verdict: KeyVerdict, state: Walk): unknown {
-    if (state.ancestors.has(value)) return limit(CIRCULAR, state);
+    if (state.ancestors.has(value)) return limitPlaceholder(CIRCULAR, state.hits);
     state.ancestors.add(value);
     try {
         const view = plainView(value);
@@ -183,20 +177,24 @@ function walkContainer(value: object, depth: number, verdict: KeyVerdict, state:
 }
 
 function walk(value: unknown, depth: number, verdict: KeyVerdict, state: Walk): unknown {
-    if (state.nodes <= 0) return limit(SIZE_LIMIT, state);
+    if (state.nodes <= 0) return limitPlaceholder(SIZE_LIMIT, state.hits);
     state.nodes -= 1;
     if (isPrimitive(value)) return walkPrimitive(value, verdict, state);
     if (typeof value !== 'object' || value === null) return value;
     if (value instanceof Date) return value;
-    if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return limit(SIZE_LIMIT, state);
-    if (depth >= state.maxDepth) return limit(DEPTH_LIMIT, state);
+    if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
+        return limitPlaceholder(SIZE_LIMIT, state.hits);
+    }
+    if (depth >= state.maxDepth) return limitPlaceholder(DEPTH_LIMIT, state.hits);
     return walkContainer(value, depth, verdict, state);
 }
 
 /** The strict leaf scan: the sync rules, and a placeholder for the whole leaf when they fail. */
 function strictLeaf(text: string): LeafResult {
     try {
-        return text.length < MIN_SCAN_LEN ? { text, hits: [] } : spliceHits(text, detectSyncHits(text));
+        if (text.length < MIN_SCAN_LEN) return { text, hits: [] };
+        const hits = detectSyncHits(text);
+        return { text: applyHits(text, hits), hits };
     } catch {
         return { text: buildReadPlaceholder(FAILED), hits: [{ ruleId: FAILED, range: [0, 0] }] };
     }

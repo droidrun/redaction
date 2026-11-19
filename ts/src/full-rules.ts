@@ -5,7 +5,7 @@
  * rules are merged after.
  */
 import { FULL_KINDS } from './algorithms/full-registry.js';
-import { prepareRules } from './algorithms/registry.js';
+import { collectHits, prepareRules } from './algorithms/registry.js';
 import { dedupeRanges, type Hit } from './hits.js';
 import { registerFullKeyDetector } from './key-detectors.js';
 import { ALGORITHMS_SPEC, RULES_SPEC } from './spec.js';
@@ -14,11 +14,7 @@ import { detectSyncHits } from './sync-rules.js';
 const FULL = prepareRules(RULES_SPEC.full, FULL_KINDS);
 
 export function detectFullHits(text: string): Hit[] {
-    const hits: Hit[] = [];
-    for (const { ruleId, scan } of FULL) {
-        for (const range of scan(text)) hits.push({ ruleId, range });
-    }
-    return hits.sort((a, b) => a.range[0] - b.range[0] || a.range[1] - b.range[1]);
+    return collectHits(FULL, text).sort((a, b) => a.range[0] - b.range[0] || a.range[1] - b.range[1]);
 }
 
 /** TypeScript extension (SPEC 13): the hits of the full tier carry the 0.2.0 id of the secretlint rule they

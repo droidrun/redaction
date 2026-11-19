@@ -5,7 +5,6 @@ package redaction
 type walker struct {
 	e        *engine
 	mode     scanMode
-	strict   bool
 	nodes    int
 	chars    int
 	maxDepth int
@@ -130,9 +129,9 @@ func (w *walker) wouldChange(key []uint16) bool {
 		return false
 	}
 	if len(key) > limits.Sync.MaxKeyChars {
-		return w.strict
+		return w.mode.strict
 	}
-	if w.strict && w.mode.tier == TierFull && len(key) > w.mode.maxChars {
+	if w.mode.strict && w.mode.tier == TierFull && len(key) > w.mode.maxChars {
 		// The strict full-tier scan replaces a text over the character limit by the size-limit
 		// placeholder, a key too: the key is unchanged only when it reads exactly like that.
 		sizeLimit := w.e.placeholders.readUnits(limits.RuleIDs.SizeLimit)
@@ -238,7 +237,7 @@ func (w *walker) scanLeaf(value *node, v Verdict) *node {
 // handles it itself (SPEC 9.4); in the standard tier, strict mode replaces the leaf and compat
 // mode ends the whole walk (recovered by the caller).
 func (w *walker) scanUnits(units []uint16) (out []uint16) {
-	if w.strict && w.mode.tier == TierStandard {
+	if w.mode.strict && w.mode.tier == TierStandard {
 		defer func() {
 			if recover() != nil {
 				w.rec.add(w.e.spec.algorithms.RuleIDs.Failed)
@@ -311,8 +310,8 @@ func (w *walker) cut(top *frame, rawKey []uint16) {
 	marker := w.limit(w.e.spec.algorithms.RuleIDs.SizeLimit)
 	if !top.isArray() {
 		top.outKey = rawKey
-		top.keyChanged = w.strict
-		if w.strict {
+		top.keyChanged = w.mode.strict
+		if w.mode.strict {
 			top.outKey = marker.str
 		}
 	}
@@ -357,7 +356,7 @@ func (w *walker) step(top *frame) *frame {
 }
 
 func (w *walker) outputKey(key []uint16) (out []uint16, changed bool) {
-	if w.strict {
+	if w.mode.strict {
 		return w.strictKey(key)
 	}
 	out = w.redactKey(key)
@@ -367,7 +366,7 @@ func (w *walker) outputKey(key []uint16) (out []uint16, changed bool) {
 // skipValue handles a primitive under a skip key. It is exempt from the key-context replacement
 // only: strict scans a string, compat keeps it as it is.
 func (w *walker) skipValue(top *frame, value *node) *frame {
-	if w.strict && value.kind == kindString {
+	if w.mode.strict && value.kind == kindString {
 		return w.descend(top, value, VerdictNone)
 	}
 	w.nodes--

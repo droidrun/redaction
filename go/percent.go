@@ -43,7 +43,7 @@ func decodeSequence(units []uint16, at int, first byte) (uint32, int, bool) {
 		point = point<<6 | uint32(next&0x3F)
 		at += 3
 	}
-	isSurrogatePoint := point >= 0xD800 && point <= 0xDFFF
+	isSurrogatePoint := point >= highSurrogateStart && point <= lowSurrogateEnd
 	if point < minByCount[count] || isSurrogatePoint || point > 0x10FFFF {
 		return 0, at, false
 	}

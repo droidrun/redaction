@@ -2,7 +2,6 @@ package redaction
 
 import (
 	"encoding/json"
-	"strings"
 )
 
 // filters are the post-filters of SPEC 4.1 step 3: a candidate that fails one is dropped.
@@ -253,33 +252,9 @@ func (e *engine) newPemBlocks(b *builder, raw json.RawMessage) (scanner, error) 
 	}, b.err
 }
 
-// markerFinder finds the footer marker; headers come in increasing order, so one result serves
-// every later search that starts before it.
-type markerFinder struct {
-	t      *text
-	marker string
-	from   int
-	found  int
-	primed bool
-}
-
-func (m *markerFinder) indexFrom(from int) int {
-	if m.primed && from >= m.from && (m.found == -1 || m.found >= from) {
-		return m.found
-	}
-	m.primed = true
-	m.from = from
-	m.found = -1
-	at := strings.Index(m.t.mapped[m.t.byteAt(from):], m.marker)
-	if at >= 0 {
-		m.found = m.t.unitAt(m.t.byteAt(from) + at)
-	}
-	return m.found
-}
-
 func (p *pemBlocks) scan(t *text) []span {
 	var found []span
-	finder := &markerFinder{t: t, marker: p.marker}
+	markers := newStarts(t, []string{p.marker})
 	covered := 0
 	for from := 0; ; {
 		loc := p.header.find(t, from)
@@ -292,7 +267,7 @@ func (p *pemBlocks) scan(t *text) []span {
 		}
 		bodyEnd := runEnd(t.units, loc[1], p.body, min(p.bodyLimit, len(t.units)-loc[1]))
 		covered = bodyEnd
-		marker := finder.indexFrom(loc[1])
+		marker := markers.next(loc[1])
 		if marker >= 0 && marker < bodyEnd {
 			if end := p.footer.end(t, marker); end >= 0 {
 				covered = end
