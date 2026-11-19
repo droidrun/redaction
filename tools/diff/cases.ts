@@ -95,32 +95,35 @@ function expand(parts: Array<[string, number]>): string {
     return parts.map(([unit, times]) => unit.repeat(times)).join('');
 }
 
-/** Every `ng.*` and `ok.*` file of the upstream secretlint fixtures (spec/corpus/secretlint-13.0.4). */
+/** Names of the case directories (`ng.*` positive, `ok.*` negative) holding an upstream fixture input. */
+const FIXTURE_DIR = /^(ng|ok)\./;
+const FIXTURE_INPUT = /^input/;
+
+/** The `input*` file of every `ng.*` and `ok.*` case directory of the secretlint fixtures. */
 function fixtureCases(): DiffCase[] {
     const base = join(SPEC, 'corpus', 'secretlint-13.0.4');
     const cases: DiffCase[] = [];
     for (const rule of readdirSync(base).sort()) {
-        const dir = join(base, rule);
-        if (!statSync(dir).isDirectory()) continue;
-        for (const file of readdirSync(dir).sort()) {
-            const path = join(dir, file);
-            if (!/^(ng|ok)\./.test(file) || !statSync(path).isFile() || statSync(path).size > MAX_UNITS)
-                continue;
-            const text = readFileSync(path, 'utf8');
-            cases.push({
-                id: `${rule}/${file}`,
-                family: 'secretlint-fixture',
-                kind: 'text',
-                input: text,
-                opts: {},
-            });
-            cases.push({
-                id: `${rule}/${file}#json`,
-                family: 'secretlint-fixture',
-                kind: 'json',
-                input: { log: text },
-                opts: {},
-            });
+        const ruleDir = join(base, rule);
+        if (!statSync(ruleDir).isDirectory()) continue;
+        for (const name of readdirSync(ruleDir).sort()) {
+            const caseDir = join(ruleDir, name);
+            if (!FIXTURE_DIR.test(name) || !statSync(caseDir).isDirectory()) continue;
+            for (const file of readdirSync(caseDir).sort()) {
+                const path = join(caseDir, file);
+                if (!FIXTURE_INPUT.test(file) || !statSync(path).isFile()) continue;
+                if (statSync(path).size > MAX_UNITS) continue;
+                const text = readFileSync(path, 'utf8');
+                const id = `${rule}/${name}/${file}`;
+                cases.push({ id, family: 'secretlint-fixture', kind: 'text', input: text, opts: {} });
+                cases.push({
+                    id: `${id}#json`,
+                    family: 'secretlint-fixture',
+                    kind: 'json',
+                    input: { log: text },
+                    opts: {},
+                });
+            }
         }
     }
     return cases;

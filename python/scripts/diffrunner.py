@@ -5,31 +5,18 @@ Reads one request per line on stdin and writes one response per line on stdout:
     request:  {"id", "kind": "text"|"json", "tier", "mode", "opts", "input"}
     response: {"id", "out", "hits": [[ruleId, count], ...], "error"}
 
-The first output line is {"capabilities": {...}}. Run: uv run python scripts/diffrunner.py
+Run: uv run python scripts/diffrunner.py
 """
 
-import inspect
 import json
 import sys
 
 import droidrun_redaction as redaction
 
 
-def has_tier() -> bool:
-    """True when this version of the package has the full tier (a `tier` argument)."""
-    return "tier" in inspect.signature(redaction.redact_text).parameters
-
-
-def capabilities() -> dict[str, list[str]]:
-    modes = ["compat", "strict"]
-    return {"standard": modes, "full": modes if has_tier() else []}
-
-
 def redact(request: dict):
     opts = request.get("opts") or {}
-    common = {"mode": request["mode"], "max_chars": opts.get("maxChars")}
-    if has_tier():
-        common["tier"] = request["tier"]
+    common = {"mode": request["mode"], "max_chars": opts.get("maxChars"), "tier": request["tier"]}
     if request["kind"] == "text":
         return redaction.redact_text(request["input"], **common)
     return redaction.redact_json(
@@ -61,8 +48,6 @@ def respond(request: dict) -> str:
 
 
 def main() -> None:
-    sys.stdout.write(compact({"capabilities": capabilities()}) + "\n")
-    sys.stdout.flush()  # the driver waits for this line before it sends anything
     for line in sys.stdin:
         if line.strip():
             sys.stdout.write(respond(json.loads(line)) + "\n")

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * TypeScript runner of the cross-language differential test (protocol: protocol.ts). Reads requests on stdin,
- * writes responses on stdout; the first line is its capabilities (both tiers, both modes).
+ * writes responses on stdout.
  */
 import {
     redactJsonValue,
@@ -61,8 +61,6 @@ async function respond(line: string): Promise<string> {
     }
 }
 
-const both = ['compat', 'strict'];
-process.stdout.write(`${JSON.stringify({ capabilities: { standard: both, full: both } })}\n`);
 for await (const line of lines(process.stdin)) {
     if (line.trim() !== '') process.stdout.write(`${await respond(line)}\n`);
 }
