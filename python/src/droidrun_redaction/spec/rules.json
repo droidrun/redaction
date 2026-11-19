@@ -185,7 +185,7 @@
     {
       "id": "platform-token",
       "kind": "regex",
-      "pattern": "srt1\\.{{UUID}}\\.[0-9]+\\.[A-Za-z0-9_-]{43}|srt2\\.{{UUID}}\\.{{UUID}}\\.(?:kilo|script)\\.[0-9]+\\.[0-9a-fA-F]{64}"
+      "pattern": "srt1\\.{{UUID}}\\.[0-9]+\\.[A-Za-z0-9_-]{43}|srt2\\.{{UUID}}\\.{{UUID}}\\.[a-z]{1,16}\\.[0-9]+\\.[0-9a-fA-F]{64}"
     },
     {
       "id": "platform-key",
