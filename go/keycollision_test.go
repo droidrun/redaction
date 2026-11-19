@@ -7,60 +7,11 @@ import (
 
 // Two or more different object keys that redact to the same key keep their values: the first keeps
 // the plain key, each further one gets a number inside the brackets of the placeholder, in contract
-// order (decided 2026-11-18).
+// order (decided 2026-11-18). The literal cases are in spec/vectors/key-collisions.json and
+// full-keys.json; the over-long keys cannot be written there.
 
-func collisionCase(name string, tier Tier, input string, want string) jsonCase {
-	return jsonCase{name: name, input: input, opts: Options{Tier: tier}, expected: want}
-}
-
-func TestCollidingKeysAreNumbered(t *testing.T) {
-	npm := func(letter string) string { return "npm_" + strings.Repeat(letter, 36) }
+func TestTwoOverLongKeysAreReplacedBySizeLimitAndBothAreKept(t *testing.T) {
 	long := func(letter string) string { return strings.Repeat(letter, 4097) }
-	for _, mode := range []Mode{Compat, Strict} {
-		cases := []jsonCase{
-			collisionCase("two connection strings", TierFull,
-				`{"postgres://a:pass1234@h/x":"v1","mysql://b:pass5678@h/y":"v2"}`,
-				`{"[REDACTED:database-connection-string]":"v1",`+
-					`"[REDACTED:database-connection-string#2]":"v2"}`),
-			collisionCase("three tokens", TierFull,
-				`{"`+npm("A")+`":1,"`+npm("B")+`":2,"`+npm("C")+`":3}`,
-				`{"[REDACTED:npm]":1,"[REDACTED:npm#2]":2,"[REDACTED:npm#3]":3}`),
-			collisionCase("a numbered key that is already taken", TierFull,
-				`{"`+npm("A")+`":1,"[REDACTED:npm#2]":9,"`+npm("B")+`":2}`,
-				`{"[REDACTED:npm]":1,"[REDACTED:npm#2]":9,"[REDACTED:npm#3]":2}`),
-			collisionCase("a key that only holds placeholders: the number goes into the last one", TierFull,
-				`{"x `+npm("A")+` y `+npm("B")+` z":1,"x `+npm("C")+` y `+npm("D")+` z":2}`,
-				`{"x [REDACTED:npm] y [REDACTED:npm] z":1,"x [REDACTED:npm] y [REDACTED:npm#2] z":2}`),
-			collisionCase("partly replaced keys of the standard tier are numbered", TierStandard,
-				`{"password=Zq9AAAAAAAAAAAAAA_x":1,"password=Zq9BBBBBBBBBBBBBB_x":"s","note":"n"}`,
-				`{"password=[REDACTED:generic-keyword]":"[REDACTED:key-context]",`+
-					`"password=[REDACTED:generic-keyword#2]":"[REDACTED:key-context]","note":"n"}`),
-			collisionCase("whole keys of the standard tier are numbered", TierStandard,
-				`{"first":1,"ghp_`+strings.Repeat("a", 36)+`":"a","ghp_`+strings.Repeat("b", 36)+
-					`":"b","ghp_`+strings.Repeat("c", 36)+`":"c"}`,
-				`{"first":1,"[REDACTED:github]":"a","[REDACTED:github#2]":"b","[REDACTED:github#3]":"c"}`),
-			collisionCase("a key that already is the placeholder takes the plain key", TierFull,
-				`{"[REDACTED:npm]":1,"`+npm("A")+`":2}`, `{"[REDACTED:npm]":1,"[REDACTED:npm#2]":2}`),
-			collisionCase("an unchanged key keeps its name wherever it stands in the object", TierFull,
-				`{"`+npm("A")+`":1,"[REDACTED:npm]":2}`, `{"[REDACTED:npm#2]":1,"[REDACTED:npm]":2}`),
-			collisionCase("a numbered name that an unchanged key reserves later is skipped", TierFull,
-				`{"`+npm("A")+`":1,"`+npm("B")+`":2,"[REDACTED:npm#2]":9}`,
-				`{"[REDACTED:npm]":1,"[REDACTED:npm#3]":2,"[REDACTED:npm#2]":9}`),
-			collisionCase("an unchanged key is never numbered", TierFull,
-				`{"[REDACTED:npm#2]":9,"`+npm("A")+`":1,"`+npm("B")+`":2}`,
-				`{"[REDACTED:npm#2]":9,"[REDACTED:npm]":1,"[REDACTED:npm#3]":2}`),
-			collisionCase("keys that do not collide are untouched", TierFull,
-				`{"`+npm("A")+`":1,"mid":2,"other":3}`, `{"[REDACTED:npm]":1,"mid":2,"other":3}`),
-			collisionCase("collisions in nested objects count apart", TierFull,
-				`{"`+npm("A")+`":{"`+npm("B")+`":1,"`+npm("C")+`":2},"`+npm("D")+`":3}`,
-				`{"[REDACTED:npm]":{"[REDACTED:npm]":1,"[REDACTED:npm#2]":2},"[REDACTED:npm#2]":3}`),
-		}
-		for i := range cases {
-			cases[i].name += " (mode " + map[Mode]string{Compat: "compat", Strict: "strict"}[mode] + ")"
-			cases[i].opts.Mode = mode
-		}
-		runJSONCases(t, cases)
-	}
 	runJSONCases(t, []jsonCase{{
 		"two over-long keys are replaced by size-limit and both are kept",
 		`{"` + long("a") + `":1,"` + long("b") + `":2}`, Options{},

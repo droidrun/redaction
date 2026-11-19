@@ -371,6 +371,349 @@
         "token [REDACTED:npm]": "[REDACTED:key-context]",
         "token [REDACTED:npm#2]": "[REDACTED:key-context]"
       }
+    },
+    {
+      "name": "two database connection strings keep both values",
+      "input": {
+        "postgres://user:Zq9abcDEF123ghi_x@db.example.test:5432/app": "first",
+        "postgres://other:Qw8rtyUIO456jkl_z@db2.example.test:5432/app": "second"
+      },
+      "expectedSync": {
+        "postgres://user:[REDACTED:url-credentials]@db.example.test:5432/app": "first",
+        "postgres://other:[REDACTED:url-credentials]@db2.example.test:5432/app": "second"
+      },
+      "expectedAsync": {
+        "[REDACTED:database-connection-string]": "first",
+        "[REDACTED:database-connection-string#2]": "second"
+      }
+    },
+    {
+      "name": "colliding keys are numbered per placeholder name in iteration order",
+      "input": {
+        "postgres://user:Zq9abcDEF123ghi_x@db.example.test:5432/app": 1,
+        "x": 2,
+        "postgres://other:Qw8rtyUIO456jkl_z@db2.example.test:5432/app": 3,
+        "mongodb://third:Mn7opqRST890uvw_y@db3.example.test/app": 4,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 5,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 6
+      },
+      "expectedSync": {
+        "postgres://user:[REDACTED:url-credentials]@db.example.test:5432/app": 1,
+        "x": 2,
+        "postgres://other:[REDACTED:url-credentials]@db2.example.test:5432/app": 3,
+        "mongodb://third:[REDACTED:url-credentials]@db3.example.test/app": 4,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 5,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 6
+      },
+      "expectedAsync": {
+        "[REDACTED:database-connection-string]": 1,
+        "x": 2,
+        "[REDACTED:database-connection-string#2]": 3,
+        "[REDACTED:database-connection-string#3]": 4,
+        "[REDACTED:npm]": 5,
+        "[REDACTED:npm#2]": 6
+      }
+    },
+    {
+      "name": "numbering skips the names of unchanged keys",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "[REDACTED:npm#2]": 3,
+        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 4,
+        "[REDACTED:npm]": 5
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "[REDACTED:npm#2]": 3,
+        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 4,
+        "[REDACTED:npm]": 5
+      },
+      "expectedAsync": {
+        "[REDACTED:npm#3]": 1,
+        "[REDACTED:npm#4]": 2,
+        "[REDACTED:npm#2]": 3,
+        "[REDACTED:npm#5]": 4,
+        "[REDACTED:npm]": 5
+      }
+    },
+    {
+      "name": "a key with a placeholder inside gets the number in its last placeholder",
+      "input": {
+        "label npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "label npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA then npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 3,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB then npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 4
+      },
+      "expectedSync": {
+        "label npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "label npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA then npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 3,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB then npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 4
+      },
+      "expectedAsync": {
+        "label [REDACTED:npm]": 1,
+        "label [REDACTED:npm#2]": 2,
+        "[REDACTED:npm] then [REDACTED:npm]": 3,
+        "[REDACTED:npm] then [REDACTED:npm#2]": 4
+      }
+    },
+    {
+      "name": "an unnumbered placeholder before a suffixed one is numbered at the last placeholder",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:foo:bar] npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:foo:bar] npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:foo:bar] npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:foo:bar] npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+      },
+      "expectedAsync": {
+        "[REDACTED:npm] [REDACTED:foo:bar] [REDACTED:npm]": 1,
+        "[REDACTED:npm] [REDACTED:foo:bar] [REDACTED:npm#2]": 2
+      }
+    },
+    {
+      "name": "strict: two database connection strings keep both values",
+      "input": {
+        "postgres://user:Zq9abcDEF123ghi_x@db.example.test:5432/app": "first",
+        "postgres://other:Qw8rtyUIO456jkl_z@db2.example.test:5432/app": "second"
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "postgres://user:[REDACTED:url-credentials]@db.example.test:5432/app": "first",
+        "postgres://other:[REDACTED:url-credentials]@db2.example.test:5432/app": "second"
+      },
+      "expectedAsync": {
+        "[REDACTED:database-connection-string]": "first",
+        "[REDACTED:database-connection-string#2]": "second"
+      }
+    },
+    {
+      "name": "strict: colliding keys are numbered per placeholder name in iteration order",
+      "input": {
+        "postgres://user:Zq9abcDEF123ghi_x@db.example.test:5432/app": 1,
+        "x": 2,
+        "postgres://other:Qw8rtyUIO456jkl_z@db2.example.test:5432/app": 3,
+        "mongodb://third:Mn7opqRST890uvw_y@db3.example.test/app": 4,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 5,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 6
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "postgres://user:[REDACTED:url-credentials]@db.example.test:5432/app": 1,
+        "x": 2,
+        "postgres://other:[REDACTED:url-credentials]@db2.example.test:5432/app": 3,
+        "mongodb://third:[REDACTED:url-credentials]@db3.example.test/app": 4,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 5,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 6
+      },
+      "expectedAsync": {
+        "[REDACTED:database-connection-string]": 1,
+        "x": 2,
+        "[REDACTED:database-connection-string#2]": 3,
+        "[REDACTED:database-connection-string#3]": 4,
+        "[REDACTED:npm]": 5,
+        "[REDACTED:npm#2]": 6
+      }
+    },
+    {
+      "name": "strict: numbering skips the names of unchanged keys",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "[REDACTED:npm#2]": 3,
+        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 4,
+        "[REDACTED:npm]": 5
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "[REDACTED:npm#2]": 3,
+        "npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC": 4,
+        "[REDACTED:npm]": 5
+      },
+      "expectedAsync": {
+        "[REDACTED:npm#3]": 1,
+        "[REDACTED:npm#4]": 2,
+        "[REDACTED:npm#2]": 3,
+        "[REDACTED:npm#5]": 4,
+        "[REDACTED:npm]": 5
+      }
+    },
+    {
+      "name": "strict: a key with a placeholder inside gets the number in its last placeholder",
+      "input": {
+        "label npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "label npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA then npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 3,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB then npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 4
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "label npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "label npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA then npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 3,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB then npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 4
+      },
+      "expectedAsync": {
+        "label [REDACTED:npm]": 1,
+        "label [REDACTED:npm#2]": 2,
+        "[REDACTED:npm] then [REDACTED:npm]": 3,
+        "[REDACTED:npm] then [REDACTED:npm#2]": 4
+      }
+    },
+    {
+      "name": "strict: an unnumbered placeholder before a suffixed one is numbered at the last placeholder",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:foo:bar] npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:foo:bar] npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:foo:bar] npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:foo:bar] npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 2
+      },
+      "expectedAsync": {
+        "[REDACTED:npm] [REDACTED:foo:bar] [REDACTED:npm]": 1,
+        "[REDACTED:npm] [REDACTED:foo:bar] [REDACTED:npm#2]": 2
+      }
+    },
+    {
+      "name": "a number under a secret key and a key-context collision keep every value",
+      "input": {
+        "a": {
+          "postgres://user:Zq9abcDEF123ghi_x@db.example.test:5432/app": {
+            "pin": 1
+          },
+          "postgres://other:Qw8rtyUIO456jkl_z@db2.example.test:5432/app": {
+            "pin": 2
+          }
+        }
+      },
+      "expectedSync": {
+        "a": {
+          "postgres://user:[REDACTED:url-credentials]@db.example.test:5432/app": {
+            "pin": "[REDACTED:key-context]"
+          },
+          "postgres://other:[REDACTED:url-credentials]@db2.example.test:5432/app": {
+            "pin": "[REDACTED:key-context]"
+          }
+        }
+      },
+      "expectedAsync": {
+        "a": {
+          "[REDACTED:database-connection-string]": {
+            "pin": "[REDACTED:key-context]"
+          },
+          "[REDACTED:database-connection-string#2]": {
+            "pin": "[REDACTED:key-context]"
+          }
+        }
+      }
+    },
+    {
+      "name": "a key with a placeholder inside that is unchanged is reserved",
+      "input": {
+        "label npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "label [REDACTED:npm]": 2
+      },
+      "expectedSync": {
+        "label npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1,
+        "label [REDACTED:npm]": 2
+      },
+      "expectedAsync": {
+        "label [REDACTED:npm#2]": 1,
+        "label [REDACTED:npm]": 2
+      }
+    },
+    {
+      "name": "strict: a key inside the budget is reserved and the size-limit keys are numbered round it",
+      "input": {
+        "a": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "[REDACTED:npm]": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 2
+      },
+      "mode": "strict",
+      "opts": {
+        "maxChars": 40
+      },
+      "expected": {
+        "a": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "[REDACTED:size-limit]": 1,
+        "[REDACTED:size-limit#2]": 2
+      }
+    },
+    {
+      "name": "strict: placeholder keys over a small budget are numbered after the size-limit marker",
+      "input": {
+        "[REDACTED:npm]": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 3
+      },
+      "mode": "strict",
+      "opts": {
+        "maxChars": 20
+      },
+      "expected": {
+        "[REDACTED:npm]": 1,
+        "[REDACTED:size-limit]": 2,
+        "[REDACTED:size-limit#2]": 3
+      }
+    },
+    {
+      "name": "strict: a size-limit key equal to an input key is still a changed key",
+      "input": {
+        "[REDACTED:size-limit]": 1,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 2,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": 3
+      },
+      "mode": "strict",
+      "opts": {
+        "maxChars": 30
+      },
+      "expected": {
+        "[REDACTED:size-limit]": 1,
+        "[REDACTED:size-limit#2]": 2,
+        "[REDACTED:size-limit#3]": 3
+      }
+    },
+    {
+      "name": "node limit: strict numbers the marker key",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "keep",
+        "[REDACTED:npm]": 2,
+        "c": 3
+      },
+      "mode": "strict",
+      "opts": {
+        "maxNodes": 2
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "keep",
+        "[REDACTED:size-limit]": "[REDACTED:size-limit]"
+      },
+      "expectedAsync": {
+        "[REDACTED:npm#2]": "keep",
+        "[REDACTED:size-limit]": "[REDACTED:size-limit]"
+      }
+    },
+    {
+      "name": "a key that holds two tokens gets the number in the last one",
+      "input": {
+        "x npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA y npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB z": 1,
+        "x npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC y npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA z": 2
+      },
+      "expectedSync": {
+        "x npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA y npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB z": 1,
+        "x npm_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC y npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA z": 2
+      },
+      "expectedAsync": {
+        "x [REDACTED:npm] y [REDACTED:npm] z": 1,
+        "x [REDACTED:npm] y [REDACTED:npm#2] z": 2
+      }
     }
   ]
 }
