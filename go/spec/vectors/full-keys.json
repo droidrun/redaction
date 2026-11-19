@@ -764,6 +764,31 @@
         "label [REDACTED:npm#2]": 1,
         "label [REDACTED:npm]": 2
       }
+    },
+    {
+      "name": "node limit: a reserved key that the budget replaces keeps its name reserved (strict, 40 chars)",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 2,
+        "[REDACTED:size-limit]": 1,
+        "other": 3,
+        "more": 4
+      },
+      "mode": "strict",
+      "opts": {
+        "maxChars": 40
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 2,
+        "[REDACTED:size-limit]": 1,
+        "[REDACTED:size-limit#2]": 3,
+        "[REDACTED:size-limit#3]": 4
+      },
+      "expectedAsync": {
+        "[REDACTED:npm]": 2,
+        "[REDACTED:size-limit]": 1,
+        "[REDACTED:size-limit#2]": 3,
+        "[REDACTED:size-limit#3]": 4
+      }
     }
   ]
 }
