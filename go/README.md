@@ -12,7 +12,7 @@ The repository is private. Allow the Go tool to fetch it, then add the module:
 
 ```sh
 export GOPRIVATE=github.com/droidrun/*
-go get github.com/droidrun/redaction/go@go/vX.Y.Z   # a tag of the form go/vX.Y.Z
+go get github.com/droidrun/redaction/go@v0.3.0   # resolved through the tag go/v0.3.0
 ```
 
 The module lives in the `go/` directory, so its tags are `go/vX.Y.Z`
@@ -114,7 +114,7 @@ replaced; `example_test.go` runs this.
   string under a skip key is scanned like any other. The JSON walk is iterative: nesting costs no
   stack. In the full tier a failing scanner replaces the whole text (or the leaf) by
   `[REDACTED:error]`.
-- `Compat` reproduces the TypeScript package v0.2.0 (a skip-key value is kept as it is, an
+- `Compat` reproduces the TypeScript package's default mode (a skip-key value is kept as it is, an
   over-long key is left as it is). In the full tier it has **no length, depth or node limit**
   (SPEC 9.4, as in the TypeScript package: `MaxChars`, `MaxDepth` and `MaxNodes` are not used), and a
   failing scanner falls back to the standard rules, then to `[REDACTED:error]`. Use Compat only to

@@ -8,14 +8,15 @@ limits. It has no runtime dependencies and needs Python 3.11 or newer.
 ## Install
 
 The repository is private. Add it as a git dependency over ssh, pinned to a full commit SHA, with
-`subdirectory = "python"`:
+`subdirectory = "python"`. For release 0.3.0 the SHA is the commit of the tag `v0.3.0`
+(`git rev-parse v0.3.0^{commit}`):
 
 ```toml
 [project]
 dependencies = ["droidrun-redaction"]
 
 [tool.uv.sources]
-droidrun-redaction = { git = "ssh://git@github.com/droidrun/redaction.git", rev = "<40-character commit SHA>", subdirectory = "python" }
+droidrun-redaction = { git = "ssh://git@github.com/droidrun/redaction.git", rev = "<40-character SHA of the commit of tag v0.3.0>", subdirectory = "python" }
 ```
 
 The build and CI environments need an ssh key that can read the repository.
@@ -102,7 +103,7 @@ interpreter's own `unicodedata`.
   (`[REDACTED:size-limit]`, `[REDACTED:depth-limit]`, `[REDACTED:circular]`,
   `[REDACTED:redaction-failed]`). The JSON walk is iterative: deep input cannot overflow the stack. In the
   full tier a failing scan gives `[REDACTED:error]` (no fallback) for the text or the JSON leaf.
-- `compat`: reproduces the TypeScript v0.2.0 behaviour of its sync entry (a string under a skip key is
+- `compat`: reproduces the behaviour of the TypeScript package's default mode for its sync entry (a string under a skip key is
   returned unscanned; keys do not count against `max_chars`; a node-exhausted object keeps its raw key at the
   cut). Use it only to compare with TypeScript output. In the full tier `compat` is TypeScript's async
   behaviour: it has no length, depth or node limit, so giving `max_chars`, `max_depth` or `max_nodes` with

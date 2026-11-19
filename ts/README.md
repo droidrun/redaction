@@ -18,7 +18,7 @@ Provide `NODE_AUTH_TOKEN` through your secret manager using a GitHub token with
 `read:packages` and access to this package, then install:
 
 ```sh
-pnpm add @droidrun/redaction@0.2.0
+pnpm add @droidrun/redaction@0.3.0
 ```
 
 For Docker, use a BuildKit secret instead of a build argument or a token stored in the image:
@@ -257,7 +257,8 @@ importable as `@droidrun/redaction/vectors/<name>.json`. `src/vectors.test.ts` i
 
 ## Modes
 
-`mode: 'compat'` (the default) is what 0.2.0 does. `mode: 'strict'` is an additive option on
+`mode: 'compat'` (the default) keeps the failure behaviour of 0.2.0 (the sync path fails closed, the async path
+falls back to the standard rules; what else changed in 0.3.0 is in [`../CHANGELOG.md`](../CHANGELOG.md)). `mode: 'strict'` is an additive option on
 `redactTextSync`, `redactJsonValueSync`, `redactText` and `redactJsonValue`: it never returns text
 that was not scanned. A failing scanner replaces the whole text (`[REDACTED:error]`), the part of a
 text beyond the 2,000,000-character scan cap becomes `[REDACTED:size-limit]`, and JSON is walked
@@ -314,6 +315,6 @@ marker in values, keys, escaped JSON, URL userinfo, nested queries, cookies; ide
 round trip, also after deleting, inserting and reordering items), the perf and adversarial budgets,
 a 0.1.1 export-compat test, the golden replay, and the spec-integrity tests.
 
-After merge, a `v<version>` tag (for example `v0.2.0`) triggers publishing to GitHub Packages. The workflow
+After merge, a `v<version>` tag (for example `v0.3.0`) triggers publishing to GitHub Packages. The workflow
 checks the tag against `package.json`, requires the tagged commit to be on `main`,
 runs typecheck and tests, and uses `GITHUB_TOKEN` with `packages:write`.

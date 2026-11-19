@@ -1,6 +1,6 @@
 {
   "name": "@droidrun/redaction",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Secret detection and redaction for text and JSON values, sync and async, with restore",
   "type": "module",
   "main": "./dist/index.js",
