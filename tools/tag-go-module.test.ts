@@ -16,12 +16,17 @@ const TAG_OBJECT = 'c'.repeat(40);
 
 type Existing = { type: 'commit' | 'tag'; sha: string; inner?: { type: string; sha: string } } | undefined;
 
-/** A `gh` that knows one existing tag ref (or none) and logs every call. */
-function run(existing: Existing): { status: number | null; log: string; out: string } {
+/** A `gh` that knows one existing tag ref (or none) and logs every call. Like the real one, a lookup of a missing
+ *  tag exits 1 but still prints what `--jq` makes of the error body: `null + " " + null` is a single blank for the
+ *  old filter (the bug of the v0.3.0 release), nothing for a filter that selects on `.object`. */
+function run(existing: Existing, blank = false): { status: number | null; log: string; out: string } {
     const dir = mkdtempSync(join(tmpdir(), 'tag-go-'));
     try {
         const log = join(dir, 'calls.log');
-        const lookup = existing === undefined ? 'exit 1' : `echo "${existing.type} ${existing.sha}"`;
+        const missing = blank
+            ? 'echo " "; exit 1'
+            : `case "$*" in *"select(.object)"*) ;; *) echo " " ;; esac; exit 1`;
+        const lookup = existing === undefined ? missing : `echo "${existing.type} ${existing.sha}"`;
         const inner =
             existing?.inner === undefined ? 'exit 1' : `echo "${existing.inner.type} ${existing.inner.sha}"`;
         writeFileSync(
@@ -84,4 +89,10 @@ test('a tag on another commit fails, annotated or not', () => {
     const annotated = run({ type: 'tag', sha: TAG_OBJECT, inner: { type: 'commit', sha: OTHER } });
     expect(annotated.status).toBe(1);
     expect(annotated.out).toContain('does not point at the commit');
+});
+
+test('an answer of nothing but blanks counts as a missing tag', () => {
+    const result = run(undefined, true);
+    expect(result.status).toBe(0);
+    expect(result.log.split('\n').filter((line) => line.includes('-X POST'))).toHaveLength(1);
 });
