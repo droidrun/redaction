@@ -10,8 +10,12 @@ set -eu
 go_tag="go/$GITHUB_REF_NAME"
 api="repos/$GITHUB_REPOSITORY"
 
-# `type sha` of the object the tag ref points at; empty when there is no such tag.
-object=$(gh api "$api/git/ref/tags/$go_tag" --jq '.object.type + " " + .object.sha' 2>/dev/null || true)
+# `type sha` of the object the tag ref points at; empty when there is no such tag. On a 404 `gh` still applies
+# `--jq` to the error body, so the filter only answers for a body that has an `object`; and a result that is
+# nothing but blanks counts as missing too.
+filter='select(.object) | .object.type + " " + .object.sha'
+object=$(gh api "$api/git/ref/tags/$go_tag" --jq "$filter" 2>/dev/null || true)
+object=$(printf '%s' "$object" | tr -d '[:space:]' | grep -q . && printf '%s' "$object" || true)
 
 if [ -z "$object" ]; then
   gh api -X POST "$api/git/refs" -f ref="refs/tags/$go_tag" -f sha="$GITHUB_SHA" >/dev/null
