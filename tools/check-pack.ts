@@ -93,6 +93,12 @@ try {
         console.error('the tarball holds no vectors');
         process.exit(1);
     }
+    for (const legal of ['LICENSE', 'NOTICE']) {
+        if (!existsSync(join(installed, legal))) {
+            console.error(`the tarball holds no ${legal}`);
+            process.exit(1);
+        }
+    }
     if (existsSync(join(installed, 'spec'))) {
         console.error('the tarball holds a spec/ directory: the package must run from its generated module');
         process.exit(1);

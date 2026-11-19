@@ -25,7 +25,8 @@
   },
   "files": [
     "dist",
-    "vectors"
+    "vectors",
+    "NOTICE"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

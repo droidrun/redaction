@@ -13,7 +13,8 @@ trap 'rm -rf "$WORK"' EXIT
 
 cd "$HERE"
 uv build --wheel --out-dir "$WORK/dist"
-# The wheel carries the license (PEP 639): the file inside `.dist-info/licenses` and the metadata expression.
+# The wheel carries the license and the third-party notices (PEP 639): the files inside `.dist-info/licenses` and
+# the metadata expression.
 python3 - "$WORK"/dist/*.whl <<'PY'
 import sys, zipfile
 names = zipfile.ZipFile(sys.argv[1]).namelist()
@@ -21,6 +22,7 @@ metadata = zipfile.ZipFile(sys.argv[1]).read(
     next(name for name in names if name.endswith(".dist-info/METADATA"))
 ).decode()
 assert any(name.endswith(".dist-info/licenses/LICENSE") for name in names), "the wheel holds no LICENSE"
+assert any(name.endswith(".dist-info/licenses/NOTICE") for name in names), "the wheel holds no NOTICE"
 assert "License-Expression: MIT" in metadata, "the wheel metadata has no MIT license expression"
 PY
 uv export --frozen --only-group dev --no-emit-project --format requirements-txt \
