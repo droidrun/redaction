@@ -1,9 +1,8 @@
 /**
- * triggers-parity.test.ts — the cases of triggers-api's own redactor
- * (`redact-evidence.test.ts`, `step-input.test.ts`), run against the package.
+ * legacy-redactor-parity.test.ts — the cases of an earlier internal redactor, run against the package.
  * Same inputs, same meaning: the same text is masked and the same text stays.
- * Only the marker differs: triggers wrote a bare `[REDACTED]`, the package
- * writes `[REDACTED:<rule>]`. Two documented limits of the triggers redactor
+ * Only the marker differs: the earlier redactor wrote a bare `[REDACTED]`, the package
+ * writes `[REDACTED:<rule>]`. Two documented limits of that redactor
  * are lifted on purpose (the package also masks keyword pairs inside other
  * strings): see the `lifted` tests.
  */
@@ -103,7 +102,7 @@ describe('prepareStepInput: redaction by key name', () => {
     });
 
     test('lifted: keyword pairs inside other strings are masked too', async () => {
-        // triggers kept `prompt: 'use password=hunter2'` ("documents its limit").
+        // the earlier redactor kept `prompt: 'use password=hunter2'` ("documents its limit").
         expect(await redactJson({ prompt: 'use password=hunter2', login: 'plain' }))
             .toEqual({ prompt: `use password=${KW}`, login: 'plain' });
     });
@@ -137,7 +136,7 @@ describe('isSecretKeyName: words of the key, not substrings', () => {
         'refreshtoken', 'setcookie',
         // contain the word: accepted
         'hasPassword', 'passwordPolicy', 'userPassword2', 'maxTokens',
-        // absorbed from chat-agents-api, and `auth` (whole key only; was not secret in triggers)
+        // absorbed from another earlier redactor, and `auth` (whole key only; was not secret in the first one)
         'proxy-authorization', 'Proxy-Authorization', 'auth',
     ])('%s is secret', (key) => {
         expect(isSecretKeyName(key)).toBe(true);
@@ -170,7 +169,7 @@ describe('prepareStepInput: authorization values in strings', () => {
     });
 
     test('lifted: a token: label with a credential-shaped value is masked as a keyword pair', async () => {
-        // triggers kept `token: ghp_abcdef123456`; the keyword rule has evidence for it.
+        // the earlier redactor kept `token: ghp_abcdef123456`; the keyword rule has evidence for it.
         expect(await redact('token: ghp_abcdef123456')).toBe(`token: ${KW}`);
     });
 

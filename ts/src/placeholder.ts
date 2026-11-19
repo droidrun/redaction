@@ -4,7 +4,7 @@
  * Read/log form (default everywhere): `[REDACTED:<ruleId>]`, no character of
  * the secret. Legacy form (0.1.1, opt-in with `last4: true`):
  * `[REDACTED:<ruleId>:<last4>]` when the match is at least 16 characters.
- * The bare `[REDACTED]` that triggers-api wrote is recognised too.
+ * The bare `[REDACTED]` that an earlier internal redactor wrote is recognised too.
  *
  * `PLACEHOLDER_RE` is the idempotence guard: it recognizes ANY string this
  * module could have produced (regardless of ruleId/last4 content), so the

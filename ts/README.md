@@ -184,7 +184,7 @@ overlapping hits merge into one span and keep the first rule's name. Sync rule i
 0.1.1 wrote `[REDACTED:<rule>:<last4>]` for matches of 16+ characters. That form is now opt-in
 (`redactText(text, { last4: true })`, `redactJsonValue(v, stats, { last4: true })`;
 `buildPlaceholder(ruleId, matched)` is unchanged, except that brackets in the last four
-characters are masked as `*`). The bare `[REDACTED]` that triggers-api wrote is also recognised.
+characters are masked as `*`). The bare `[REDACTED]` that an earlier internal redactor wrote is also recognised.
 
 - `buildReadPlaceholder(ruleId)`: `[REDACTED:<rule>]`.
 - `PLACEHOLDER_RE`: matches a string that **is** one placeholder of any of the three forms
@@ -216,7 +216,7 @@ number, object or array, and:
 - **Strings.** An incoming string that contains placeholders keeps the **stored string** only
   if its literal segments appear in the stored string in order, the first at the start and the
   last at the end. Edited text around a placeholder is a conflict. A whole placeholder also
-  restores a stored number, object or array (`[REDACTED]` replaced those in triggers-api; limit
+  restores a stored number, object or array (`[REDACTED]` replaced those in an earlier internal redactor; limit
   markers stand for subtrees).
 
 Everything else takes `incoming` as sent: new keys and values win, removed keys are gone, and a
