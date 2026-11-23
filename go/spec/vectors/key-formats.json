@@ -42,6 +42,26 @@
       "expected": "run [REDACTED:platform-token] done"
     },
     {
+      "name": "platform token srt2 with another kind word",
+      "input": "run srt2.3fa85f64-5717-4562-b3fc-2c963f66afa6.9b2e1c7a-0d44-4e8b-a1f3-6c5d7e8f9a0b.runner.1731900000.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef done",
+      "expected": "run [REDACTED:platform-token] done"
+    },
+    {
+      "name": "platform token srt2 with the longest kind word (16 letters)",
+      "input": "srt2.3fa85f64-5717-4562-b3fc-2c963f66afa6.9b2e1c7a-0d44-4e8b-a1f3-6c5d7e8f9a0b.aaaaaaaaaaaaaaaa.42.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "expected": "[REDACTED:platform-token]"
+    },
+    {
+      "name": "guard: srt2 kind word of 17 letters is not a platform token",
+      "input": "ref srt2.3fa85f64-5717-4562-b3fc-2c963f66afa6.9b2e1c7a-0d44-4e8b-a1f3-6c5d7e8f9a0b.aaaaaaaaaaaaaaaaa.42.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef end",
+      "expected": "ref srt2.3fa85f64-5717-4562-b3fc-2c963f66afa6.9b2e1c7a-0d44-4e8b-a1f3-6c5d7e8f9a0b.aaaaaaaaaaaaaaaaa.42.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef end"
+    },
+    {
+      "name": "guard: srt2 kind word with a digit is not a platform token",
+      "input": "ref srt2.3fa85f64-5717-4562-b3fc-2c963f66afa6.9b2e1c7a-0d44-4e8b-a1f3-6c5d7e8f9a0b.run2.42.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef end",
+      "expected": "ref srt2.3fa85f64-5717-4562-b3fc-2c963f66afa6.9b2e1c7a-0d44-4e8b-a1f3-6c5d7e8f9a0b.run2.42.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef end"
+    },
+    {
       "name": "guard: decoy google key, 34-char body",
       "input": "legacyId=AIzaS_f0sYnC4Rce_xcEmtOikZcYypDAJ7fS00",
       "expected": "legacyId=AIzaS_f0sYnC4Rce_xcEmtOikZcYypDAJ7fS00"

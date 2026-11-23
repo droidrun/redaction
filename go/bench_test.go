@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-const benchLine = `{"level":"info","ts":"2026-11-18T09:12:44.512Z","service":"devices-api","msg":"device ` +
+const benchLine = `{"level":"info","ts":"2026-11-18T09:12:44.512Z","service":"api","msg":"device ` +
 	`allocated","device_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","org":"acme","region":"eu-west-1",` +
 	`"latency_ms":42,"path":"/v1/devices/3fa85f64/connect?page=2&sort=asc","user_agent":"Mozilla/5.0 ` +
 	`(X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36","note":"` +

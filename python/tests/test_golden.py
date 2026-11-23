@@ -6,13 +6,13 @@ the 0.2.0 record carry the prefix `@secretlint/secretlint-rule-`, the placeholde
 A recorded output longer than 20,000 characters is stored as its SHA-256 and length; the replay compares
 those.
 
-Three groups differ from the 0.2.0 record, all by decision of Lutz (2026-11-18), and all are enumerated:
+Three groups differ from the 0.2.0 record, all by decision (2026-11-18), and all are enumerated:
 the AWS secret access key (SPEC 4.17) is reported over the secret, not from the key name, so the key name
 stays (`AWS_SECRET_ACCESS_KEY=[REDACTED:aws]` where 0.2.0 recorded `[REDACTED:aws]`; the same exception is in
-`ts/src/golden.test.ts`); object keys are scanned with the full rules (L-N): 24 cases whose key is itself
+`ts/src/golden.test.ts`); object keys are scanned with the full rules: 24 cases whose key is itself
 a full-tier token (an npm, SendGrid, Slack, Linear, Shopify or GitLab token, or a database URL) now have that
 key replaced by its placeholder (full side only); and keys that redact to the same text keep every value
-(L-P): 120 `key-collision-*` cases, on both sides, where 0.2.0 let the later value replace the earlier one.
+(numbered keys): 120 `key-collision-*` cases, on both sides, where 0.2.0 let the later value replace the earlier one.
 """
 
 import hashlib
@@ -62,7 +62,7 @@ AWS_CORRECTION = {
 }
 LEGACY_PREFIX = "@secretlint/secretlint-rule-"
 KEY_COLLISION_CASES = 120
-# Object keys that are full-tier tokens (L-N, Lutz 2026-11-18): the recorded 0.2.0 output left them, or
+# Object keys that are full-tier tokens (decided 2026-11-18): the recorded 0.2.0 output left them, or
 # redacted only the password of a URL in them; the full tier now replaces the whole key.
 DATABASE_URL = "[REDACTED:database-connection-string]"
 FULL_KEY_RENAMES = {
@@ -119,7 +119,7 @@ NUMBER_IN_PLACEHOLDER = re.compile(r"#[0-9]+\]")
 
 
 def merge_numbered_keys(value):
-    """What 0.2.0 recorded for keys that redact to one text: the numbers of L-P taken out of the keys, so the
+    """What 0.2.0 recorded for keys that redact to one text: the numbers taken out of the keys, so the
     later value replaces the earlier one at the earlier position."""
     if isinstance(value, dict):
         merged = {}
@@ -136,7 +136,7 @@ def collision_ids(differing):
 
 
 def test_every_case_gives_the_recorded_standard_result_but_the_key_collisions():
-    # L-P (Lutz 2026-11-18): keys of one object that redact to the same text keep every value, the later ones
+    # Decided 2026-11-18: keys of one object that redact to the same text keep every value, the later ones
     # numbered (`[REDACTED:<rule>#2]`); 0.2.0 recorded the later value replacing the earlier one.
     differing = replay("standard", "sync")
     assert {case_id for case_id, _ in differing} == collision_ids(differing)
@@ -162,7 +162,7 @@ def test_every_case_gives_the_recorded_full_result_but_the_enumerated_ones():
         elif case_id in collisions:
             assert merge_numbered_keys(value) == recorded
         else:
-            # Only object keys differ: the full tier scans keys with the full rules (L-N), so a key that
+            # Only object keys differ: the full tier scans keys with the full rules, so a key that
             # is itself a full-tier token is replaced by its placeholder where 0.2.0 left it or only
             # redacted the URL password inside it.
             assert value == rename_keys(recorded, FULL_KEY_RENAMES)

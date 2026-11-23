@@ -17,4 +17,4 @@ that are not in the preset. Cases that need options (`allows`, `enableIDScanRule
 file name other than `message.txt` are kept for completeness; `ts/src/secretlint-parity.test.ts`
 runs the others and checks them against the recorded upstream result and against the full tier.
 
-Licence of the fixtures: MIT (secretlint).
+See LICENSE in this directory.

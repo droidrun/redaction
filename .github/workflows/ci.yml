@@ -257,4 +257,4 @@ jobs:
       - name: npm, Python and Go carry the same version
         run: tools/release-version --check
       - name: The release tools themselves (SemVer without leading zeros, set and check, the Go tag step)
-        run: bun test tools/release-version tools/tag-go-module
+        run: bun test tools/release-version tools/tag-go-module tools/license-copies

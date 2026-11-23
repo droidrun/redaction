@@ -1,5 +1,5 @@
 /**
- * exports.compat.test.ts — 0.1.1 exports keep working. chat-agents-api imports
+ * exports.compat.test.ts — 0.1.1 exports keep working. Existing 0.1.1 consumers import
  * exactly these names; their signatures and their results (but for the
  * documented placeholder default) must not change in a minor release.
  */

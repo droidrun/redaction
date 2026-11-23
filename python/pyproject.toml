@@ -3,8 +3,15 @@ name = "droidrun-redaction"
 version = "0.3.0"
 description = "Secret redaction for text and JSON values (Python implementation of the redaction spec)"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/droidrun/redaction"
+Repository = "https://github.com/droidrun/redaction"
+Issues = "https://github.com/droidrun/redaction/issues"
 
 [dependency-groups]
 dev = ["pytest==9.1.1"]

@@ -1,7 +1,7 @@
 /**
- * place-key.test.ts — key collisions (SPEC 8, L-P and L-Q): no value is lost. A key redaction leaves as it is keeps
+ * place-key.test.ts — key collisions (SPEC 8): no value is lost. A key redaction leaves as it is keeps
  * its name (the input keys that hold a placeholder are reserved); of the changed keys the first keeps its key, the
- * next ones get `#2`, `#3` inside their last placeholder; and `restoreRedacted` maps such keys back (L-R).
+ * next ones get `#2`, `#3` inside their last placeholder; and `restoreRedacted` maps such keys back.
  */
 import { describe, expect, test } from 'bun:test';
 import { keysHoldingPlaceholder, newPlacer, placeKey, redactedKeyNames } from './place-key.js';
@@ -101,7 +101,7 @@ async function roundTrip(
     return { redacted, restored: value, conflicts };
 }
 
-describe('restoreRedacted maps placeholder keys back (L-R)', () => {
+describe('restoreRedacted maps placeholder keys back', () => {
     test('token keys written back come back with their values, no conflict', async () => {
         const stored = { [NPM_A]: 1, [NPM_B]: 2, plain: 3 };
         const { redacted, restored, conflicts } = await roundTrip(stored);
@@ -120,7 +120,7 @@ describe('restoreRedacted maps placeholder keys back (L-R)', () => {
         expect(conflicts).toEqual([]);
     });
 
-    test('partly replaced keys (L-Q) come back', () => {
+    test('partly replaced keys come back', () => {
         const stored = { [PW_1]: 'one-secret', [PW_2]: 'two-secret' };
         const redacted = redactJsonValueSync(stored);
         expect(Object.keys(redacted as object)).toEqual([

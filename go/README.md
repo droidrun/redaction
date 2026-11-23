@@ -8,10 +8,7 @@ dependencies.
 
 ## Install
 
-The repository is private. Allow the Go tool to fetch it, then add the module:
-
 ```sh
-export GOPRIVATE=github.com/droidrun/*
 go get github.com/droidrun/redaction/go@v0.3.0   # resolved through the tag go/v0.3.0
 ```
 

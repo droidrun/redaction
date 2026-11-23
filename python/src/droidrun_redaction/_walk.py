@@ -276,7 +276,7 @@ def _reserved_keys(keys: list[str], state: WalkState) -> set[str]:
 
 
 def _place_key(frame: _Frame, out_key: str, changed: bool, value: Any) -> None:
-    """Store `value` in the output object of `frame` (SPEC 8, key collisions, L-P and L-Q).
+    """Store `value` in the output object of `frame` (SPEC 8, key collisions).
 
     A changed key whose name is reserved or taken gets a number inside its last placeholder, `#2`, `#3`, ...
     (skipping reserved and taken names; the last number per name is remembered, so a run of colliding keys

@@ -2,6 +2,11 @@
   "name": "@droidrun/redaction",
   "version": "0.3.0",
   "description": "Secret detection and redaction for text and JSON values, sync and async, with restore",
+  "license": "MIT",
+  "homepage": "https://github.com/droidrun/redaction#readme",
+  "bugs": {
+    "url": "https://github.com/droidrun/redaction/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,7 +25,8 @@
   },
   "files": [
     "dist",
-    "vectors"
+    "vectors",
+    "NOTICE"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

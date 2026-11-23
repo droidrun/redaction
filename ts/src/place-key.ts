@@ -1,5 +1,5 @@
 /**
- * place-key — put an entry into the output object of a walker (SPEC 8, key collisions, L-P and L-Q). Keys of
+ * place-key — put an entry into the output object of a walker (SPEC 8, key collisions). Keys of
  * one object that redaction changes to the same key lose no value: the first keeps the key, each further one
  * gets a number inside its last placeholder, `[REDACTED:<rule>#2]`, `#3`, ... A key that redaction leaves
  * unchanged always keeps its own name: the input keys of the object that hold a placeholder are reserved up
