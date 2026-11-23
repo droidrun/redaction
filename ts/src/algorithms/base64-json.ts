@@ -19,7 +19,7 @@ const BACKSLASH = 0x5c;
 const BYTE_OF = new Map([...BASE64_ALPHABET].map((char, index) => [char, index]));
 
 /** Forgiving base64 decode (WHATWG): up to two trailing `=` only when the length is a multiple of 4. */
-export function decodeBase64(input: string): number[] | undefined {
+function decodeBase64(input: string): number[] | undefined {
     let data = input;
     if (data.length % GROUP === 0) {
         if (data.endsWith(PAD + PAD)) data = data.slice(0, -2);

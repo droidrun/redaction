@@ -21,4 +21,5 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	redactedOpen = theEngine.placeholders.marker
 }

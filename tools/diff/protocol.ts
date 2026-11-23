@@ -7,9 +7,7 @@
  *               opts, input }
  *   response: { id, out, hits: [[ruleId, count], ...], error }
  *
- * The first line a runner writes is `{"capabilities": {"standard": [modes], "full": [modes]}}`: the
- * driver only sends a (tier, mode) a runner lists, so a tier a language does not have yet is skipped,
- * and shows up by itself when the language gets it. `opts` holds `maxChars`, `maxDepth`, `maxNodes`,
+ * Every runner answers every (tier, mode). `opts` holds `maxChars`, `maxDepth`, `maxNodes`,
  * `skipKeys` (all optional). `out` is the redacted text (a JSON string) or value. `hits` counts hits
  * per rule id (never ranges). `error` is `null` or the class name of a failure of the call; it is not
  * compared (the languages report fail-closed events differently), the output is.
@@ -34,7 +32,6 @@ export type Request = {
 };
 
 export type Response = { id: string; out: unknown; hits: Array<[string, number]>; error: string | null };
-export type Capabilities = Record<Tier, Mode[]>;
 
 /** `JSON.stringify` of a request or response on one line: U+2028 and U+2029 are written as escapes, so that
  *  no line splitter that treats them as line ends (readline does) can cut a line. */

@@ -12,7 +12,9 @@ for attack in payload["attacks"]:
     unit = attack["unit"]
     head = attack.get("head", "")
     for size in payload["sizes"]:
-        text = head + (unit * (size // len(unit) + 1))[: max(0, size - len(head))]
+        exact = attack.get("texts", {}).get(str(size))
+        repeated = (unit * (size // len(unit) + 1))[: max(0, size - len(head))]
+        text = exact if exact is not None else head + repeated
         best = float("inf")
         for _ in range(payload["runs"]):
             started = time.perf_counter()

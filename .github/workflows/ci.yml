@@ -242,8 +242,8 @@ jobs:
         working-directory: python
         run: uv sync --locked --python 3.11
       - name: Differential driver tests (key order, lone surrogates, numbers, counts, line splitting)
-        run: bun test tools/diff tools/release-version
-      - name: Same cases through the TypeScript, Python and Go runners (a tier a language lacks is skipped)
+        run: bun test tools/diff
+      - name: Same cases through the TypeScript, Python and Go runners (incl. the secretlint fixtures)
         run: bun tools/diff/driver.ts
 
   versions:

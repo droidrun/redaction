@@ -29,10 +29,10 @@ func TestReservedKeysUnderALimit(t *testing.T) {
 			strictNodes2, `{"[REDACTED:github#2]":"keep","[REDACTED:size-limit]":"[REDACTED:size-limit]"}`),
 		limitCase("strict: a key that reads like the budget placeholder is changed",
 			`{"[REDACTED:size-limit]":1,"`+a+`":2}`, strictChars10,
-			`{"[REDACTED:size-limit#2]":1,"[REDACTED:size-limit#3]":2}`),
+			`{"[REDACTED:size-limit]":1,"[REDACTED:size-limit#2]":2}`),
 		limitCase("strict: the same, the other way round",
 			`{"`+a+`":2,"[REDACTED:size-limit]":1}`, strictChars10,
-			`{"[REDACTED:size-limit#2]":2,"[REDACTED:size-limit#3]":1}`),
+			`{"[REDACTED:size-limit]":2,"[REDACTED:size-limit#2]":1}`),
 		limitCase("strict: the collapsed rest takes a free number", `{"[REDACTED:size-limit]":1,"b":2,"c":3}`,
 			Options{Mode: Strict, MaxNodes: Limit(3)},
 			`{"[REDACTED:size-limit]":1,"b":2,"[REDACTED:size-limit#2]":"[REDACTED:size-limit]"}`),
@@ -40,8 +40,8 @@ func TestReservedKeysUnderALimit(t *testing.T) {
 }
 
 // Under the strict character limit the full-tier key scan replaces a key longer than the limit, so a
-// placeholder-holding input key longer than the limit is not reserved there unless it reads exactly like the
-// size-limit placeholder; the standard-tier scan has no such limit and reserves it. Expected values are the
+// placeholder-holding input key longer than the limit is not reserved there (SPEC 8 rule 1: only keys within
+// the budget can be left as they are), in either tier. Expected values are the
 // output of the reference for both entry points.
 func TestStrictCharacterLimitAndReservedKeys(t *testing.T) {
 	a := "ghp_" + strings.Repeat("a", 36)
@@ -50,9 +50,9 @@ func TestStrictCharacterLimitAndReservedKeys(t *testing.T) {
 	strictChars8 := func(tier Tier) Options { return Options{Tier: tier, Mode: Strict, MaxChars: Limit(8)} }
 	for _, tier := range []Tier{TierStandard, TierFull} {
 		runJSONCases(t, []jsonCase{
-			limitCase("a key that reads like the size-limit placeholder is reserved",
+			limitCase("a key that reads like the size-limit placeholder is beyond the budget and not reserved",
 				`{"`+n+`":1,"[REDACTED:size-limit]":2}`, strictChars8(tier),
-				`{"[REDACTED:size-limit#2]":1,"[REDACTED:size-limit#3]":2}`),
+				`{"[REDACTED:size-limit]":1,"[REDACTED:size-limit#2]":2}`),
 			limitCase("a placeholder key over the limit is replaced like any key over it",
 				`{"`+n+`":1,"[REDACTED:npm#2]":2}`, strictChars8(tier),
 				`{"[REDACTED:size-limit]":1,"[REDACTED:size-limit#2]":2}`),
@@ -60,8 +60,8 @@ func TestStrictCharacterLimitAndReservedKeys(t *testing.T) {
 	}
 	input := `{"` + a + `":1,"` + b + `":2,"[REDACTED:size-limit#2]":3}`
 	runJSONCases(t, []jsonCase{
-		limitCase("standard: the numbered key over the limit is reserved", input, strictChars8(TierStandard),
-			`{"[REDACTED:size-limit]":1,"[REDACTED:size-limit#3]":2,"[REDACTED:size-limit#4]":3}`),
+		limitCase("standard: the numbered key over the limit is not reserved", input, strictChars8(TierStandard),
+			`{"[REDACTED:size-limit]":1,"[REDACTED:size-limit#2]":2,"[REDACTED:size-limit#3]":3}`),
 		limitCase("full: the numbered key over the limit is not reserved", input, strictChars8(TierFull),
 			`{"[REDACTED:size-limit]":1,"[REDACTED:size-limit#2]":2,"[REDACTED:size-limit#3]":3}`),
 	})

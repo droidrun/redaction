@@ -5,7 +5,6 @@ package redaction
 type walker struct {
 	e        *engine
 	mode     scanMode
-	strict   bool
 	nodes    int
 	chars    int
 	maxDepth int
@@ -19,6 +18,8 @@ type frame struct {
 	out     *node
 	verdict Verdict
 	depth   int
+	// budget is what was left of the character budget when the frame opened (strict reservation).
+	budget  int
 	outKey  []uint16
 	index   map[string]int
 	cutDone bool
@@ -95,18 +96,7 @@ func (w *walker) isTaken(f *frame, key []uint16) bool {
 // isReserved: the object has an input key of that name that redaction leaves unchanged.
 func (w *walker) isReserved(f *frame, key []uint16) bool {
 	if f.inputNames == nil {
-		f.inputNames = make(map[string][]uint16, len(f.src.members))
-		for _, entry := range f.src.members {
-			f.inputNames[unitsKey(entry.key)] = entry.key
-		}
-		if first := f.src.firstLeftOut(); first != nil { // known also without room for the others
-			f.inputNames[unitsKey(first)] = first
-		}
-		if f.src.left != nil {
-			for _, left := range f.src.left.keys {
-				f.inputNames[unitsKey(left)] = left
-			}
-		}
+		f.inputNames = w.reservableNames(f)
 		f.unchanged = make(map[string]bool)
 	}
 	name := unitsKey(key)
@@ -122,6 +112,34 @@ func (w *walker) isReserved(f *frame, key []uint16) bool {
 	return unchanged
 }
 
+// reservableNames are the input keys of the object by name that can be reserved (SPEC 8 rule 1). In
+// strict mode only a key that fits the character budget, counted over the keys in contract order, can
+// be left as it is: a later one becomes the size-limit placeholder, so it is not reserved.
+func (w *walker) reservableNames(f *frame) map[string][]uint16 {
+	names := make(map[string][]uint16, len(f.src.members))
+	total := 0
+	fits := func(key []uint16) bool {
+		total += len(key)
+		return !w.mode.strict || total <= f.budget
+	}
+	for _, entry := range f.src.members {
+		if fits(entry.key) {
+			names[unitsKey(entry.key)] = entry.key
+		}
+	}
+	if first := f.src.firstLeftOut(); first != nil && fits(first) { // known also without room for the others
+		names[unitsKey(first)] = first
+	}
+	if f.src.left != nil {
+		for _, left := range f.src.left.keys {
+			if fits(left) {
+				names[unitsKey(left)] = left
+			}
+		}
+	}
+	return names
+}
+
 // wouldChange: key redaction changes this key (it holds a secret, or it is over the limit in strict
 // mode). It scans without recording anything.
 func (w *walker) wouldChange(key []uint16) bool {
@@ -130,9 +148,9 @@ func (w *walker) wouldChange(key []uint16) bool {
 		return false
 	}
 	if len(key) > limits.Sync.MaxKeyChars {
-		return w.strict
+		return w.mode.strict
 	}
-	if w.strict && w.mode.tier == TierFull && len(key) > w.mode.maxChars {
+	if w.mode.strict && w.mode.tier == TierFull && len(key) > w.mode.maxChars {
 		// The strict full-tier scan replaces a text over the character limit by the size-limit
 		// placeholder, a key too: the key is unchanged only when it reads exactly like that.
 		sizeLimit := w.e.placeholders.readUnits(limits.RuleIDs.SizeLimit)
@@ -238,7 +256,7 @@ func (w *walker) scanLeaf(value *node, v Verdict) *node {
 // handles it itself (SPEC 9.4); in the standard tier, strict mode replaces the leaf and compat
 // mode ends the whole walk (recovered by the caller).
 func (w *walker) scanUnits(units []uint16) (out []uint16) {
-	if w.strict && w.mode.tier == TierStandard {
+	if w.mode.strict && w.mode.tier == TierStandard {
 		defer func() {
 			if recover() != nil {
 				w.rec.add(w.e.spec.algorithms.RuleIDs.Failed)
@@ -269,7 +287,7 @@ func (w *walker) enter(value *node, v Verdict, depth int) (*node, *frame) {
 		return w.limit(ruleIDs.DepthLimit), nil
 	}
 	out := &node{kind: value.kind}
-	return nil, &frame{src: value, out: out, verdict: v, depth: depth}
+	return nil, &frame{src: value, out: out, verdict: v, depth: depth, budget: w.chars}
 }
 
 func (w *walker) isSkipKey(key []uint16) bool {
@@ -311,8 +329,8 @@ func (w *walker) cut(top *frame, rawKey []uint16) {
 	marker := w.limit(w.e.spec.algorithms.RuleIDs.SizeLimit)
 	if !top.isArray() {
 		top.outKey = rawKey
-		top.keyChanged = w.strict
-		if w.strict {
+		top.keyChanged = w.mode.strict
+		if w.mode.strict {
 			top.outKey = marker.str
 		}
 	}
@@ -357,7 +375,7 @@ func (w *walker) step(top *frame) *frame {
 }
 
 func (w *walker) outputKey(key []uint16) (out []uint16, changed bool) {
-	if w.strict {
+	if w.mode.strict {
 		return w.strictKey(key)
 	}
 	out = w.redactKey(key)
@@ -367,7 +385,7 @@ func (w *walker) outputKey(key []uint16) (out []uint16, changed bool) {
 // skipValue handles a primitive under a skip key. It is exempt from the key-context replacement
 // only: strict scans a string, compat keeps it as it is.
 func (w *walker) skipValue(top *frame, value *node) *frame {
-	if w.strict && value.kind == kindString {
+	if w.mode.strict && value.kind == kindString {
 		return w.descend(top, value, VerdictNone)
 	}
 	w.nodes--

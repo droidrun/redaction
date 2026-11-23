@@ -194,7 +194,9 @@ func (k *keyNames) isSecretKeyName(key []uint16) bool {
 	return k.matchKey(key, true)
 }
 
-var redactedOpen = decodeUTF8("[REDACTED")
+// redactedOpen is the text every placeholder starts with, the spec's `placeholder.open` without its
+// rule separator (`[REDACTED`); init.go sets it.
+var redactedOpen []uint16
 
 // keyVerdict is what a key makes of the values below it. A key that holds placeholders is
 // classified without them, so a second pass gives the first verdict.

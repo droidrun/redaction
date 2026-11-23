@@ -8,12 +8,7 @@ import "sort"
 // detectFullRules runs every full-tier rule over one text; the hits are ordered by start, then by
 // end (rule order breaks ties).
 func (e *engine) detectFullRules(t *text) []hit {
-	var hits []hit
-	for _, entry := range e.full {
-		for _, found := range entry.scanner.scan(t) {
-			hits = append(hits, hit{id: entry.id, start: found.start, end: found.end})
-		}
-	}
+	hits := collectHits(e.full, t)
 	sort.SliceStable(hits, func(i, j int) bool {
 		if hits[i].start != hits[j].start {
 			return hits[i].start < hits[j].start
@@ -88,15 +83,12 @@ func (e *engine) redactFullCompat(units []uint16, rec *recorder) []uint16 {
 	return e.splice(units, hits)
 }
 
-// redactFullStrict is the full tier in strict mode: a text over `maxChars` is replaced whole before
-// any scan, a failure replaces the whole text (no fallback), and the units beyond the scan cap are
-// replaced by `[REDACTED:size-limit]`, merged with any hit they touch.
-func (e *engine) redactFullStrict(units []uint16, maxChars int, rec *recorder) []uint16 {
+// redactFullStrict is the full tier in strict mode: a failure replaces the whole text (no fallback),
+// and the units beyond the scan cap are replaced by `[REDACTED:size-limit]`, merged with any hit they
+// touch. Every caller (redactText, the walker's leaf and key) has replaced a text over `maxChars`
+// before it gets here.
+func (e *engine) redactFullStrict(units []uint16, rec *recorder) []uint16 {
 	sizeLimit := e.spec.algorithms.RuleIDs.SizeLimit
-	if len(units) > maxChars {
-		rec.add(sizeLimit)
-		return e.placeholders.readUnits(sizeLimit)
-	}
 	t := newText(units)
 	hits, finished := e.tryDetect(func() []hit { return e.detectFull(t) })
 	if !finished {

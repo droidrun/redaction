@@ -208,6 +208,147 @@
       "expected": {
         "[REDACTED:github] [REDACTED:npm#2]": 2
       }
+    },
+    {
+      "name": "node limit: a size-limit marker key does not take a name from an unchanged key",
+      "input": {
+        "[REDACTED:size-limit]": "literal",
+        "b": 1,
+        "c": 2
+      },
+      "mode": "strict",
+      "opts": {
+        "maxNodes": 3
+      },
+      "expected": {
+        "[REDACTED:size-limit]": "literal",
+        "b": 1,
+        "[REDACTED:size-limit#2]": "[REDACTED:size-limit]"
+      }
+    },
+    {
+      "name": "node limit: compat writes the raw key",
+      "input": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "keep",
+        "[REDACTED:npm]": 2
+      },
+      "mode": "compat",
+      "opts": {
+        "maxNodes": 2
+      },
+      "expectedSync": {
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": "keep",
+        "[REDACTED:npm]": "[REDACTED:size-limit]"
+      },
+      "expectedAsync": {
+        "[REDACTED:npm#2]": "keep",
+        "[REDACTED:npm]": 2
+      }
+    },
+    {
+      "name": "full tier, npm keys: a last placeholder that cannot take a number (suffix) keeps the old rule, the later value takes the earlier position",
+      "input": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:foo:bar]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:foo:bar]": 2
+      },
+      "expectedSync": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:foo:bar]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:foo:bar]": 2
+      },
+      "expectedAsync": {
+        "first": 0,
+        "[REDACTED:npm] [REDACTED:foo:bar]": 2
+      }
+    },
+    {
+      "name": "strict: full tier, npm keys: a last placeholder that cannot take a number (suffix) keeps the old rule, the later value takes the earlier position",
+      "input": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:foo:bar]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:foo:bar]": 2
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:foo:bar]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:foo:bar]": 2
+      },
+      "expectedAsync": {
+        "first": 0,
+        "[REDACTED:npm] [REDACTED:foo:bar]": 2
+      }
+    },
+    {
+      "name": "full tier, npm keys: a last placeholder that cannot take a number (bare) keeps the old rule, the later value takes the earlier position",
+      "input": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED]": 2
+      },
+      "expectedSync": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED]": 2
+      },
+      "expectedAsync": {
+        "first": 0,
+        "[REDACTED:npm] [REDACTED]": 2
+      }
+    },
+    {
+      "name": "strict: full tier, npm keys: a last placeholder that cannot take a number (bare) keeps the old rule, the later value takes the earlier position",
+      "input": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED]": 2
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED]": 2
+      },
+      "expectedAsync": {
+        "first": 0,
+        "[REDACTED:npm] [REDACTED]": 2
+      }
+    },
+    {
+      "name": "full tier, npm keys: a last placeholder that cannot take a number (already numbered) keeps the old rule, the later value takes the earlier position",
+      "input": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:npm#2]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:npm#2]": 2
+      },
+      "expectedSync": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:npm#2]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:npm#2]": 2
+      },
+      "expectedAsync": {
+        "first": 0,
+        "[REDACTED:npm] [REDACTED:npm#2]": 2
+      }
+    },
+    {
+      "name": "strict: full tier, npm keys: a last placeholder that cannot take a number (already numbered) keeps the old rule, the later value takes the earlier position",
+      "input": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:npm#2]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:npm#2]": 2
+      },
+      "mode": "strict",
+      "expectedSync": {
+        "first": 0,
+        "npm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA [REDACTED:npm#2]": 1,
+        "npm_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB [REDACTED:npm#2]": 2
+      },
+      "expectedAsync": {
+        "first": 0,
+        "[REDACTED:npm] [REDACTED:npm#2]": 2
+      }
     }
   ]
 }

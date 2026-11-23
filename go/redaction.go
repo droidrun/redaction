@@ -167,7 +167,7 @@ func (e *engine) scanMode(opts Options, lim limits) scanMode {
 func (e *engine) scan(units []uint16, mode scanMode, rec *recorder) []uint16 {
 	switch {
 	case mode.tier == TierFull && mode.strict:
-		return e.redactFullStrict(units, mode.maxChars, rec)
+		return e.redactFullStrict(units, rec)
 	case mode.tier == TierFull:
 		return e.redactFullCompat(units, rec)
 	}
@@ -226,13 +226,14 @@ func exceedsChars(s string, maxChars int) bool {
 }
 
 func (e *engine) redactText(s string, mode scanMode, rec *recorder) string {
-	sizeLimit := e.spec.algorithms.RuleIDs.SizeLimit
-	if exceedsChars(s, mode.maxChars) {
-		rec.add(sizeLimit)
-		return e.placeholders.read(sizeLimit)
+	isTooLong := exceedsChars(s, mode.maxChars)
+	var units []uint16
+	if !isTooLong {
+		units = decodeUTF8(s)
+		isTooLong = len(units) > mode.maxChars
 	}
-	units := decodeUTF8(s)
-	if len(units) > mode.maxChars {
+	if isTooLong {
+		sizeLimit := e.spec.algorithms.RuleIDs.SizeLimit
 		rec.add(sizeLimit)
 		return e.placeholders.read(sizeLimit)
 	}
@@ -330,7 +331,6 @@ func (e *engine) newWalker(opts Options, lim limits, rec *recorder) *walker {
 	w := &walker{
 		e:        e,
 		mode:     e.scanMode(opts, lim),
-		strict:   opts.Mode != Compat,
 		nodes:    lim.maxNodes,
 		chars:    lim.maxChars,
 		maxDepth: lim.maxDepth,

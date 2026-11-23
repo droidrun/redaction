@@ -17,12 +17,8 @@ type letterTable struct {
 var errBadLetters = errors.New("redaction: the letter table of the spec is malformed")
 
 const (
-	hexBase        = 16
-	highSurrogate0 = 0xD800
-	lowSurrogate0  = 0xDC00
-	astralBase     = 0x10000
-	surrogateBits  = 10
-	maxCodePoint   = 0x10FFFF
+	hexBase      = 16
+	maxCodePoint = 0x10FFFF
 )
 
 // parseLetters reads `lo-hi,lo,lo-hi,...` (hex; a single code point has no dash). The ranges must
@@ -75,8 +71,7 @@ func codePointBefore(units []uint16, at int) uint32 {
 	if !isPair {
 		return uint32(unit)
 	}
-	lead := uint32(units[at-2]) - highSurrogate0
-	return astralBase + lead<<surrogateBits + uint32(unit) - lowSurrogate0
+	return uint32(pairPoint(units[at-2], unit))
 }
 
 // passesGuard is the lookbehind `(?<!\p{L})`: true at the start of the text, or when the code point

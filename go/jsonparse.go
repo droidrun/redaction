@@ -186,6 +186,16 @@ func (b *unitBuffer) add(unit uint16) {
 	b.units = nil
 }
 
+func (b *unitBuffer) addRune(r rune) {
+	if r < astralBase {
+		b.add(uint16(r))
+		return
+	}
+	high, low := surrogatePair(r)
+	b.add(high)
+	b.add(low)
+}
+
 // str reads a string after its opening quote. It keeps at most `keep` units (a negative keep
 // keeps none) and returns the number of units the string has.
 func (p *parser) str(keep int) ([]uint16, int, error) {
@@ -211,13 +221,7 @@ func (p *parser) str(keep int) ([]uint16, int, error) {
 		default:
 			r, size := utf8.DecodeRune(p.data[p.at:])
 			p.at += size
-			if r < 0x10000 {
-				buffer.add(uint16(r))
-				continue
-			}
-			r -= 0x10000
-			buffer.add(uint16(0xD800 + (r >> 10)))
-			buffer.add(uint16(0xDC00 + (r & 0x3FF)))
+			buffer.addRune(r)
 		}
 	}
 	return nil, 0, ErrInvalidJSON
@@ -330,7 +334,7 @@ func (p *parser) skipScalar() error {
 	switch {
 	case c == '"':
 		p.at++
-		_, _, err := p.str(-1)
+		_, _, err := p.str(skipped)
 		return err
 	case c == 't':
 		return p.literal("true")
@@ -382,22 +386,6 @@ func closerFor(isObject bool) byte {
 	return ']'
 }
 
-// skipKey reads `"key":` without keeping the key.
-func (p *parser) skipKey() error {
-	p.skipSpace()
-	if !p.take('"') {
-		return ErrInvalidJSON
-	}
-	if _, _, err := p.str(-1); err != nil {
-		return err
-	}
-	p.skipSpace()
-	if !p.take(':') {
-		return ErrInvalidJSON
-	}
-	return nil
-}
-
 // skipOpen reads a value; for a container with entries it reads the first key and reports that the
 // container is now open.
 func (p *parser) skipOpen(open *bitStack) error {
@@ -417,7 +405,8 @@ func (p *parser) skipOpen(open *bitStack) error {
 	}
 	open.push(isObject)
 	if isObject {
-		return p.skipKey()
+		_, _, err := p.key(skipped)
+		return err
 	}
 	return nil
 }
@@ -447,7 +436,7 @@ func (p *parser) skipValue() error {
 				return ErrInvalidJSON
 			}
 			if isObject {
-				if err := p.skipKey(); err != nil {
+				if _, _, err := p.key(skipped); err != nil {
 					return err
 				}
 			}
@@ -550,21 +539,33 @@ func (p *parser) value(depth int) (*node, *openContainer, error) {
 }
 
 func (p *parser) memberKey(open *openContainer) error {
-	p.skipSpace()
-	if !p.take('"') {
-		return ErrInvalidJSON
-	}
-	key, count, err := p.str(unbounded)
+	key, count, err := p.key(unbounded)
 	if err != nil {
 		return err
-	}
-	p.skipSpace()
-	if !p.take(':') {
-		return ErrInvalidJSON
 	}
 	p.charge(count)
 	open.key = key
 	return nil
+}
+
+// skipped is the `keep` of a key or string that is only checked: nothing of it is kept.
+const skipped = -1
+
+// key reads `"key":`. It keeps at most `keep` units of the key and returns how many it has.
+func (p *parser) key(keep int) ([]uint16, int, error) {
+	p.skipSpace()
+	if !p.take('"') {
+		return nil, 0, ErrInvalidJSON
+	}
+	key, count, err := p.str(keep)
+	if err != nil {
+		return nil, 0, err
+	}
+	p.skipSpace()
+	if !p.take(':') {
+		return nil, 0, ErrInvalidJSON
+	}
+	return key, count, nil
 }
 
 // closeOrContinue attaches `value` to the open container on top. It returns done=true with the

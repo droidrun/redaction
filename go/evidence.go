@@ -207,7 +207,7 @@ func shannonEntropy(units []uint16) float64 {
 	for i := 0; i < length; i++ {
 		symbol := uint32(units[i])
 		if isHighSurrogate(units[i]) && i+1 < length && isLowSurrogate(units[i+1]) {
-			symbol = 0x10000 + (uint32(units[i])-0xD800)<<10 + (uint32(units[i+1]) - 0xDC00)
+			symbol = uint32(pairPoint(units[i], units[i+1]))
 			i++
 		}
 		at, seen := index[symbol]

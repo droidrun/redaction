@@ -13,6 +13,8 @@ type placeholders struct {
 	whole  *anchored
 	all    *regexp.Regexp
 	open   string
+	// marker is open without its rule separator: the text a key holds when it holds a placeholder.
+	marker []uint16
 	close  string
 	// numberMark is the text before the number of a numbered key (`#` in `[REDACTED:npm#2]`).
 	numberMark string
@@ -41,6 +43,7 @@ func newPlaceholders(spec *loadedSpec, grammar string) (*placeholders, error) {
 		whole:      whole,
 		all:        all,
 		open:       format.Open,
+		marker:     decodeUTF8(strings.TrimSuffix(format.Open, ":")),
 		close:      format.Close,
 		numberMark: format.NumberMark,
 		strip:      format.StripPrefixes,

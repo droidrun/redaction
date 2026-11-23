@@ -53,25 +53,19 @@ func (b *builder) pattern(template string) string {
 
 func (b *builder) class(template string) *unitSet {
 	set, err := parseClass(b.pattern(template))
-	if b.err == nil {
-		b.fail(err)
-	}
+	b.fail(err)
 	return set
 }
 
 func (b *builder) searcher(template string) *searcher {
 	found, err := newSearcher(b.pattern(template))
-	if b.err == nil {
-		b.fail(err)
-	}
+	b.fail(err)
 	return found
 }
 
 func (b *builder) anchored(template string) *anchored {
 	found, err := newAnchored(b.pattern(template), "")
-	if b.err == nil {
-		b.fail(err)
-	}
+	b.fail(err)
 	return found
 }
 
@@ -231,13 +225,18 @@ func (e *engine) buildRules(
 
 // detect is the standard tier on a whole text: every rule in pipeline order, hits merged.
 func (e *engine) detect(t *text) []hit {
+	return mergeHits(collectHits(e.pipeline, t))
+}
+
+// collectHits runs every rule of the list over the text, in order, and tags each span with its rule.
+func collectHits(entries []pipelineEntry, t *text) []hit {
 	var hits []hit
-	for _, entry := range e.pipeline {
+	for _, entry := range entries {
 		for _, found := range entry.scanner.scan(t) {
 			hits = append(hits, hit{id: entry.id, start: found.start, end: found.end})
 		}
 	}
-	return mergeHits(hits)
+	return hits
 }
 
 // mergeHits sorts by start (stable: equal starts keep pipeline order) and folds overlapping or

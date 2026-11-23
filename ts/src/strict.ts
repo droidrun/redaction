@@ -11,7 +11,7 @@
  * result, so one traversal serves the sync and the async entry points. Limits and
  * placeholder ids are the spec's (`strict`, `ruleIds`).
  */
-import { appendHits, applyHits, type Hit } from './hits.js';
+import { appendHits, limitPlaceholder, type Hit } from './hits.js';
 import {
     KEY_CONTEXT_RULE_ID,
     keyVerdict,
@@ -65,11 +65,6 @@ type State = {
     ancestors: Set<object>;
 };
 
-function placeholderFor(ruleId: string, state: State): string {
-    state.hits.push({ ruleId, range: [0, 0] });
-    return buildReadPlaceholder(ruleId);
-}
-
 /** A string, number, boolean, null, bigint or undefined: a leaf the walker can place as it is. */
 function isScalar(value: unknown): boolean {
     return isPrimitive(value) && typeof value !== 'symbol';
@@ -96,7 +91,7 @@ function* scanLeaf(value: string, verdict: KeyVerdict, state: State): Generator<
     }
     if (value.length > state.chars) {
         state.chars = 0;
-        return placeholderFor(ruleIds.sizeLimit, state);
+        return limitPlaceholder(ruleIds.sizeLimit, state.hits);
     }
     state.chars -= value.length;
     const scanned = yield value;
@@ -129,7 +124,7 @@ function* enter(
     depth: number,
     state: State,
 ): Generator<string, Entered, LeafResult> {
-    if (state.nodes <= 0) return { value: placeholderFor(ruleIds.sizeLimit, state) };
+    if (state.nodes <= 0) return { value: limitPlaceholder(ruleIds.sizeLimit, state.hits) };
     state.nodes -= 1;
     if (typeof value === 'string') return { value: yield* scanLeaf(value, verdict, state) };
     if (isScalar(value)) {
@@ -139,10 +134,10 @@ function* enter(
         return { value: keyed };
     }
     if (!isWalkable(value)) {
-        return { value: placeholderFor(ruleIds.failed, state) };
+        return { value: limitPlaceholder(ruleIds.failed, state.hits) };
     }
-    if (depth >= state.limits.maxDepth) return { value: placeholderFor(ruleIds.depthLimit, state) };
-    if (state.ancestors.has(value)) return { value: placeholderFor(ruleIds.circular, state) };
+    if (depth >= state.limits.maxDepth) return { value: limitPlaceholder(ruleIds.depthLimit, state.hits) };
+    if (state.ancestors.has(value)) return { value: limitPlaceholder(ruleIds.circular, state.hits) };
     const frame = openFrame(value, verdict, depth, state);
     if (frame.keys !== null) frame.placer = newPlacer(yield* reservedKeys(frame.keys, state.chars));
     return { frame };
@@ -173,7 +168,7 @@ function* nextKey(
 ): Generator<string, { outKey: string; changed: boolean }, LeafResult> {
     if (isOverlongKey(key) || key.length > state.chars) {
         state.chars = 0;
-        return { outKey: placeholderFor(ruleIds.sizeLimit, state), changed: true };
+        return { outKey: limitPlaceholder(ruleIds.sizeLimit, state.hits), changed: true };
     }
     state.chars -= key.length;
     if (!isScannableKey(key)) return { outKey: key, changed: false };
@@ -194,7 +189,7 @@ function place(frame: Frame, value: unknown): void {
 function collapse(frame: Frame, state: State): void {
     frame.outKey = buildReadPlaceholder(ruleIds.sizeLimit);
     frame.changed = true;
-    place(frame, placeholderFor(ruleIds.sizeLimit, state));
+    place(frame, limitPlaceholder(ruleIds.sizeLimit, state.hits));
     frame.index = frame.items.length;
 }
 
@@ -285,7 +280,3 @@ export async function runStrictAsync(
     return step.value;
 }
 
-/** Apply hits to a string the way the strict leaf scanner does. */
-export function spliceHits(text: string, hits: Hit[]): LeafResult {
-    return { text: applyHits(text, hits), hits };
-}

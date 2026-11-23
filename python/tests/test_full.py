@@ -408,132 +408,15 @@ def test_a_key_that_is_a_one_password_or_slack_token_is_replaced():
 
 DB_URL = "postgres://user:Zq9abcDEF123ghi_x@db.example.test:5432/app"
 OTHER_DB_URL = "postgres://other:Qw8rtyUIO456jkl_z@db2.example.test:5432/app"
-THIRD_DB_URL = "mongodb://third:Mn7opqRST890uvw_y@db3.example.test/app"
 
 
 @pytest.mark.parametrize("mode", ["strict", "compat"])
-def test_two_database_url_keys_keep_both_values(mode):
+def test_two_database_url_keys_count_both_hits(mode):
     out = redact_json({DB_URL: "first", OTHER_DB_URL: "second"}, tier="full", mode=mode)
-    assert out.value == {
-        "[REDACTED:database-connection-string]": "first",
-        "[REDACTED:database-connection-string#2]": "second",
-    }
     assert out.hits == (("database-connection-string", 2),)
 
 
-@pytest.mark.parametrize("mode", ["strict", "compat"])
-def test_colliding_keys_are_numbered_in_iteration_order(mode):
-    value = {DB_URL: 1, "x": 2, OTHER_DB_URL: 3, THIRD_DB_URL: 4, NPM: 5, "npm_" + "B" * 36: 6}
-    assert list(redact_json(value, tier="full", mode=mode).value.items()) == [
-        ("[REDACTED:database-connection-string]", 1),
-        ("x", 2),
-        ("[REDACTED:database-connection-string#2]", 3),
-        ("[REDACTED:database-connection-string#3]", 4),
-        ("[REDACTED:npm]", 5),
-        ("[REDACTED:npm#2]", 6),
-    ]
-
-
-def test_the_standard_tier_keeps_both_values_of_two_standard_secret_keys():
-    value = {f"password={SECRET}": 1, "password=Qw8rtyUIO456jkl_z": 2, "password=Mn7opqRST890uvw_y": 3}
-    assert list(redact_json(value, mode="compat").value) == [
-        "password=[REDACTED:generic-keyword]",
-        "password=[REDACTED:generic-keyword#2]",
-        "password=[REDACTED:generic-keyword#3]",
-    ]
-
-
-def test_a_number_under_a_secret_key_and_a_key_context_collision_keep_every_value():
-    value = {"a": {DB_URL: {"pin": 1}, OTHER_DB_URL: {"pin": 2}}}
-    out = redact_json(value, tier="full").value
-    assert out == {
-        "a": {
-            "[REDACTED:database-connection-string]": {"pin": "[REDACTED:key-context]"},
-            "[REDACTED:database-connection-string#2]": {"pin": "[REDACTED:key-context]"},
-        }
-    }
-
-
-@pytest.mark.parametrize("mode", ["strict", "compat"])
-def test_a_key_redaction_leaves_unchanged_keeps_its_name_whatever_the_order(mode):
-    after = redact_json({NPM: "token", "[REDACTED:npm]": "literal"}, tier="full", mode=mode).value
-    before = redact_json({"[REDACTED:npm]": "literal", NPM: "token"}, tier="full", mode=mode).value
-    assert list(after.items()) == [("[REDACTED:npm#2]", "token"), ("[REDACTED:npm]", "literal")]
-    assert list(before.items()) == [("[REDACTED:npm]", "literal"), ("[REDACTED:npm#2]", "token")]
-
-
-@pytest.mark.parametrize("mode", ["strict", "compat"])
-def test_numbering_skips_the_names_of_unchanged_keys(mode):
-    other = "npm_" + "B" * 36
-    third = "npm_" + "C" * 36
-    value = {NPM: 1, other: 2, "[REDACTED:npm#2]": 3, third: 4, "[REDACTED:npm]": 5}
-    assert list(redact_json(value, tier="full", mode=mode).value.items()) == [
-        ("[REDACTED:npm#3]", 1),
-        ("[REDACTED:npm#4]", 2),
-        ("[REDACTED:npm#2]", 3),
-        ("[REDACTED:npm#5]", 4),
-        ("[REDACTED:npm]", 5),
-    ]
-
-
-@pytest.mark.parametrize("mode", ["strict", "compat"])
-def test_a_key_that_contains_a_placeholder_gets_the_number_in_its_last_placeholder(mode):
-    other = "npm_" + "B" * 36
-    value = {f"label {NPM}": 1, f"label {other}": 2, f"{NPM} then {other}": 3, f"{other} then {NPM}": 4}
-    assert list(redact_json(value, tier="full", mode=mode).value.items()) == [
-        ("label [REDACTED:npm]", 1),
-        ("label [REDACTED:npm#2]", 2),
-        ("[REDACTED:npm] then [REDACTED:npm]", 3),
-        ("[REDACTED:npm] then [REDACTED:npm#2]", 4),
-    ]
-
-
-def test_a_key_that_contains_a_placeholder_and_is_unchanged_is_reserved():
-    value = {f"label {NPM}": 1, "label [REDACTED:npm]": 2}
-    assert list(redact_json(value, tier="full").value.items()) == [
-        ("label [REDACTED:npm#2]", 1),
-        ("label [REDACTED:npm]", 2),
-    ]
-
-
-def test_a_strict_node_limit_marker_key_does_not_take_a_name_from_an_unchanged_key():
-    value = {"[REDACTED:size-limit]": "literal", "b": 1, "c": 2}
-    out = redact_json(value, max_nodes=3).value
-    assert list(out.items()) == [
-        ("[REDACTED:size-limit]", "literal"),
-        ("b", 1),
-        ("[REDACTED:size-limit#2]", "[REDACTED:size-limit]"),
-    ]
-
-
 OTHER_NPM = "npm_" + "B" * 36
-
-
-@pytest.mark.parametrize(
-    ("suffix", "kept"),
-    [
-        (" [REDACTED:foo:bar]", "[REDACTED:npm] [REDACTED:foo:bar]"),
-        (" [REDACTED]", "[REDACTED:npm] [REDACTED]"),
-        (" [REDACTED:npm#2]", "[REDACTED:npm] [REDACTED:npm#2]"),
-    ],
-    ids=["suffix", "bare", "already numbered"],
-)
-@pytest.mark.parametrize("mode", ["strict", "compat"])
-def test_a_last_placeholder_that_cannot_take_a_number_keeps_the_old_rule(mode, suffix, kept):
-    # SPEC 8 rule 4: no number is written; the later value replaces the earlier one at the earlier position.
-    value = {"first": 0, NPM + suffix: 1, OTHER_NPM + suffix: 2}
-    out = redact_json(value, tier="full", mode=mode).value
-    assert list(out.items()) == [("first", 0), (kept, 2)]
-
-
-@pytest.mark.parametrize("mode", ["strict", "compat"])
-def test_an_unnumbered_placeholder_before_a_suffixed_one_is_numbered_at_the_last_placeholder(mode):
-    value = {NPM + " [REDACTED:foo:bar] " + NPM: 1, OTHER_NPM + " [REDACTED:foo:bar] " + OTHER_NPM: 2}
-    out = redact_json(value, tier="full", mode=mode).value
-    assert list(out.items()) == [
-        ("[REDACTED:npm] [REDACTED:foo:bar] [REDACTED:npm]", 1),
-        ("[REDACTED:npm] [REDACTED:foo:bar] [REDACTED:npm#2]", 2),
-    ]
 
 
 def test_strict_a_reserved_key_that_the_budget_replaces_keeps_its_name_reserved():
@@ -549,28 +432,7 @@ def test_strict_a_reserved_key_that_the_budget_replaces_keeps_its_name_reserved(
     ]
 
 
-def test_strict_a_key_inside_the_budget_is_reserved_and_the_size_limit_keys_are_numbered_round_it():
-    value = {"a": "x" * 30, "[REDACTED:npm]": 1, NPM: 2}
-    assert list(redact_json(value, tier="full", max_chars=40).value.items()) == [
-        ("a", "x" * 30),
-        ("[REDACTED:size-limit]", 1),
-        ("[REDACTED:size-limit#2]", 2),
-    ]
-    value = {"[REDACTED:npm]": 1, NPM: 2, OTHER_NPM: 3}
-    assert list(redact_json(value, tier="full", max_chars=20).value.items()) == [
-        ("[REDACTED:npm]", 1),
-        ("[REDACTED:size-limit]", 2),
-        ("[REDACTED:size-limit#2]", 3),
-    ]
-
-
 def test_strict_a_size_limit_key_equal_to_an_input_key_is_still_a_changed_key():
-    value = {"[REDACTED:size-limit]": 1, NPM: 2, OTHER_NPM: 3}
-    assert list(redact_json(value, tier="full", max_chars=30).value.items()) == [
-        ("[REDACTED:size-limit]", 1),
-        ("[REDACTED:size-limit#2]", 2),
-        ("[REDACTED:size-limit#3]", 3),
-    ]
     value = {"[REDACTED:npm]" + "x" * 5000: 1, NPM: 2, "[REDACTED:size-limit]": 3}
     assert list(redact_json(value, tier="full").value.items()) == [
         ("[REDACTED:size-limit#2]", 1),
@@ -583,19 +445,6 @@ def test_compat_a_key_over_the_limit_that_holds_a_placeholder_is_left_and_reserv
     long_key = "[REDACTED:npm]" + "x" * 5000
     out = redact_json({long_key: 1, NPM: 2}, tier="full", mode="compat").value
     assert list(out.items()) == [(long_key, 1), ("[REDACTED:npm]", 2)]
-
-
-def test_a_node_limit_writes_the_raw_key_in_compat_and_numbers_the_marker_in_strict():
-    value = {NPM: "keep", "[REDACTED:npm]": 2}
-    assert list(redact_json(value, max_nodes=2, mode="compat").value.items()) == [
-        (NPM, "keep"),
-        ("[REDACTED:npm]", "[REDACTED:size-limit]"),
-    ]
-    value = {NPM: "keep", "[REDACTED:npm]": 2, "c": 3}
-    assert list(redact_json(value, tier="full", max_nodes=2).value.items()) == [
-        ("[REDACTED:npm#2]", "keep"),
-        ("[REDACTED:size-limit]", "[REDACTED:size-limit]"),
-    ]
 
 
 def test_a_numbered_key_is_a_placeholder_and_the_output_is_a_fixed_point():

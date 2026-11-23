@@ -2,7 +2,7 @@
 /**
  * Cross-language differential test: runs the same seeded cases through the TypeScript, Python and Go runners
  * (protocol: protocol.ts) and requires byte-identical output and equal rule-id counts wherever two or more
- * runners implement the (tier, mode). A tier a language does not have yet is skipped by its capability line.
+ * runners answer, for both tiers and both modes.
  *
  *   bun tools/diff/driver.ts [--only ts,python,go] [--limit N] [--show N]
  *
@@ -14,13 +14,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { allCases, type DiffCase } from './cases.ts';
-import { EXPECTED, MIN_CASES } from './expected.ts';
+import { MIN_CASES } from './expected.ts';
 import {
     canonicalJson,
     countKey,
     lines,
     toLine,
-    type Capabilities,
     type Mode,
     type RequestOpts,
     type Request,
@@ -67,41 +66,20 @@ function runnerSpecs(only: string[], work: string): RunnerSpec[] {
 
 class Runner {
     readonly lines = new Map<string, string>();
-    capabilities: Capabilities = { standard: [], full: [] };
     private readonly child: ChildProcessByStdio<Writable, Readable, null>;
-    private readonly ready: Promise<void>;
     private readonly closed: Promise<number | null>;
 
     constructor(readonly spec: RunnerSpec) {
         const child = spawn(spec.command, spec.args, { cwd: spec.cwd, stdio: ['pipe', 'pipe', 'inherit'] });
         this.child = child;
-        let first = true;
-        let markReady: () => void = () => {};
-        this.ready = new Promise((resolveReady) => (markReady = resolveReady));
         void (async () => {
             for await (const line of lines(child.stdout)) {
-                if (first) {
-                    first = false;
-                    this.capabilities = (JSON.parse(line) as { capabilities: Capabilities }).capabilities;
-                    markReady();
-                    continue;
-                }
                 const id = (JSON.parse(line.slice(0, line.indexOf(',"out"')) + '}') as { id: string }).id;
                 this.lines.set(id, line);
             }
         })();
         this.closed = new Promise((resolveClosed) => child.on('close', resolveClosed));
         child.stdin.on('error', () => {});
-    }
-
-    async capabilitiesLine(): Promise<Capabilities> {
-        await Promise.race([
-            this.ready,
-            this.closed.then(() => {
-                throw new Error(`runner ${this.spec.name} stopped before its capability line`);
-            }),
-        ]);
-        return this.capabilities;
     }
 
     async send(requests: Request[]): Promise<void> {
@@ -170,19 +148,18 @@ function compare(runners: Runner[], cases: DiffCase[], show: number): { rows: Ro
     const byId = new Map(cases.map((item) => [item.id, item]));
     for (const tier of TIERS) {
         for (const mode of MODES) {
-            const active = runners.filter((runner) => runner.capabilities[tier]?.includes(mode));
             const requests = requestsFor(cases, tier, mode);
             const row: Row = {
                 tier,
                 mode,
-                runners: active.map((runner) => runner.spec.name),
+                runners: runners.map((runner) => runner.spec.name),
                 sent: requests.length,
                 compared: 0,
                 differing: 0,
             };
             rows.push(row);
             for (const request of requests) {
-                const answers = active.map((runner) => ({
+                const answers = runners.map((runner) => ({
                     name: runner.spec.name,
                     line: runner.lines.get(request.id),
                 }));
@@ -206,7 +183,7 @@ function compare(runners: Runner[], cases: DiffCase[], show: number): { rows: Ro
                     }
                     continue;
                 }
-                if (active.length < 2) continue;
+                if (runners.length < 2) continue;
                 row.compared += 1;
                 const [reference, ...others] = parsed as [
                     Parsed & { name: string },
@@ -231,31 +208,32 @@ function compare(runners: Runner[], cases: DiffCase[], show: number): { rows: Ro
     return { rows, failures };
 }
 
-/** Problems with what the runners reported or what a row covered, against the table in expected.ts. */
-function coverageProblems(rows: Row[], runners: Runner[], enforceMinimum: boolean): string[] {
-    const names = runners.map((runner) => runner.spec.name);
+/** A row that compared (or, for one runner, ran) fewer than MIN_CASES cases is a problem. */
+function coverageProblems(rows: Row[], runners: Runner[]): string[] {
     const problems: string[] = [];
     for (const row of rows) {
-        const expected = EXPECTED[row.tier][row.mode].filter((name) => names.includes(name));
-        const missing = expected.filter((name) => !row.runners.includes(name));
-        if (missing.length > 0) {
-            problems.push(`${row.tier}/${row.mode}: ${missing.join(', ')} no longer report this capability`);
-        }
-        const extra = row.runners.filter((name) => !EXPECTED[row.tier][row.mode].includes(name));
-        if (extra.length > 0) {
-            console.log(
-                `note: ${extra.join(', ')} report ${row.tier}/${row.mode}; add them to tools/diff/expected.ts`,
-            );
-        }
-        if (!enforceMinimum || expected.length === 0) continue;
-        const covered = expected.length >= 2 ? row.compared : row.sent;
+        const covered = runners.length >= 2 ? row.compared : row.sent;
         if (covered < MIN_CASES) {
-            problems.push(
-                `${row.tier}/${row.mode}: ${covered} cases ${expected.length >= 2 ? 'compared' : 'run'}, fewer than ${MIN_CASES}`,
-            );
+            const what = runners.length >= 2 ? 'compared' : 'run';
+            problems.push(`${row.tier}/${row.mode}: ${covered} cases ${what}, fewer than ${MIN_CASES}`);
         }
     }
     return problems;
+}
+
+function isFixture(item: DiffCase): boolean {
+    return item.family === 'secretlint-fixture';
+}
+
+/** The secretlint fixtures must be in the run: a nonzero count with positive and negative cases. */
+function fixtureProblems(cases: DiffCase[]): string[] {
+    const fixtures = cases.filter(isFixture);
+    const positive = fixtures.filter((item) => item.id.includes('/ng.'));
+    const negative = fixtures.filter((item) => item.id.includes('/ok.'));
+    if (positive.length === 0 || negative.length === 0) {
+        return [`secretlint fixtures: ${positive.length} positive and ${negative.length} negative cases`];
+    }
+    return [];
 }
 
 function printTable(rows: Row[], runners: Runner[]): void {
@@ -295,13 +273,10 @@ async function main(): Promise<void> {
         const cases = limit > 0 ? all.slice(0, limit) : all;
         if (limit === 0 && cases.length < MIN_CASES) throw new Error(`only ${cases.length} cases`);
         const runners = runnerSpecs(only, work).map((spec) => new Runner(spec));
-        for (const runner of runners) await runner.capabilitiesLine();
         await Promise.all(
             runners.map(async (runner) => {
                 const requests = TIERS.flatMap((tier) =>
-                    MODES.filter((mode) => runner.capabilities[tier]?.includes(mode)).flatMap((mode) =>
-                        requestsFor(cases, tier, mode),
-                    ),
+                    MODES.flatMap((mode) => requestsFor(cases, tier, mode)),
                 );
                 await runner.send(requests);
                 await runner.finish();
@@ -309,11 +284,10 @@ async function main(): Promise<void> {
         );
         const { rows, failures } = compare(runners, cases, show);
         console.log(`differential: ${cases.length} cases, runners ${only.join(', ')}`);
-        for (const runner of runners)
-            console.log(`  ${runner.spec.name}: ${JSON.stringify(runner.capabilities)}`);
+        console.log(`secretlint fixture cases: ${cases.filter(isFixture).length}`);
         printTable(rows, runners);
         const differing = rows.reduce((sum, row) => sum + row.differing, 0);
-        const problems = coverageProblems(rows, runners, limit === 0);
+        const problems = limit === 0 ? [...coverageProblems(rows, runners), ...fixtureProblems(cases)] : [];
         if (problems.length > 0) {
             console.error(`\ncoverage problems:\n  ${problems.join('\n  ')}`);
             process.exit(1);

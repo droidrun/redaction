@@ -4,7 +4,7 @@
  */
 import { expect, test } from 'bun:test';
 import { mulberry32, pick } from '../../tools/corpus/rng.ts';
-import { decodeBase64, isBase64Json, isJsonContainer } from './algorithms/base64-json.js';
+import { isBase64Json, isJsonContainer } from './algorithms/base64-json.js';
 
 const BASE64_UNITS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
 const JSON_UNITS = [
@@ -70,15 +70,39 @@ function runtimeIsContainer(bytes: number[]): boolean {
     }
 }
 
-test('the decoder gives what atob gives, byte for byte, and fails where atob throws', () => {
+function runtimeIsBase64Json(input: string): boolean {
+    const bytes = runtimeBytes(input);
+    return bytes !== undefined && runtimeIsContainer(bytes);
+}
+
+/** A base64 text of a random JSON-like text, then cut, padded or with one unit changed. */
+function randomBase64(rng: () => number): string {
+    const head = pick(rng, ['', '{', '[', '{"a":', '[1,']);
+    const tail = pick(rng, ['', '}', ']']);
+    const encoded = btoa(head + randomFrom(rng, JSON_UNITS, 12) + tail);
+    const at = Math.floor(rng() * encoded.length);
+    const unit = pick(rng, [...BASE64_UNITS]);
+    return pick(rng, [
+        encoded,
+        encoded.replace(/=+$/, ''),
+        `${encoded}=`,
+        encoded.slice(0, at),
+        encoded.slice(0, at) + unit + encoded.slice(at + 1),
+    ]);
+}
+
+test('the base64 JSON check says what atob and JSON.parse say, and fails where atob throws', () => {
     const rng = mulberry32(1);
     const differing: string[] = [];
-    for (let i = 0; i < 20000; i++) {
-        const input = randomFrom(rng, [...BASE64_UNITS], 14);
-        if (JSON.stringify(decodeBase64(input)) !== JSON.stringify(runtimeBytes(input)))
-            differing.push(input);
+    let accepted = 0;
+    for (let i = 0; i < 40000; i++) {
+        const input = i % 2 === 0 ? randomFrom(rng, [...BASE64_UNITS], 14) : randomBase64(rng);
+        const mine = isBase64Json(input);
+        if (mine) accepted += 1;
+        if (mine !== runtimeIsBase64Json(input)) differing.push(input);
     }
     expect(differing.slice(0, 10)).toEqual([]);
+    expect(accepted).toBeGreaterThan(100);
 });
 
 test('the JSON check says what JSON.parse says for an object or an array', () => {
