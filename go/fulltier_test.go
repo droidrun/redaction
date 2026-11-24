@@ -407,7 +407,9 @@ func brokenEngine(standardFails bool) *engine {
 	broken := *theEngine
 	broken.full = []pipelineEntry{{id: "broken", scanner: panicScanner{}}}
 	if standardFails {
-		broken.pipeline = []pipelineEntry{{id: "broken", scanner: panicScanner{}}}
+		failing := []pipelineEntry{{id: "broken", scanner: panicScanner{}}}
+		broken.pipeline, broken.strict = failing, failing
+		broken.compatPII, broken.strictPII = failing, failing
 	}
 	return &broken
 }
@@ -451,7 +453,9 @@ func TestFullTierFailureHandling(t *testing.T) {
 		opts := Options{Tier: TierFull, Mode: Strict}
 		lim := e.limits(opts)
 		out := string(marshal(e.walkSafely(root, opts, lim, rec)))
-		if out != `{"a":"[REDACTED:error]","n":1}` || rec.result().Err != "error" {
+		// Strict scans a key of any length (SPEC 9.3), so the keys of the failing scan are replaced too.
+		const want = `{"[REDACTED:error]":"[REDACTED:error]","[REDACTED:error#2]":1}`
+		if out != want || rec.result().Err != "error" {
 			t.Fatalf("got %s with %+v", out, rec.result())
 		}
 	})

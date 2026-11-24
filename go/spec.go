@@ -37,6 +37,8 @@ type rulesFile struct {
 		Placeholder string `json:"placeholder"`
 	} `json:"patterns"`
 	Pipeline []json.RawMessage `json:"pipeline"`
+	Strict   []strictEdit      `json:"strict"`
+	PII      []json.RawMessage `json:"pii"`
 	Full     []json.RawMessage `json:"full"`
 }
 
@@ -189,7 +191,7 @@ func decodeSpec(files specFileSet) (*loadedSpec, error) {
 			return nil, errSpecRejected
 		}
 	}
-	hasRules := len(spec.rules.Pipeline) > 0 && len(spec.rules.Full) > 0
+	hasRules := len(spec.rules.Pipeline) > 0 && len(spec.rules.PII) > 0 && len(spec.rules.Full) > 0
 	if !hasRules || len(spec.keys.SecretWords) == 0 || spec.algorithms.Letters.Ranges == "" {
 		return nil, errSpecRejected
 	}

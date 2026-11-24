@@ -10,15 +10,48 @@ type filters struct {
 	requireLiteral  []uint16
 	dropPlaceholder bool
 	ignoreEquals    [][]uint16
+	ignoreSuffixes  [][]uint16
+	ignoreWords     map[string]bool
+	wordGap         *unitSet
+	ignoreBefore    *unitSet
+	ignoreAfter     *unitSet
+	check           func(value []uint16) bool
 	placeholders    *placeholders
 }
 
 // filterSpec holds the filter fields of a rule.
 type filterSpec struct {
-	RequireClass    string   `json:"requireClass"`
-	RequireLiteral  string   `json:"requireLiteral"`
-	DropPlaceholder bool     `json:"dropPlaceholder"`
-	IgnoreEquals    []string `json:"ignoreEquals"`
+	RequireClass      string   `json:"requireClass"`
+	RequireLiteral    string   `json:"requireLiteral"`
+	DropPlaceholder   bool     `json:"dropPlaceholder"`
+	IgnoreEquals      []string `json:"ignoreEquals"`
+	IgnoreSuffixes    []string `json:"ignoreSuffixes"`
+	IgnoreAfterWords  []string `json:"ignoreAfterWords"`
+	AfterGapClass     string   `json:"afterGapClass"`
+	IgnoreBeforeClass string   `json:"ignoreBeforeClass"`
+	IgnoreAfterClass  string   `json:"ignoreAfterClass"`
+	Check             string   `json:"check"`
+	MinColons         int      `json:"minColons"`
+}
+
+// optionalClass is the class of a field that may be absent: nil when it is.
+func (b *builder) optionalClass(template string) *unitSet {
+	if template == "" {
+		return nil
+	}
+	return b.class(template)
+}
+
+// namedCheck is the check of a `regex` rule (SPEC 5.8); an unknown name stops the package at load time.
+func (b *builder) namedCheck(spec filterSpec) func(value []uint16) bool {
+	switch spec.Check {
+	case "":
+		return nil
+	case "ipv6":
+		return func(value []uint16) bool { return isIpv6(unitsToString(value), spec.MinColons) }
+	}
+	b.fail(errSpecRejected)
+	return nil
 }
 
 func (e *engine) newFilters(b *builder, spec filterSpec) filters {
@@ -26,15 +59,48 @@ func (e *engine) newFilters(b *builder, spec filterSpec) filters {
 		requireLiteral:  decodeUTF8(spec.RequireLiteral),
 		dropPlaceholder: spec.DropPlaceholder,
 		ignoreEquals:    asUnitLists(spec.IgnoreEquals),
+		ignoreSuffixes:  asUnitLists(spec.IgnoreSuffixes),
+		ignoreWords:     toSet(spec.IgnoreAfterWords),
+		wordGap:         b.optionalClass(spec.AfterGapClass),
+		ignoreBefore:    b.optionalClass(spec.IgnoreBeforeClass),
+		ignoreAfter:     b.optionalClass(spec.IgnoreAfterClass),
+		check:           b.namedCheck(spec),
 		placeholders:    e.placeholders,
 	}
-	if spec.RequireClass != "" {
-		found.requireClass = b.class(spec.RequireClass)
-	}
+	found.requireClass = b.optionalClass(spec.RequireClass)
 	return found
 }
 
-func (f *filters) passes(t *text, candidate span) bool {
+// endsWithSuffix is true when the lower-cased value ends with one of the listed literals.
+func (f *filters) endsWithSuffix(value []uint16) bool {
+	lowered := lowerUnits(value)
+	for _, suffix := range f.ignoreSuffixes {
+		if hasUnitsAt(lowered, suffix, len(lowered)-len(suffix)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isAfterIgnoredWord is true when the word before the whole match is one of the listed words (SPEC 4.1).
+func (f *filters) isAfterIgnoredWord(units []uint16, match span) bool {
+	if len(f.ignoreWords) == 0 {
+		return false
+	}
+	return f.ignoreWords[wordBefore(units, match.start, f.wordGap)]
+}
+
+// isPieceOfMore is true when the unit before the whole match is in `ignoreBeforeClass` or the unit after
+// it is in `ignoreAfterClass`: the match is a part of something longer.
+func (f *filters) isPieceOfMore(units []uint16, match span) bool {
+	if f.ignoreBefore != nil && match.start > 0 && f.ignoreBefore.has(units[match.start-1]) {
+		return true
+	}
+	return f.ignoreAfter != nil && match.end < len(units) && f.ignoreAfter.has(units[match.end])
+}
+
+// passes says whether the candidate survives the filters; `match` is the whole match it came from.
+func (f *filters) passes(t *text, candidate span, match span) bool {
 	value := t.units[candidate.start:candidate.end]
 	if f.requireClass != nil && !f.requireClass.hasAnyIn(value) {
 		return false
@@ -46,6 +112,15 @@ func (f *filters) passes(t *text, candidate span) bool {
 		if equalUnits(value, ignored) {
 			return false
 		}
+	}
+	if f.endsWithSuffix(value) {
+		return false
+	}
+	if f.isAfterIgnoredWord(t.units, match) || f.isPieceOfMore(t.units, match) {
+		return false
+	}
+	if f.check != nil && !f.check(value) {
+		return false
 	}
 	return !f.dropPlaceholder || !f.placeholders.isValue(t, candidate.start, candidate.end)
 }
@@ -116,7 +191,7 @@ func (r *regexRule) scan(t *text) []span {
 		}
 		from = max(match.end, match.start+1)
 		candidate, taken := r.candidate(loc)
-		if taken && r.filters.passes(t, candidate) {
+		if taken && r.filters.passes(t, candidate, match) {
 			found = append(found, candidate)
 		}
 	}
@@ -316,7 +391,7 @@ func (c *cookieLines) scan(t *text) []span {
 			continue
 		}
 		from = value.end
-		if c.filters.passes(t, value) {
+		if c.filters.passes(t, value, span{loc[0], value.end}) {
 			found = append(found, value)
 		}
 	}

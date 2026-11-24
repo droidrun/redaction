@@ -26,6 +26,7 @@ type vectorOpts struct {
 	MaxChars *int `json:"maxChars"`
 	MaxDepth *int `json:"maxDepth"`
 	MaxNodes *int `json:"maxNodes"`
+	PII      bool `json:"pii"`
 }
 
 type vectorFile struct {
@@ -61,10 +62,10 @@ func (c vectorCase) options(tier Tier) Options {
 	if tier == TierFull && mode == Compat {
 		// The full tier in compat mode has no limits (SPEC 9.4) and refuses an explicit one: the
 		// vectors that set a limit ask for the limit of the other side only.
-		return Options{Tier: tier, Mode: mode}
+		return Options{Tier: tier, Mode: mode, PII: limits.PII}
 	}
 	return Options{
-		Tier: tier, Mode: mode,
+		Tier: tier, Mode: mode, PII: limits.PII,
 		MaxChars: limits.MaxChars, MaxDepth: limits.MaxDepth, MaxNodes: limits.MaxNodes,
 	}
 }
@@ -142,7 +143,7 @@ func TestVectorsAreIdempotent(t *testing.T) {
 			for _, c := range file.Cases {
 				t.Run(name+"/"+c.Name, func(t *testing.T) {
 					want := c.expectedJSON(t, tier)
-					got := run(t, want, Options{Tier: tier, Mode: c.options(tier).Mode})
+					got := run(t, want, Options{Tier: tier, Mode: c.options(tier).Mode, PII: c.Opts.PII})
 					if !sameJSONText(t, got, want) {
 						t.Fatal("redacting the expected output changed it")
 					}
@@ -155,7 +156,7 @@ func TestVectorsAreIdempotent(t *testing.T) {
 func TestVectorFilesAreAllPresent(t *testing.T) {
 	want := []string{
 		"auth-headers", "base64", "entropy", "false-positives", "full", "full-keys", "key-collisions",
-		"key-formats", "key-names", "keywords", "modes", "nested-json", "url-query",
+		"key-formats", "key-names", "keywords", "modes", "nested-json", "pii", "url-query",
 	}
 	loaded := loadVectors(t)
 	if len(loaded) != len(want) {

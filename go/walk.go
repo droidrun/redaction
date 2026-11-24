@@ -144,7 +144,7 @@ func (w *walker) reservableNames(f *frame) map[string][]uint16 {
 // mode). It scans without recording anything.
 func (w *walker) wouldChange(key []uint16) bool {
 	limits := w.e.spec.algorithms
-	if len(key) < limits.Text.MinScanLength {
+	if len(key) < w.e.scanFloor(w.mode.detect()) {
 		return false
 	}
 	if len(key) > limits.Sync.MaxKeyChars {
@@ -157,9 +157,9 @@ func (w *walker) wouldChange(key []uint16) bool {
 		return !equalUnits(key, sizeLimit)
 	}
 	t := newText(key)
-	detect := func() []hit { return w.e.detect(t) }
+	detect := func() []hit { return w.e.detect(t, w.mode.detect()) }
 	if w.mode.tier == TierFull {
-		detect = func() []hit { return w.e.detectFull(t) }
+		detect = func() []hit { return w.e.detectFull(t, w.mode.detect()) }
 	}
 	hits, finished := w.e.tryDetect(detect)
 	return !finished || len(hits) > 0
@@ -304,7 +304,7 @@ func (w *walker) isSkipKey(key []uint16) bool {
 // when its length is within the key bounds.
 func (w *walker) redactKey(key []uint16) []uint16 {
 	limits := w.e.spec.algorithms
-	if len(key) < limits.Text.MinScanLength || len(key) > limits.Sync.MaxKeyChars {
+	if len(key) < w.e.scanFloor(w.mode.detect()) || len(key) > limits.Sync.MaxKeyChars {
 		return key
 	}
 	return w.e.scan(key, w.mode, w.rec)

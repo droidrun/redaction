@@ -51,13 +51,19 @@ type runMemo struct {
 	high int
 }
 
-// end is the end of the maximal run of units of `set` that starts at `from` (`from` itself when
-// there is none).
-func (m *runMemo) end(units []uint16, set *unitSet, from int) int {
+// remember is the end of the run that starts at `from`: the remembered end when `from` lies inside the last
+// run measured, else `measure(from)`, which is then remembered.
+func (m *runMemo) remember(from int, measure func(from int) int) int {
 	if from >= m.low && from < m.high {
 		return m.high
 	}
-	end := runEnd(units, from, set, unbounded)
+	end := measure(from)
 	m.low, m.high = from, end
 	return end
+}
+
+// end is the end of the maximal run of units of `set` that starts at `from` (`from` itself when
+// there is none).
+func (m *runMemo) end(units []uint16, set *unitSet, from int) int {
+	return m.remember(from, func(start int) int { return runEnd(units, start, set, unbounded) })
 }

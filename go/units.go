@@ -111,3 +111,20 @@ func trimQueryValue(units []uint16, label int, value span) span {
 	}
 	return value
 }
+
+var asciiLetters = func() *unitSet {
+	set := rangeSet('a', 'z')
+	set.add('A', 'Z')
+	return set
+}()
+
+// wordBefore is the lower-case ASCII word that ends just before `at`, after skipping the units of `gap`
+// there (SPEC 4.1 `ignoreAfterWords`); empty when no letter stands there. A nil `gap` skips nothing.
+func wordBefore(units []uint16, at int, gap *unitSet) string {
+	end := at
+	if gap != nil {
+		end = labelStart(units, at, gap, unbounded)
+	}
+	start := labelStart(units, end, asciiLetters, unbounded)
+	return foldString(units[start:end])
+}

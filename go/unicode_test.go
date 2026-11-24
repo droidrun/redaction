@@ -139,9 +139,17 @@ func TestPercentDecodeFailsWhole(t *testing.T) {
 		{"surrogate code point leaves the value", "?redirect=%3Ftoken%3Dabcdefgh%ED%A0%80&b=1", Options{},
 			"?redirect=%3Ftoken%3Dabcdefgh%ED%A0%80&b=1"},
 		{"encoded key", "?%74oken=abcdefghij&b=1", Options{}, "?%74oken=[REDACTED:key-context]&b=1"},
-		{"malformed key stays whole", "?%E0%80%80token=abcdefghij&b=1", Options{},
-			"?%E0%80%80token=[REDACTED:key-context]&b=1"},
 	})
+	// Strict also reads the pair with its text rule (SPEC 4.18), so the id is that of the pair rule there.
+	const malformedKey = "?%E0%80%80token=abcdefghij&b=1"
+	for mode, want := range map[Mode]string{
+		Compat: "?%E0%80%80token=[REDACTED:key-context]&b=1",
+		Strict: "?%E0%80%80token=[REDACTED:generic-keyword]&b=1",
+	} {
+		if got, _ := RedactText(malformedKey, Options{Mode: mode}); got != want {
+			t.Errorf("malformed key, mode %d: got %q, want %q", mode, got, want)
+		}
+	}
 }
 
 func TestEntropyUsesTheFdlibmLog2(t *testing.T) {

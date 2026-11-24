@@ -48,10 +48,11 @@ func (a attack) textAt(size int) string {
 var runners = map[string]func(text string){
 	"interpreter": func(text string) {
 		t := textFromString(text)
-		theEngine.detect(t)
+		theEngine.detect(t, detectOpts{})
+		theEngine.detect(t, detectOpts{strict: true, pii: true})
 		theEngine.detectFullRules(t)
 	},
-	"RedactText": func(text string) { RedactText(text, Options{Tier: TierFull}) },
+	"RedactText": func(text string) { RedactText(text, Options{Tier: TierFull, PII: true}) },
 }
 
 // timeRun times one call under a deadline. A call that never returns cannot be killed inside the
