@@ -16,7 +16,12 @@ import droidrun_redaction as redaction
 
 def redact(request: dict):
     opts = request.get("opts") or {}
-    common = {"mode": request["mode"], "max_chars": opts.get("maxChars"), "tier": request["tier"]}
+    common = {
+        "mode": request["mode"],
+        "pii": opts.get("pii", False),
+        "max_chars": opts.get("maxChars"),
+        "tier": request["tier"],
+    }
     if request["kind"] == "text":
         return redaction.redact_text(request["input"], **common)
     return redaction.redact_json(

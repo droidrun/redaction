@@ -1,11 +1,11 @@
 """Standard-tier detection (SPEC 4.10) and the hit merge and splice (SPEC section 7)."""
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from . import _full_rules, _rules
 from ._patterns import Range
 from ._placeholder import build_read_placeholder
-from ._spec import RULES, SpecError
+from ._spec import ALGORITHMS, RULES, SpecError, strict_rules
 
 Hit = tuple[str, int, int]
 
@@ -18,6 +18,7 @@ _PREPARE = {
     "keyword-pairs": _rules.prepare_keyword_pairs,
     "quoted-pairs": _rules.prepare_quoted_pairs,
     "unquoted-pairs": _rules.prepare_unquoted_pairs,
+    "key-pairs": _rules.prepare_key_pairs,
     "query-values": _rules.prepare_query_values,
 }
 
@@ -29,7 +30,34 @@ def _prepare(rule: dict[str, Any], table: dict[str, Any]) -> tuple[str, _rules.S
     return rule["id"], prepare(rule)
 
 
-_PIPELINE = [_prepare(rule, _PREPARE) for rule in RULES["pipeline"]]
+
+class Detect(NamedTuple):
+    """What decides the rule list of a scan: the failure mode (`strict`) and the opt-in `pii` group (SPEC 4)."""
+
+    strict: bool
+    pii: bool
+
+
+def _prepare_all(rules: list[dict[str, Any]]) -> list[tuple[str, _rules.Scanner]]:
+    return [_prepare(rule, _PREPARE) for rule in rules]
+
+
+_PII = _prepare_all(RULES["pii"])
+_COMPAT = _prepare_all(RULES["pipeline"])
+_STRICT = _prepare_all(strict_rules(RULES["pipeline"]))
+_RULE_LISTS = {
+    Detect(strict=False, pii=False): _COMPAT,
+    Detect(strict=False, pii=True): [*_COMPAT, *_PII],
+    Detect(strict=True, pii=False): _STRICT,
+    Detect(strict=True, pii=True): [*_STRICT, *_PII],
+}
+_COMPAT_MIN_LENGTH: int = ALGORITHMS["text"]["minScanLength"]
+
+
+def scan_floor(detect: Detect) -> int:
+    """The shortest text (or object key) a scan looks at (SPEC 9.1): `strict` and `pii` scan every text."""
+    return 0 if detect.strict or detect.pii else _COMPAT_MIN_LENGTH
+
 
 _FULL_PREPARE = {
     "regex": _rules.prepare_regex,
@@ -65,9 +93,11 @@ def _collect(entries: list[tuple[str, _rules.Scanner]], units: str) -> list[Hit]
     return hits
 
 
-def detect(units: str) -> list[Hit]:
-    """The merged hits of the standard rules over the whole unit string."""
-    return merge_hits(_collect(_PIPELINE, units))
+def detect(units: str, options: Detect) -> list[Hit]:
+    """The merged hits of the standard rules of `options` over the whole unit string."""
+    if len(units) < scan_floor(options):
+        return []
+    return merge_hits(_collect(_RULE_LISTS[options], units))
 
 
 def detect_full_rules(units: str) -> list[Hit]:

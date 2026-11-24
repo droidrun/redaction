@@ -35,8 +35,8 @@ result = redact_json({"user": "a", "api_key": "k", "note": "Bearer abcdefgh12345
 result.value   # {'user': 'a', 'api_key': '[REDACTED:key-context]', 'note': 'Bearer [REDACTED:auth-header]'}
 ```
 
-- `redact_text(text, *, tier="standard", mode="strict", max_chars=None) -> RedactResult`
-- `redact_json(value, *, tier="standard", mode="strict", skip_keys=None, max_depth=None, max_nodes=None, max_chars=None) -> RedactResult`
+- `redact_text(text, *, tier="standard", mode="strict", pii=False, max_chars=None) -> RedactResult`
+- `redact_json(value, *, tier="standard", mode="strict", pii=False, skip_keys=None, max_depth=None, max_nodes=None, max_chars=None) -> RedactResult`
   - `value` is a parsed JSON value: `dict`, `list`, `str`, `int`, `float`, `bool`, `None`.
   - Strings are scanned. A string under a secret key name (`password`, `x-auth-token`, `clientSecret`, ...)
     is replaced whole, and so is a number under a singular secret key (`pin`; not `max_tokens`).
@@ -95,6 +95,23 @@ Every rule, word list, threshold and limit comes from the spec data embedded in 
 The letter guard in front of a key format uses the Unicode 15.0.0 letter table of the spec, never the
 interpreter's own `unicodedata`.
 
+## Personal data: the `pii` option
+
+`pii=True` (default `False`) on `redact_text` and `redact_json`, in both tiers and both modes, also redacts, in
+prose and in JSON strings and keys:
+
+| rule id | what | stays |
+|---|---|---|
+| `email` | `person@example.com`, `A.B+tag@Example.CO.uk` | `react@18.2.0`, `icon@2x.png`, `user@localhost`, `pkg@1.2.3` |
+| `phone` | `+44 20 7946 0958`, `+493023125123`, `(415) 555-0123`, `415-555-0123`, `020 7946 0958` | `Request ID 1234567890`, `/devices/1234567890`, `2026-11-19 10:00:59`, `v0.3.0` |
+| `ip` | IPv4 (`192.0.2.123`), IPv6 (`2001:db8::1`, `[fdab::cafe]:8080`); a port stays | `version 1.2.3.4`, `android 14.0.0.1`, `999.1.1.1`, `std::vector` |
+| `otp` | the digits after a code noun (`Your verification code is 482913`, `OTP code: 482913`, `验证码 482913`) | `error code 5000`, `exit code 1370`, `postal code 941031`, `port 8080` |
+
+The placeholders are `[REDACTED:email]`, `[REDACTED:phone]`, `[REDACTED:ip]` and `[REDACTED:otp]`. With the option
+a text of any length is scanned (`a@b.xx`). Names, addresses, IDN emails, URL-encoded values and prose secrets
+such as `password hunter2` are not detected (SPEC sections 4.19 to 4.22 and 15). `pii` must be a `bool`, anything
+else raises `TypeError`.
+
 ## Modes
 
 - `strict` (default): no path returns a value that was not scanned. A text or leaf over a limit, a depth or
@@ -103,9 +120,18 @@ interpreter's own `unicodedata`.
   (`[REDACTED:size-limit]`, `[REDACTED:depth-limit]`, `[REDACTED:circular]`,
   `[REDACTED:redaction-failed]`). The JSON walk is iterative: deep input cannot overflow the stack. In the
   full tier a failing scan gives `[REDACTED:error]` (no fallback) for the text or the JSON leaf.
+  Text of any length is scanned, and the key names of the JSON path also decide text pairs
+  (`key: value`, `key=value`, `key => "value"`, also inside escaped JSON): a short value under a secret key is
+  redacted (`password=x`, `DB_PASS=hunter2`; under a plural or count key such as `max_tokens` unless it is all
+  digits). Stand-ins (`changeme`, `xxxx`, `<token>`), the words `expired`, `required`, `failed`, `missing`,
+  `invalid`, `true`, `false`, `null`, `none` and, under an authorization key, the scheme words `Bearer`,
+  `Basic`, `Digest` stay. A value never starts after a line break. `dr_sk_` keys are redacted in any case and
+  length, and the whole `Bearer` credential up to whitespace or a quote. `strict` redacts at least everything
+  0.3.0 `strict` redacted.
 - `compat`: reproduces the behaviour of the TypeScript package's default mode for its sync entry (a string under a skip key is
   returned unscanned; keys do not count against `max_chars`; a node-exhausted object keeps its raw key at the
-  cut). Use it only to compare with TypeScript output. In the full tier `compat` is TypeScript's async
+  cut; a text under 8 units is not scanned unless `pii=True`; none of the strict short-secret rules apply).
+  Use it only to compare with TypeScript output. In the full tier `compat` is TypeScript's async
   behaviour: it has no length, depth or node limit, so giving `max_chars`, `max_depth` or `max_nodes` with
   it raises `ValueError`, and
   a failure of the full-tier rules falls back to the standard rules (and to `[REDACTED:error]` if those fail

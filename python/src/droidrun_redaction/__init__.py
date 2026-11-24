@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Literal, NamedTuple
 
+from ._detect import Detect
 from ._keys import KeyVerdict, is_secret_key_name, key_verdict
 from ._placeholder import build_read_placeholder
 from ._scan import (
@@ -104,10 +105,16 @@ def _failed(error: Exception) -> RedactResult:
     return RedactResult(build_read_placeholder(rule_id), (RuleCount(rule_id, 1),), type(error).__name__)
 
 
-def _redact_text(text: str, limit: int | None, scan: Scan) -> RedactResult:
+def _check_pii(pii: bool) -> bool:
+    if not isinstance(pii, bool):
+        raise TypeError("pii must be a bool")
+    return pii
+
+
+def _redact_text(text: str, limit: int | None, scan: Scan, options: Detect) -> RedactResult:
     counts: dict[str, int] = {}
     try:
-        scanned, hits, error = scan_capped(text, limit, scan)
+        scanned, hits, error = scan_capped(text, limit, scan, options)
     except Exception as failure:
         return _failed(failure)
     tally(counts, hits)
@@ -119,9 +126,12 @@ def redact_text(
     *,
     tier: Tier = "standard",
     mode: Mode = "strict",
+    pii: bool = False,
     max_chars: int | None = None,
 ) -> RedactResult:
     """Redact the secrets in `text` with the rules of `tier` (`"standard"` or `"full"`).
+
+    `pii=True` also redacts emails, phone numbers, IP addresses and one-time codes (SPEC 9.5).
 
     A text longer than `max_chars` (default 4,000,000 UTF-16 units) is replaced whole by
     `[REDACTED:size-limit]`. The full tier's `compat` mode is TypeScript's behaviour, which has no cap: giving
@@ -129,16 +139,17 @@ def redact_text(
     """
     strict = _check_mode(mode)
     is_full = _check_tier(tier)
+    options = Detect(strict, _check_pii(pii))
     if not isinstance(text, str):
         raise TypeError("text must be a str")
     if not is_full:
         limit = _check_limit("max_chars", max_chars, SYNC_LIMITS["maxChars"])
-        return _redact_text(text, limit, scan_standard)
+        return _redact_text(text, limit, scan_standard, options)
     if not strict:
         _refuse_limits(max_chars=max_chars)
-        return _redact_text(text, None, scan_full_compat)
+        return _redact_text(text, None, scan_full_compat, options)
     limit = _check_limit("max_chars", max_chars, STRICT_LIMITS["maxChars"])
-    return _redact_text(text, limit, scan_full_strict)
+    return _redact_text(text, limit, scan_full_strict, options)
 
 
 def redact_json(
@@ -146,6 +157,7 @@ def redact_json(
     *,
     tier: Tier = "standard",
     mode: Mode = "strict",
+    pii: bool = False,
     skip_keys: Iterable[str] | None = None,
     max_depth: int | None = None,
     max_nodes: int | None = None,
@@ -157,6 +169,9 @@ def redact_json(
     replaced by its placeholder). The full tier's `compat` mode is TypeScript's behaviour, which has no depth,
     node or character limit: giving `max_depth`, `max_nodes` or `max_chars` with it raises `ValueError`.
 
+    `pii=True` also redacts emails, phone numbers, IP addresses and one-time codes (SPEC 9.5), in strings and in
+    keys.
+
     Every string is scanned, a string under a secret key name is replaced, and so is a number under a
     singular secret key (`pin`, not `max_tokens`). Output keys keep the ECMAScript order. A value outside
     the JSON model becomes `[REDACTED:redaction-failed]`. `skip_keys` (default `type`, `id`) lists keys
@@ -164,6 +179,7 @@ def redact_json(
     """
     strict = _check_mode(mode)
     is_full = _check_tier(tier)
+    options = Detect(strict, _check_pii(pii))
     limits = STRICT_LIMITS if strict else SYNC_LIMITS
     unlimited = is_full and not strict
     if unlimited:
@@ -178,7 +194,7 @@ def redact_json(
         math.inf if unlimited else _check_limit("max_chars", max_chars, limits["maxChars"]),
         math.inf if unlimited else _check_limit("max_depth", max_depth, limits["maxDepth"]),
         skip,
-        strict,
+        options,
         is_full,
     )
     try:

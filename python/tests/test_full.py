@@ -12,6 +12,7 @@ from droidrun_redaction import _detect, _scan_support, key_verdict, redact_json,
 from droidrun_redaction._base64_json import decode_base64, is_base64_json
 from droidrun_redaction._letters import is_letter, passes_letter_guard
 from droidrun_redaction._placeholder import is_whole_placeholder
+from helpers import fail_standard_rules
 
 NPM = "npm_" + "A" * 36
 GITHUB = "ghp_" + "a" * 36
@@ -212,11 +213,16 @@ class ScanBroken(Exception):
     pass
 
 
-def failing(units):
-    raise ScanBroken(f"cannot scan {units}")
-
-
 SECRET = "Zq9abcDEF123ghi_x"
+
+
+def failing(units):
+    """Breaks only on a text that holds the secret: `strict` scans every text, short keys and values too."""
+    if SECRET in units:
+        raise ScanBroken(f"cannot scan {units}")
+    return []
+
+
 TEXT = f"{NPM} password={SECRET}"
 FALLBACK = f"{NPM} password=[REDACTED:generic-keyword]"
 JSON_VALUE = {"a": "short", "b": TEXT}
@@ -228,7 +234,7 @@ def break_full_rules(monkeypatch):
 
 def break_all_rules(monkeypatch):
     break_full_rules(monkeypatch)
-    monkeypatch.setattr(_detect, "_PIPELINE", [("jwt", failing)])
+    fail_standard_rules(monkeypatch, failing)
 
 
 def test_error_is_none_when_nothing_failed():
@@ -291,6 +297,8 @@ def test_json_keeps_the_first_failure(monkeypatch):
     calls = []
 
     def breaking(units):
+        if SECRET not in units:
+            return []
         calls.append(units)
         raise (ScanBroken if len(calls) == 1 else Later)(units)
 
@@ -300,7 +308,7 @@ def test_json_keeps_the_first_failure(monkeypatch):
 
 
 def test_a_failing_standard_leaf_is_reported_too(monkeypatch):
-    monkeypatch.setattr(_detect, "_PIPELINE", [("jwt", failing)])
+    fail_standard_rules(monkeypatch, failing)
     result = redact_json(JSON_VALUE)
     assert result.value == {"a": "short", "b": "[REDACTED:redaction-failed]"}
     assert result.error == "ScanBroken"

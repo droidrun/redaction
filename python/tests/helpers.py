@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import droidrun_redaction as redaction
+from droidrun_redaction import _detect
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORPUS_PATH = REPO_ROOT / "spec" / "corpus" / "golden-b12879a.json.gz"
@@ -38,6 +39,12 @@ def canonical(value: Any) -> Any:
     return ["number", float(value)]
 
 
+def fail_standard_rules(monkeypatch: Any, failing: Any) -> None:
+    """Every rule list of the standard tier (each mode, with and without `pii`) holds one rule that raises."""
+    broken = {options: [("jwt", failing)] for options in _detect._RULE_LISTS}
+    monkeypatch.setattr(_detect, "_RULE_LISTS", broken)
+
+
 def run(value: Any, *, mode: str, opts: dict[str, Any], tier: str = "standard") -> Any:
     """A string goes through the text entry point, any other JSON value through the JSON one.
 
@@ -45,13 +52,16 @@ def run(value: Any, *, mode: str, opts: dict[str, Any], tier: str = "standard") 
     TypeScript async entry) ignore the limits of a case, so they are not passed on.
     """
     if tier == "full" and mode == "compat":
-        opts = {key: item for key, item in opts.items() if key == "skipKeys"}
+        opts = {key: item for key, item in opts.items() if key in ("skipKeys", "pii")}
     if isinstance(value, str):
-        return redaction.redact_text(value, tier=tier, mode=mode, max_chars=opts.get("maxChars"))
+        return redaction.redact_text(
+            value, tier=tier, mode=mode, pii=opts.get("pii", False), max_chars=opts.get("maxChars")
+        )
     return redaction.redact_json(
         value,
         tier=tier,
         mode=mode,
+        pii=opts.get("pii", False),
         max_chars=opts.get("maxChars"),
         max_depth=opts.get("maxDepth"),
         max_nodes=opts.get("maxNodes"),

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from ._patterns import CharTest, Range, char_test, run_end, run_pattern
+from ._patterns import CharTest, Range, char_test, fold_lower, run_end, run_pattern
 from ._units import to_units
 
 
@@ -40,6 +40,48 @@ def label_start(text: str, keyword_start: int, is_ident: Callable[[str], bool], 
     while start > 0 and keyword_start - start < lookback and is_ident(text[start - 1]):
         start -= 1
     return start
+
+
+def is_ascii_letter(unit: str) -> bool:
+    return "a" <= unit <= "z" or "A" <= unit <= "Z"
+
+
+def word_before(text: str, at: int, is_gap: Callable[[str], bool]) -> str:
+    """The lower-case ASCII letters that end just before `at`, after the units of `is_gap` there (SPEC 4.1)."""
+    end = label_start(text, at, is_gap, len(text))
+    start = label_start(text, end, is_ascii_letter, len(text))
+    return fold_lower(text[start:end])
+
+
+def remembered_run_end(text: str, classes: RunClasses) -> Callable[[int], int]:
+    """`guarded_run_end` from a start, with the run last measured remembered (SPEC 4.18 step 2): the end of a
+    run is the same from every start inside it, so a text of many pairs in one long run is measured once."""
+    low = 0
+    high = 0
+
+    def end_of(start: int) -> int:
+        nonlocal low, high
+        if low <= start < high:
+            return high
+        low = start
+        high = guarded_run_end(text, start, classes)
+        return high
+
+    return end_of
+
+
+def remembered_ampersand(text: str) -> Callable[[int], int]:
+    """The first `&` at or after `start` (or -1), remembered: `start` only grows within one scan."""
+    unknown = -2
+    found = unknown
+
+    def next_at(start: int) -> int:
+        nonlocal found
+        if found == unknown or (found != -1 and found < start):
+            found = text.find("&", start)
+        return found
+
+    return next_at
 
 
 def trim_query_value(text: str, label: int, value: Range) -> Range:
