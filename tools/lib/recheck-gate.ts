@@ -12,8 +12,10 @@
  */
 import { check } from 'recheck';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Attack } from './attacks.ts';
+import { CACHE_FORMAT, hashParts, type GateCache } from './recheck-cache.ts';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
 export const SIZES = [100_000, 1_000_000];
@@ -21,6 +23,8 @@ export const MAX_RATIO = 30;
 export const NOISE_FLOOR_MS = 10;
 export const MAX_MS_AT_LARGE = 3000;
 const CONFIRM_DEADLINE_MS = 20_000;
+const RECHECK_TIMEOUT_MS = 60_000;
+const RECHECK_FLAGS = '';
 
 type Pump = { prefix: string; pump: string; bias: number };
 export type RecheckAttack = { pumps: Pump[]; suffix: string; base: number; string: string };
@@ -61,9 +65,13 @@ export function runScaling(
 
 /** The growth of one pattern over one attack: a description when it is super-linear, else undefined. */
 export function growth(timings: Timing[]): string | undefined {
-    const at = (size: number): number => timings.find((timing) => timing.size === size)?.ms ?? 0;
-    const small = Math.max(at(SIZES[0] as number), NOISE_FLOOR_MS);
-    const large = at(SIZES[1] as number);
+    return growthOfSizes(Object.fromEntries(timings.map((timing) => [timing.size, timing.ms])));
+}
+
+/** The same decision over the times by size. */
+export function growthOfSizes(times: Record<number, number>): string | undefined {
+    const small = Math.max(times[SIZES[0] as number] ?? 0, NOISE_FLOOR_MS);
+    const large = times[SIZES[1] as number] ?? 0;
     if (large <= small * MAX_RATIO && large <= MAX_MS_AT_LARGE) return undefined;
     return `${Math.round(small)} ms at 100 KB, ${Math.round(large)} ms at 1 MB`;
 }
@@ -100,7 +108,7 @@ type Deps = {
 };
 
 const REAL: Deps = {
-    check: (source) => check(source, '', { timeout: 60_000 } as never) as ReturnType<Deps['check']>,
+    check: (source) => check(source, RECHECK_FLAGS, { timeout: RECHECK_TIMEOUT_MS } as never) as ReturnType<Deps['check']>,
     confirm: confirmAttack,
 };
 
@@ -123,4 +131,48 @@ export async function recheckGate(where: string, source: string, deps: Deps = RE
             `${where}: recheck says vulnerable (${result.complexity?.summary ?? 'complexity unknown'}) but the ` +
             `scaling run over its attack string stays linear in JavaScript and Python; ${show(attack)}`,
     };
+}
+
+function recheckVersion(): string {
+    const path = join(ROOT, 'tools', 'node_modules', 'recheck', 'package.json');
+    return (JSON.parse(readFileSync(path, 'utf8')) as { version: string }).version;
+}
+
+/** What a stored decision depends on: the package version, every gate setting and the pattern. */
+export function gateKey(source: string): string {
+    const settings = [RECHECK_TIMEOUT_MS, CONFIRM_DEADLINE_MS, MAX_RATIO, NOISE_FLOOR_MS, MAX_MS_AT_LARGE];
+    return hashParts([
+        `format ${CACHE_FORMAT}`,
+        `recheck ${recheckVersion()}`,
+        `settings ${[...settings, ...SIZES].join(',')}`,
+        `flags ${RECHECK_FLAGS}`,
+        source,
+    ]);
+}
+
+/** A decision is stored without its label (`where: `), so moving a rule in its list does not miss. */
+function relabel(gate: Gate, from: string, to: string): Gate {
+    const swap = (text: string): string => `${to}: ${text.slice(`${from}: `.length)}`;
+    return {
+        ...(gate.problem === undefined ? {} : { problem: swap(gate.problem) }),
+        ...(gate.warning === undefined ? {} : { warning: swap(gate.warning) }),
+    };
+}
+
+const STORED_LABEL = '';
+
+/** `recheckGate` behind the cache; `cache` undefined means a full analysis. */
+export async function cachedRecheckGate(
+    where: string,
+    source: string,
+    cache: GateCache | undefined,
+    deps: Deps = REAL,
+): Promise<Gate> {
+    if (cache === undefined) return recheckGate(where, source, deps);
+    const key = gateKey(source);
+    const stored = cache.get(key);
+    if (stored !== undefined) return relabel(stored, STORED_LABEL, where);
+    const gate = await recheckGate(where, source, deps);
+    cache.set(key, relabel(gate, where, STORED_LABEL));
+    return gate;
 }

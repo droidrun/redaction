@@ -19,11 +19,18 @@ type Existing = { type: 'commit' | 'tag'; sha: string; inner?: { type: string; s
 /** A `gh` that knows one existing tag ref (or none) and logs every call. Like the real one, a lookup of a missing
  *  tag exits 1 but still prints what `--jq` makes of the error body: `null + " " + null` is a single blank for the
  *  old filter (the bug of the v0.3.0 release), nothing for a filter that selects on `.object`. */
-function run(existing: Existing, blank = false): { status: number | null; log: string; out: string } {
+function run(
+    existing: Existing,
+    blank = false,
+    notFound = false,
+): { status: number | null; log: string; out: string } {
     const dir = mkdtempSync(join(tmpdir(), 'tag-go-'));
     try {
         const log = join(dir, 'calls.log');
-        const missing = blank
+        const body = `echo '{"message":"Not Found","status":"404"}'; exit 1`;
+        const missing = notFound
+            ? body
+            : blank
             ? 'echo " "; exit 1'
             : `case "$*" in *"select(.object)"*) ;; *) echo " " ;; esac; exit 1`;
         const lookup = existing === undefined ? missing : `echo "${existing.type} ${existing.sha}"`;
@@ -95,4 +102,12 @@ test('an answer of nothing but blanks counts as a missing tag', () => {
     const result = run(undefined, true);
     expect(result.status).toBe(0);
     expect(result.log.split('\n').filter((line) => line.includes('-X POST'))).toHaveLength(1);
+});
+
+test('a 404 that prints its error body on stdout counts as a missing tag', () => {
+    const result = run(undefined, false, true);
+    expect(result.status).toBe(0);
+    const posts = result.log.split('\n').filter((line) => line.includes('-X POST'));
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toContain('refs/tags/go/v0.3.0');
 });

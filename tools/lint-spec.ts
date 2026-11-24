@@ -9,6 +9,11 @@
  *   5. scaling: attack strings at 100 KB and 1 MB run in JS and Python with near-linear time.
  *
  *   bun tools/lint-spec.ts [--spec-dir DIR] [--skip-scaling] [--skip-recheck] [--self-test]
+ *                          [--only ID,KIND,...] [--only-scaling] [--no-cache]
+ * `--only` is the loop for rule work: schemas and rule checks always run, the pattern stages (grammar, compile,
+ * recheck, scaling) only for the patterns of the named rule ids or kinds. The full run stays the gate.
+ * `--only-scaling` runs just the scaling stages (CI runs them in their own job). The recheck verdicts are
+ * cached in tools/.cache (a changed pattern misses); `--no-cache` analyses every pattern again.
  * `--self-test` plants a lookbehind, a `\s`, a `{0,1024}` and a nested quantifier and fails
  * unless every one of them is reported.
  */
@@ -18,8 +23,10 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { attacksFor } from './lib/attacks.ts';
-import { recheckGate } from './lib/recheck-gate.ts';
+import { FileGateCache, type GateCache } from './lib/recheck-cache.ts';
+import { cachedRecheckGate, recheckGate } from './lib/recheck-gate.ts';
+import { scalingProblems } from './lib/scaling-run.ts';
+import { scopeFor, unknownOnly, type Scope } from './lib/selection.ts';
 import {
     classShapeViolation,
     emptyMatchViolation,
@@ -36,15 +43,7 @@ import {
 import { tokenShapeProblems } from './lib/token-shape.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
-const SIZES = [100_000, 1_000_000];
-const MAX_RATIO = 30;
-const NOISE_FLOOR_MS = 10;
-const MAX_MS_AT_LARGE = 3000;
-const MAX_INTERPRETER_MS_AT_LARGE = 10_000;
-/** A composite attack (short cluster, long run) may cost at most this many times the plain text of its size. */
-const MAX_COMPOSITE_FACTOR = 20;
-const COMPOSITE_FLOOR_MS = 20;
-const SCALING_DEADLINE_MS = 900_000;
+const CACHE_FILE = join(ROOT, 'tools', '.cache', 'recheck-gate.json');
 
 type Problem = string;
 
@@ -138,10 +137,13 @@ function grammarProblems(patterns: NamedPattern[]): Problem[] {
     });
 }
 
-async function recheckProblems(patterns: NamedPattern[]): Promise<Problem[]> {
+async function recheckProblems(
+    patterns: NamedPattern[],
+    cache: GateCache | undefined,
+): Promise<Problem[]> {
     const problems: Problem[] = [];
     for (const pattern of patterns.filter((item) => item.role === 'pattern')) {
-        const gate = await recheckGate(pattern.where, pattern.source);
+        const gate = await cachedRecheckGate(pattern.where, pattern.source, cache);
         if (gate.warning !== undefined) console.warn(`WARNING ${gate.warning}`);
         if (gate.problem !== undefined) problems.push(gate.problem);
     }
@@ -173,116 +175,56 @@ function runChecker(
     return failures.map((failure) => `${failure.where}: does not compile in ${label} (${failure.error})`);
 }
 
-type Timing = { where: string; attack: string; size: number; ms: number };
+export type LintOptions = {
+    scaling: boolean;
+    recheck: boolean;
+    /** Run only the scaling stages. */
+    scalingOnly?: boolean;
+    /** Rule ids or kinds the pattern stages are narrowed to. */
+    only?: string[];
+    cache?: FileGateCache;
+};
 
-function scalingProblems(patterns: NamedPattern[], dir: string): Problem[] {
-    const attacks = attacksFor(readSpecDir(dir));
-    const payload = JSON.stringify({
-        patterns: patterns
-            .filter((item) => item.role === 'pattern')
-            .map(({ where, source }) => ({ where, source })),
-        attacks,
-        sizes: SIZES,
-        runs: 2,
-    });
-    const problems: Problem[] = [];
-    const runners: Array<[string, string, string[]]> = [
-        ['JavaScript', 'bun', [join(ROOT, 'tools/lint/scaling.ts')]],
-        ['Python', 'python3', ['-I', join(ROOT, 'tools/lint/scaling.py')]],
-    ];
-    for (const [label, command, args] of runners) {
-        const result = spawnSync(command, args, {
-            input: payload,
-            encoding: 'utf8',
-            timeout: SCALING_DEADLINE_MS,
-            maxBuffer: 256 * 1024 * 1024,
-        });
-        if (result.status !== 0) {
-            problems.push(`${label} scaling run did not finish (deadline or crash)`);
-            continue;
-        }
-        const byKey = new Map<string, Record<number, number>>();
-        for (const timing of JSON.parse(result.stdout) as Timing[]) {
-            const key = `${timing.where} | ${timing.attack}`;
-            byKey.set(key, { ...(byKey.get(key) ?? {}), [timing.size]: timing.ms });
-        }
-        for (const [key, times] of byKey) {
-            const small = Math.max(times[SIZES[0] as number] ?? 0, NOISE_FLOOR_MS);
-            const large = times[SIZES[1] as number] ?? 0;
-            if (large > small * MAX_RATIO || large > MAX_MS_AT_LARGE) {
-                problems.push(
-                    `${label} scaling: ${key}: ${Math.round(small)} ms at 100 KB, ` +
-                        `${Math.round(large)} ms at 1 MB`,
-                );
-            }
-        }
-    }
-    return problems;
-}
-
-/** Scaling through `detectSyncHits` and `detectFullHits` of the TypeScript package: the restart loops of every rule kind. */
-export function interpreterScalingProblems(dir: string): Problem[] {
-    const attacks = attacksFor(readSpecDir(dir));
-    const payload = JSON.stringify({ attacks, sizes: SIZES });
-    const result = spawnSync('bun', [join(ROOT, 'tools/lint/scaling-interpreter.ts')], {
-        input: payload,
-        encoding: 'utf8',
-        timeout: SCALING_DEADLINE_MS,
-        maxBuffer: 256 * 1024 * 1024,
-    });
-    if (result.status !== 0) return ['interpreter scaling run did not finish (deadline or crash)'];
-    const byAttack = new Map<string, Record<number, number>>();
-    for (const timing of JSON.parse(result.stdout) as Timing[]) {
-        byAttack.set(timing.attack, { ...(byAttack.get(timing.attack) ?? {}), [timing.size]: timing.ms });
-    }
-    const problems: Problem[] = [];
-    const composites = new Set(
-        attacks.filter((attack) => attack.head !== undefined).map((attack) => attack.name),
-    );
-    const plain = Math.max(byAttack.get('__plain')?.[SIZES[1] as number] ?? 0, COMPOSITE_FLOOR_MS);
-    for (const [attack, times] of byAttack) {
-        const small = Math.max(times[SIZES[0] as number] ?? 0, NOISE_FLOOR_MS);
-        const large = times[SIZES[1] as number] ?? 0;
-        if (composites.has(attack) && large > plain * MAX_COMPOSITE_FACTOR) {
-            problems.push(
-                `interpreter scaling: ${attack}: ${Math.round(large)} ms at 1 MB, more than ` +
-                    `${MAX_COMPOSITE_FACTOR} times the plain text (${Math.round(plain)} ms): a long run is measured again per start`,
-            );
-        }
-        if (large > small * MAX_RATIO || large > MAX_INTERPRETER_MS_AT_LARGE) {
-            problems.push(
-                `interpreter scaling: ${attack}: ${Math.round(small)} ms at 100 KB, ` +
-                    `${Math.round(large)} ms at 1 MB`,
-            );
-        }
-    }
-    return problems;
-}
-
-function patternsFor(dir: string): NamedPattern[] {
-    return collectPatterns(readSpecDir(dir));
-}
-
-export async function lintDir(
-    dir: string,
-    options: { scaling: boolean; recheck: boolean },
-): Promise<Problem[]> {
-    const schemaDir = join(ROOT, 'spec', 'schema');
-    const patterns = patternsFor(dir);
+async function patternProblemsFor(scope: Scope, options: LintOptions): Promise<Problem[]> {
+    const { patterns } = scope;
     const problems = [
-        ...validateSchemas(dir, schemaDir),
-        ...ruleIdProblems(dir),
-        ...strictEditProblems(dir),
-        ...ruleShapeProblems(dir),
-        ...tokenShapeProblems(readSpecDir(dir)),
-        ...unclassifiedFields(readSpecDir(dir)),
         ...grammarProblems(patterns),
         ...jsCompileProblems(patterns),
         ...runChecker('python3', ['-I', join(ROOT, 'tools/lint/compile.py')], ROOT, patterns, 'Python'),
         ...runChecker('go', ['run', '.'], join(ROOT, 'tools/lint/gocheck'), patterns, 'Go'),
     ];
-    if (options.recheck) problems.push(...(await recheckProblems(patterns)));
-    if (options.scaling) problems.push(...scalingProblems(patterns, dir), ...interpreterScalingProblems(dir));
+    if (options.recheck) problems.push(...(await recheckProblems(patterns, options.cache)));
+    if (options.scaling) problems.push(...(await scalingStage(scope)));
+    return problems;
+}
+
+function scalingStage(scope: Scope): Promise<Problem[]> {
+    const patterns = scope.patterns
+        .filter((item) => item.role === 'pattern')
+        .map(({ where, source }) => ({ where, source }));
+    return scalingProblems(patterns, scope.attacks, scope.interpreterAttacks);
+}
+
+export async function lintDir(dir: string, options: LintOptions): Promise<Problem[]> {
+    const spec = readSpecDir(dir);
+    const all = collectPatterns(spec);
+    const scope = scopeFor(spec, all, options.only);
+    for (const line of scope.skipped) console.log(line);
+    const unknown = options.only === undefined ? [] : unknownOnly(all, options.only);
+    if (unknown.length > 0) return unknown;
+    if (options.scalingOnly) return scalingStage(scope);
+    const schemaDir = join(ROOT, 'spec', 'schema');
+    const problems = [
+        ...validateSchemas(dir, schemaDir),
+        ...ruleIdProblems(dir),
+        ...strictEditProblems(dir),
+        ...ruleShapeProblems(dir),
+        ...tokenShapeProblems(spec),
+        ...unclassifiedFields(spec),
+    ];
+    problems.push(...(await patternProblemsFor(scope, options)));
+    // Only a full recheck run knows which entries are current; any other run leaves the file as it is.
+    if (options.recheck) options.cache?.save(options.only === undefined);
     return problems;
 }
 
@@ -541,22 +483,34 @@ async function selfTest(): Promise<Problem[]> {
     return problems;
 }
 
+function optionValue(args: string[], name: string): string | undefined {
+    const index = args.indexOf(name);
+    return index === -1 ? undefined : args[index + 1];
+}
+
 async function main(): Promise<void> {
     const args = process.argv.slice(2);
-    const dirIndex = args.indexOf('--spec-dir');
-    const dir = dirIndex === -1 ? join(ROOT, 'spec') : resolve(args[dirIndex + 1] as string);
-    const problems = args.includes('--self-test')
+    const specDir = optionValue(args, '--spec-dir');
+    const dir = specDir === undefined ? join(ROOT, 'spec') : resolve(specDir);
+    const only = optionValue(args, '--only')?.split(',');
+    const isSelfTest = args.includes('--self-test');
+    const useCache = !args.includes('--no-cache') && !isSelfTest && specDir === undefined;
+    const cache = useCache ? new FileGateCache(CACHE_FILE) : undefined;
+    const problems = isSelfTest
         ? await selfTest()
         : await lintDir(dir, {
               scaling: !args.includes('--skip-scaling'),
               recheck: !args.includes('--skip-recheck'),
+              scalingOnly: args.includes('--only-scaling'),
+              only,
+              cache,
           });
     if (problems.length > 0) {
         console.error(problems.join('\n'));
         console.error(`lint-spec: ${problems.length} problem(s)`);
         process.exit(1);
     }
-    console.log(args.includes('--self-test') ? 'lint-spec self-test: ok' : 'lint-spec: ok');
+    console.log(isSelfTest ? 'lint-spec self-test: ok' : 'lint-spec: ok');
 }
 
 if (import.meta.main) await main();

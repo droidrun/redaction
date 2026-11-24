@@ -20,7 +20,13 @@ export type SpecDir = {
     keys: Record<string, unknown>;
     algorithms: Record<string, unknown>;
 };
-export type NamedPattern = { where: string; role: 'pattern' | 'class'; source: string };
+/** `rule` is the id and kind of the rule a pattern belongs to; the patterns of the algorithm data have none. */
+export type NamedPattern = {
+    where: string;
+    role: 'pattern' | 'class';
+    source: string;
+    rule?: { id?: string; kind?: string };
+};
 
 export function readSpecDir(dir: string): SpecDir {
     const read = (name: string): never => JSON.parse(readFileSync(join(dir, name), 'utf8')) as never;
@@ -132,6 +138,17 @@ export function unclassifiedFields(spec: SpecDir): string[] {
     );
 }
 
+const stringOrUndefined = (value: unknown): string | undefined =>
+    typeof value === 'string' ? value : undefined;
+
+/** Whether a rule is named by an `--only` list of rule ids and kinds. */
+export function isSelected(rule: { id?: string; kind?: string } | undefined, only: string[]): boolean {
+    if (rule === undefined) return false;
+    const byId = rule.id !== undefined && only.includes(rule.id);
+    const byKind = rule.kind !== undefined && only.includes(rule.kind);
+    return byId || byKind;
+}
+
 /** Every expanded pattern of the spec with a label saying where it came from. */
 export function collectPatterns(spec: SpecDir): NamedPattern[] {
     const found: NamedPattern[] = [];
@@ -143,7 +160,12 @@ export function collectPatterns(spec: SpecDir): NamedPattern[] {
             )) {
                 const role = fieldRole(field.name);
                 if (role === 'literal' || role === 'unknown') continue;
-                found.push({ where: field.path, role, source: expand(field.value, spec) });
+                found.push({
+                    where: field.path,
+                    role,
+                    source: expand(field.value, spec),
+                    rule: { id: stringOrUndefined(rule.id), kind: stringOrUndefined(rule.kind) },
+                });
             }
         });
     }
