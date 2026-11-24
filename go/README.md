@@ -9,7 +9,7 @@ dependencies.
 ## Install
 
 ```sh
-go get github.com/droidrun/redaction/go@v0.3.0   # resolved through the tag go/v0.3.0
+go get github.com/droidrun/redaction/go@v0.4.0   # resolved through the tag go/v0.4.0
 ```
 
 The module lives in the `go/` directory, so its tags are `go/vX.Y.Z`
