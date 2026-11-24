@@ -4,6 +4,17 @@
 
 Preparation for making the repository public. No change to what is detected, except where noted.
 
+- **`pii` option (new, off by default).** `pii: true` on the text and JSON entry points (sync and async, both modes)
+  also redacts emails, phone numbers, IPv4/IPv6 addresses and OTP codes in prose, as `[REDACTED:email]`,
+  `[REDACTED:phone]`, `[REDACTED:ip]` and `[REDACTED:otp]` (spec sections 4.19 to 4.22, vectors in `spec/vectors/pii.json`).
+  Without the option the output is unchanged. TypeScript only in this slice: Python and Go follow with the same vectors.
+- **Short secrets in `strict` (TypeScript so far).** In `strict`, text pairs use the key verdict of JSON keys: `password=x`,
+  `token=hunter2`, `DB_PASS=hunter2`, `signing_key=abc` and `{"password":"x"}` are redacted, also with escaped quotes
+  (`{\"token\":\"x\"}`) and the `=>` separator; `token: expired`, `password: required` and a number under a count key
+  (`max_tokens: 5`) stay. `dr_sk_` keys are redacted in any case and length, and the whole `Bearer` credential (up to
+  whitespace or a quote). `compat` is byte-identical to before (golden corpus). Consumers that run `strict` redact more
+  after the bump.
+
 - **MIT license.** `LICENSE` at the root and in `ts/`, `python/` and `go/`; license fields in the npm and Python
   metadata; the wheel and the npm package carry `LICENSE` and `NOTICE`.
 - **Third-party notices.** `THIRD_PARTY_NOTICES.md` (also `NOTICE` in each package): secretlint 13.0.4 (MIT; the full
