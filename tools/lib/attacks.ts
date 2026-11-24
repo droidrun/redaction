@@ -175,8 +175,8 @@ const FIXED_UNITS = [
 
 /** One valid-looking sample of a `token` shape (each run once at its minimum), so the shape is attacked
  *  from its own prefixes, runs and separators; and the shape's prefix alone. */
-function tokenUnits(spec: SpecDir): string[] {
-    return spec.rules.full.flatMap((rule) => {
+function tokenUnits(full: Rule[]): string[] {
+    return full.flatMap((rule) => {
         if (rule.kind !== 'token') return [];
         const parts = rule.parts as Array<Record<string, unknown>>;
         const sample = parts
@@ -213,6 +213,7 @@ function wordUnits(spec: SpecDir): string[] {
 }
 
 type Part = Record<string, unknown>;
+type Rule = Record<string, unknown>;
 
 const isVariableRun = (part: Part): boolean =>
     typeof part.runClass === 'string' && (part.min !== part.max || part.tails !== undefined);
@@ -227,8 +228,8 @@ function sampleOf(part: Part): string {
 /** A shape with two variable runs of one class: its short cluster (the shape up to the first of them, repeated)
  *  followed by a long run of the second one. A run memory per class measures that long run again at every start
  *  of the cluster; a memory per part measures it once. */
-function compositeAttacks(spec: SpecDir): Attack[] {
-    return spec.rules.full.flatMap((rule) => {
+function compositeAttacks(full: Rule[]): Attack[] {
+    return full.flatMap((rule) => {
         if (rule.kind !== 'token') return [];
         const parts = rule.parts as Part[];
         const first = parts.findIndex(
@@ -247,7 +248,18 @@ function compositeAttacks(spec: SpecDir): Attack[] {
     });
 }
 
-export function attacksFor(spec: SpecDir): Attack[] {
-    const units = [...new Set([...FIXED_UNITS, ...wordUnits(spec), ...tokenUnits(spec)])];
-    return [...units.map((unit) => ({ name: JSON.stringify(unit), unit })), ...compositeAttacks(spec)];
+const asAttacks = (units: string[]): Attack[] => units.map((unit) => ({ name: JSON.stringify(unit), unit }));
+
+/** The attack units that belong to the full-tier rules `keep` selects: their token samples and composite
+ *  clusters (the generic units belong to no rule). */
+export function ruleAttacks(spec: SpecDir, keep: (rule: Rule) => boolean = () => true): Attack[] {
+    const full = spec.rules.full.filter(keep);
+    return [...asAttacks([...new Set(tokenUnits(full))]), ...compositeAttacks(full)];
+}
+
+/** Every attack unit; with `keep` the generic ones plus those of the full-tier rules it selects. */
+export function attacksFor(spec: SpecDir, keep: (rule: Rule) => boolean = () => true): Attack[] {
+    const full = spec.rules.full.filter(keep);
+    const units = [...new Set([...FIXED_UNITS, ...wordUnits(spec), ...tokenUnits(full)])];
+    return [...asAttacks(units), ...compositeAttacks(full)];
 }

@@ -1105,7 +1105,15 @@ detection that needs a model.
    pattern in JavaScript and in Python. The time at 1 MB must not exceed 30 times the time at 100 KB (floor 10
    ms) and 3 s absolute. The second runs the same attack strings through the interpreter (`detectSyncHits` of the
    TypeScript package: every rule kind with its restart loops, not only the raw patterns) at the same sizes with the
-   same ratio and a 10 s absolute bound. Each run is a subprocess under an external deadline.
+   same ratio and a 10 s absolute bound. Each run is a subprocess under an external deadline; the three runs
+   (JavaScript patterns, Python patterns, interpreter) start together. Before a measurement fails it is repeated
+   up to twice and the best time per size counts (the retries are printed); the bounds do not change.
+   Working on one rule: `bun tools/lint-spec.ts --only <rule id or kind>[,...]` runs the schema and rule checks and,
+   for the patterns of the named rules only, grammar, compile, recheck and scaling (with the attack units that
+   belong to them; the interpreter scaling only over the units of the selected full-tier rules), and prints what
+   it skipped. The recheck verdicts are cached per pattern in `tools/.cache` (key: recheck version, gate settings,
+   pattern; `--no-cache` analyses everything again). `--only-scaling` runs just the scaling stages. The full
+   run without `--only` stays the gate, in CI as the jobs `spec` (`--skip-scaling`) and `spec-scaling`.
 6. Every call has a total-character cap (`sync.maxChars`, `strict.maxChars`).
 
 ## 11. Metadata
