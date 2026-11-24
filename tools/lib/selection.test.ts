@@ -3,7 +3,11 @@
  * belong to them; the interpreter scaling runs only when such units exist; an unknown name is reported.
  */
 import { expect, test } from 'bun:test';
-import { resolve } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { lintDir } from '../lint-spec.ts';
+import { FileGateCache } from './recheck-cache.ts';
 import { attacksFor } from './attacks.ts';
 import { scopeFor, unknownOnly } from './selection.ts';
 import { collectPatterns, readSpecDir } from './spec-patterns.ts';
@@ -58,3 +62,28 @@ test('an unknown name is reported, a known id or kind is not', () => {
         '--only: no rule id or kind named emial',
     ]);
 });
+
+test('--only-scaling with an unknown name reports it before any run', async () => {
+    const problems = await lintDir(resolve(import.meta.dir, '..', '..', 'spec'), {
+        scaling: true,
+        recheck: true,
+        scalingOnly: true,
+        only: ['definitely-not-a-rule'],
+    });
+    expect(problems).toEqual(['--only: no rule id or kind named definitely-not-a-rule']);
+});
+
+test('a run without recheck leaves the cache file as it was', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lint-cache-'));
+    try {
+        const path = join(dir, 'gate.json');
+        const seeded = new FileGateCache(path);
+        seeded.set('stale', {});
+        seeded.save(false);
+        const options = { scaling: false, recheck: false, cache: new FileGateCache(path) };
+        await lintDir(resolve(import.meta.dir, '..', '..', 'spec'), options);
+        expect(new FileGateCache(path).get('stale')).toEqual({});
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+}, 60_000);

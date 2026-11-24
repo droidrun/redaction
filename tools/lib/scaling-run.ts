@@ -108,6 +108,25 @@ export async function bestOfRetries(
     return times;
 }
 
+/** Like `bestOfRetries`, but an attempt is judged whole (its times against its own baseline); the attempt with
+ *  the fewest problems wins, the earlier one on a tie. Returns the problems of that attempt. */
+export async function bestAttempt(
+    first: Attempt,
+    messagesOf: (attempt: Attempt) => Problem[],
+    measureAgain: () => Promise<Attempt | undefined>,
+    report: (attempt: number, times: Sizes) => void,
+): Promise<Problem[]> {
+    let winner = messagesOf(first);
+    for (let attempt = 1; attempt <= SCALING_RETRIES && winner.length > 0; attempt++) {
+        const again = await measureAgain();
+        if (again === undefined) continue;
+        const found = messagesOf(again);
+        report(attempt, again.times);
+        if (found.length < winner.length) winner = found;
+    }
+    return winner;
+}
+
 async function measure(
     command: string,
     args: string[],
@@ -162,7 +181,11 @@ async function patternProblems(
     return problems;
 }
 
-function interpreterMessages(attack: string, times: Sizes, composite: boolean, plain: number): Problem[] {
+/** One measurement of an attack together with the plain-text baseline measured in the same run. */
+export type Attempt = { times: Sizes; plain: number };
+
+export function interpreterMessages(attack: string, now: Attempt, composite: boolean): Problem[] {
+    const { times, plain } = now;
     const small = Math.max(times[SIZES[0] as number] ?? 0, NOISE_FLOOR_MS);
     const large = times[SIZES[1] as number] ?? 0;
     const problems: Problem[] = [];
@@ -200,22 +223,26 @@ async function interpreterProblems(attacks: Attack[]): Promise<Problem[]> {
         attacks.filter((attack) => attack.head !== undefined).map((attack) => attack.name),
     );
     const byAttack = bySizes(timings, (timing) => timing.attack);
-    const plain = Math.max(byAttack.get(PLAIN_ATTACK)?.[SIZES[1] as number] ?? 0, COMPOSITE_FLOOR_MS);
+    const plainOf = (times: Sizes | undefined): number =>
+        Math.max(times?.[SIZES[1] as number] ?? 0, COMPOSITE_FLOOR_MS);
+    const firstPlain = plainOf(byAttack.get(PLAIN_ATTACK));
     const named = new Map(attacks.map((attack) => [attack.name, attack]));
     const problems: Problem[] = [];
     for (const [attack, first] of byAttack) {
         const composite = composites.has(attack);
-        const again = async (): Promise<Sizes | undefined> => {
+        const again = async (): Promise<Attempt | undefined> => {
             const one = named.get(attack);
             const payload = { attacks: one === undefined ? [] : [one], sizes: SIZES };
             const retimed = await measure('bun', script, payload, RETRY_DEADLINE_MS);
             if (retimed === undefined) return undefined;
-            return bySizes(retimed, (timing) => timing.attack).get(attack);
+            const sizes = bySizes(retimed, (timing) => timing.attack);
+            const times = sizes.get(attack);
+            if (times === undefined) return undefined;
+            return { times, plain: plainOf(sizes.get(PLAIN_ATTACK)) };
         };
-        const isSlow = (times: Sizes): boolean =>
-            interpreterMessages(attack, times, composite, plain).length > 0;
-        const times = await bestOfRetries(first, isSlow, again, reportRetry(`interpreter ${attack}`));
-        problems.push(...interpreterMessages(attack, times, composite, plain));
+        const messagesOf = (now: Attempt): Problem[] => interpreterMessages(attack, now, composite);
+        const report = reportRetry(`interpreter ${attack}`);
+        problems.push(...(await bestAttempt({ times: first, plain: firstPlain }, messagesOf, again, report)));
     }
     return problems;
 }

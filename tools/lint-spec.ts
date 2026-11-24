@@ -182,7 +182,7 @@ export type LintOptions = {
     scalingOnly?: boolean;
     /** Rule ids or kinds the pattern stages are narrowed to. */
     only?: string[];
-    cache?: GateCache;
+    cache?: FileGateCache;
 };
 
 async function patternProblemsFor(scope: Scope, options: LintOptions): Promise<Problem[]> {
@@ -210,6 +210,8 @@ export async function lintDir(dir: string, options: LintOptions): Promise<Proble
     const all = collectPatterns(spec);
     const scope = scopeFor(spec, all, options.only);
     for (const line of scope.skipped) console.log(line);
+    const unknown = options.only === undefined ? [] : unknownOnly(all, options.only);
+    if (unknown.length > 0) return unknown;
     if (options.scalingOnly) return scalingStage(scope);
     const schemaDir = join(ROOT, 'spec', 'schema');
     const problems = [
@@ -219,9 +221,10 @@ export async function lintDir(dir: string, options: LintOptions): Promise<Proble
         ...ruleShapeProblems(dir),
         ...tokenShapeProblems(spec),
         ...unclassifiedFields(spec),
-        ...(options.only === undefined ? [] : unknownOnly(all, options.only)),
     ];
     problems.push(...(await patternProblemsFor(scope, options)));
+    // Only a full recheck run knows which entries are current; any other run leaves the file as it is.
+    if (options.recheck) options.cache?.save(options.only === undefined);
     return problems;
 }
 
@@ -502,7 +505,6 @@ async function main(): Promise<void> {
               only,
               cache,
           });
-    cache?.save(only === undefined);
     if (problems.length > 0) {
         console.error(problems.join('\n'));
         console.error(`lint-spec: ${problems.length} problem(s)`);

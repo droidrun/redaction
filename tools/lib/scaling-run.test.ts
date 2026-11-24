@@ -3,7 +3,16 @@
  * three parallel runs report their problems in a fixed order, each under its own label.
  */
 import { expect, test } from 'bun:test';
-import { bestOfRetries, scalingProblems, SCALING_RETRIES, shardsOf, type Sizes } from './scaling-run.ts';
+import {
+    bestAttempt,
+    bestOfRetries,
+    interpreterMessages,
+    scalingProblems,
+    SCALING_RETRIES,
+    shardsOf,
+    type Attempt,
+    type Sizes,
+} from './scaling-run.ts';
 import { growthOfSizes } from './recheck-gate.ts';
 
 const slow = (times: Sizes): boolean => growthOfSizes(times) !== undefined;
@@ -64,4 +73,21 @@ test('shards are consecutive slices that together give the list back, in order',
     expect(shardsOf(items, 3)).toEqual([[1, 2, 3], [4, 5, 6], [7]]);
     expect(shardsOf(items, 1)).toEqual([items]);
     expect(shardsOf([], 4)).toEqual([]);
+});
+
+const COMPOSITE = { 100_000: 20, 1_000_000: 2500 };
+const messages = (attempt: Attempt): string[] => interpreterMessages('c', attempt, true);
+
+test('a composite retry is judged against the baseline measured in the same retry', async () => {
+    const first = { times: COMPOSITE, plain: 100 };
+    const retry = { times: { 100_000: 20, 1_000_000: 500 }, plain: 20 };
+    const found = await bestAttempt(first, messages, async () => retry, () => undefined);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain('more than 20 times the plain text (20 ms)');
+});
+
+test('a composite retry whose own baseline is fast enough passes', async () => {
+    const first = { times: COMPOSITE, plain: 100 };
+    const retry = { times: { 100_000: 20, 1_000_000: 300 }, plain: 20 };
+    expect(await bestAttempt(first, messages, async () => retry, () => undefined)).toEqual([]);
 });
