@@ -5,6 +5,10 @@
     "WS": "\t\n\u000b\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff",
     "ESCAPED_QUOTE": "(?:\\\\*[\"'])",
     "UUID": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+    "HSPACE": "\t\u000b\f \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff",
+    "OCTET": "(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])",
+    "OTP_JOIN": "[{{WS}}:=：]{0,3}(?:(?:{{OTP_IS}}|[为是は])[{{WS}}:：]{0,3})?",
+    "OTP_NOUN_CJK": "(?:验证码|驗證碼|校验码|动态码|認証コード|確認コード|認証番号|確認番号|ワンタイムパスワード)",
     "SECRET_WORDS": {
       "fromKeys": "secretWords",
       "join": "[_-]?"
@@ -152,6 +156,119 @@
         "words": [
           [
             "ql"
+          ]
+        ]
+      },
+      "OTP_BARE": {
+        "join": "",
+        "words": [
+          [
+            "code"
+          ]
+        ]
+      },
+      "OTP_IS": {
+        "join": "",
+        "words": [
+          [
+            "ist"
+          ],
+          [
+            "is"
+          ],
+          [
+            "est"
+          ],
+          [
+            "lautet"
+          ]
+        ]
+      },
+      "OTP_NOUN": {
+        "join": "[ -]",
+        "words": [
+          [
+            "otp",
+            "code"
+          ],
+          [
+            "otp"
+          ],
+          [
+            "passcode"
+          ],
+          [
+            "verification",
+            "code"
+          ],
+          [
+            "security",
+            "code"
+          ],
+          [
+            "confirmation",
+            "code"
+          ],
+          [
+            "auth",
+            "code"
+          ],
+          [
+            "authentication",
+            "code"
+          ],
+          [
+            "login",
+            "code"
+          ],
+          [
+            "mfa",
+            "code"
+          ],
+          [
+            "2fa",
+            "code"
+          ],
+          [
+            "sms",
+            "code"
+          ],
+          [
+            "one",
+            "time",
+            "password"
+          ],
+          [
+            "one",
+            "time",
+            "code"
+          ],
+          [
+            "bestätigungscode"
+          ],
+          [
+            "verifizierungscode"
+          ],
+          [
+            "sicherheitscode"
+          ],
+          [
+            "einmalpasswort"
+          ],
+          [
+            "code",
+            "de",
+            "vérification"
+          ],
+          [
+            "code",
+            "de",
+            "sécurité"
+          ],
+          [
+            "code",
+            "de",
+            "confirmation"
           ]
         ]
       }
@@ -305,6 +422,216 @@
       "nestedLimit": 4096,
       "decodeBudget": 1000000,
       "dropPlaceholder": true
+    }
+  ],
+  "strict": [
+    {
+      "id": "platform-key",
+      "set": {
+        "pattern": "[dD][rR]_[sS][kK]_[A-Za-z0-9_-]+"
+      }
+    },
+    {
+      "id": "auth-header",
+      "set": {
+        "bearerAlso": "\\b{{BEARER}}[{{WS}}]+[\"']?([^{{WS}}\"'<>,;\\\\]+)"
+      }
+    },
+    {
+      "kind": "keyword-pairs",
+      "set": {
+        "prefix": "{{KEYWORDS}}[A-Za-z0-9_-]{0,64}?{{ESCAPED_QUOTE}}?[{{WS}}]*(?:=>|:=|[:=])[{{WS}}]*{{ESCAPED_QUOTE}}?"
+      }
+    },
+    {
+      "kind": "quoted-pairs",
+      "set": {
+        "label": "\\b{{SECRET_WORDS}}\\b{{ESCAPED_QUOTE}}?[{{WS}}]*(?:=>|:=|[:=])[{{WS}}]*(\\\\*)([\"'])"
+      }
+    },
+    {
+      "kind": "unquoted-pairs",
+      "set": {
+        "prefix": "\\b{{SECRET_WORDS}}\\b{{ESCAPED_QUOTE}}?[{{WS}}]*(?:=>|:=|[:=])[{{WS}}]*{{ESCAPED_QUOTE}}?"
+      }
+    },
+    {
+      "kind": "unquoted-pairs",
+      "add": {
+        "id": "generic-keyword",
+        "kind": "key-pairs",
+        "label": "(?:=>|:=|[:=])[{{HSPACE}}]*(?:(\\\\*)([\"']))?",
+        "valueLimit": 1024,
+        "plainChar": "[^{{WS}},\"';}\\\\]",
+        "escapeStop": "[\\\\\"']",
+        "identChar": "[A-Za-z0-9_%-]",
+        "labelLookback": 64,
+        "keyChar": "[A-Za-z0-9_-]",
+        "keyMax": 64,
+        "gapClass": "[{{WS}}]",
+        "quoteChar": "[\"']",
+        "digitClass": "[0-9]",
+        "standInMinLength": 2,
+        "keptMaxLength": 64,
+        "statusWords": [
+          "expired",
+          "required",
+          "failed",
+          "missing",
+          "invalid",
+          "true",
+          "false",
+          "null",
+          "none"
+        ],
+        "schemeWords": [
+          "bearer",
+          "basic",
+          "digest"
+        ],
+        "schemeKeys": [
+          "authorization",
+          "proxyauthorization",
+          "auth"
+        ]
+      }
+    }
+  ],
+  "pii": [
+    {
+      "id": "email",
+      "kind": "regex",
+      "pattern": "[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\\.[A-Za-z]{2,24}\\b",
+      "ignoreSuffixes": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".svg",
+        ".webp",
+        ".avif",
+        ".ico",
+        ".bmp",
+        ".tiff",
+        ".js",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+        ".jsx",
+        ".json",
+        ".css",
+        ".scss",
+        ".html",
+        ".htm",
+        ".xml",
+        ".yml",
+        ".yaml",
+        ".toml",
+        ".txt",
+        ".log",
+        ".pdf",
+        ".gz",
+        ".tgz",
+        ".tar",
+        ".wasm",
+        ".lock",
+        ".map",
+        ".mp3",
+        ".mp4",
+        ".wav",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".rb",
+        ".go",
+        ".java",
+        ".kt",
+        ".swift",
+        ".cpp"
+      ]
+    },
+    {
+      "id": "phone",
+      "kind": "regex",
+      "pattern": "\\+[0-9](?:[ .()-]?[0-9]){7,14}\\b"
+    },
+    {
+      "id": "phone",
+      "kind": "regex",
+      "pattern": "(?:\\+1[ .-])?\\([0-9]{3}\\)[ .-]?[0-9]{3}[ .-]?[0-9]{4}\\b"
+    },
+    {
+      "id": "phone",
+      "kind": "regex",
+      "pattern": "(?:\\+1[ .-]|\\b1[ .-])?\\b[0-9]{3}[ .-][0-9]{3}[ .-][0-9]{4}\\b"
+    },
+    {
+      "id": "phone",
+      "kind": "regex",
+      "pattern": "\\b0[0-9]{2,4}[ .-][0-9]{3,4}[ .-][0-9]{3,4}\\b"
+    },
+    {
+      "id": "phone",
+      "kind": "regex",
+      "pattern": "\\b0[0-9][ .-][0-9]{2}[ .-][0-9]{2}[ .-][0-9]{2}[ .-][0-9]{2}\\b"
+    },
+    {
+      "id": "ip",
+      "kind": "regex",
+      "pattern": "\\b{{OCTET}}\\.{{OCTET}}\\.{{OCTET}}\\.{{OCTET}}\\b",
+      "ignoreAfterWords": [
+        "v",
+        "version",
+        "build",
+        "android",
+        "ios",
+        "firmware",
+        "sdk",
+        "os",
+        "kernel"
+      ],
+      "afterGapClass": "[{{WS}}:=]"
+    },
+    {
+      "id": "ip",
+      "kind": "regex",
+      "pattern": "[0-9A-Fa-f:]{3,44}(?:[0-9A-Fa-f]|::)",
+      "ignoreBeforeClass": "[0-9A-Za-z_:]",
+      "ignoreAfterClass": "[0-9A-Za-z_]",
+      "check": "ipv6",
+      "minColons": 3
+    },
+    {
+      "id": "ip",
+      "kind": "regex",
+      "pattern": "\\[([0-9A-Fa-f:]{2,45})\\]",
+      "group": 1,
+      "check": "ipv6",
+      "minColons": 2
+    },
+    {
+      "id": "otp",
+      "kind": "regex",
+      "pattern": "(?:\\b{{OTP_NOUN}}|{{OTP_NOUN_CJK}}){{OTP_JOIN}}([0-9]{4,8})\\b",
+      "group": 1
+    },
+    {
+      "id": "otp",
+      "kind": "regex",
+      "pattern": "\\b{{OTP_BARE}}{{OTP_JOIN}}([0-9]{6,8})\\b",
+      "group": 1,
+      "ignoreAfterWords": [
+        "error",
+        "exit",
+        "status",
+        "response",
+        "postal",
+        "zip",
+        "area",
+        "country"
+      ],
+      "afterGapClass": "[{{WS}}]"
     }
   ],
   "full": [

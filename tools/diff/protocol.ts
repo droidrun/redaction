@@ -8,9 +8,9 @@
  *   response: { id, out, hits: [[ruleId, count], ...], error }
  *
  * Every runner answers every (tier, mode). `opts` holds `maxChars`, `maxDepth`, `maxNodes`,
- * `skipKeys` (all optional). `out` is the redacted text (a JSON string) or value. `hits` counts hits
- * per rule id (never ranges). `error` is `null` or the class name of a failure of the call; it is not
- * compared (the languages report fail-closed events differently), the output is.
+ * `skipKeys` and the boolean `pii` (all optional). `out` is the redacted text (a JSON string) or value.
+ * `hits` counts hits per rule id (never ranges). `error` is `null` or the class name of a failure of the
+ * call; it is not compared (the languages report fail-closed events differently), the output is.
  *
  * Output is compared as parsed JSON in which object key order counts, numbers are compared as doubles
  * and strings as UTF-16 (a lone surrogate must come back as that lone surrogate). Hits are compared as
@@ -20,7 +20,13 @@ export type Tier = 'standard' | 'full';
 export type Mode = 'compat' | 'strict';
 export type Kind = 'text' | 'json';
 
-export type RequestOpts = { maxChars?: number; maxDepth?: number; maxNodes?: number; skipKeys?: string[] };
+export type RequestOpts = {
+    maxChars?: number;
+    maxDepth?: number;
+    maxNodes?: number;
+    skipKeys?: string[];
+    pii?: boolean;
+};
 
 export type Request = {
     id: string;

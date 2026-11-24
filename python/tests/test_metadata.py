@@ -14,6 +14,7 @@ from droidrun_redaction import (
     redact_text,
 )
 from droidrun_redaction._spec import SpecError
+from helpers import fail_standard_rules
 
 SECRET = "Zq9abcDEF123ghi_x"
 
@@ -45,7 +46,7 @@ def test_a_failure_carries_the_error_class_and_no_input(monkeypatch):
     def failing(units):
         raise RuntimeError(f"cannot scan {units}")
 
-    monkeypatch.setattr(_detect, "_PIPELINE", [("jwt", failing)])
+    fail_standard_rules(monkeypatch, failing)
     result = redact_text(f"password={SECRET}")
     assert result == RedactResult(
         "[REDACTED:redaction-failed]", (RuleCount("redaction-failed", 1),), "RuntimeError"
@@ -55,9 +56,11 @@ def test_a_failure_carries_the_error_class_and_no_input(monkeypatch):
 
 def test_a_failing_leaf_becomes_a_placeholder_in_strict_and_fails_the_value_in_compat(monkeypatch):
     def failing(units):
-        raise RuntimeError(units)
+        if SECRET in units:
+            raise RuntimeError(units)
+        return []
 
-    monkeypatch.setattr(_detect, "_PIPELINE", [("jwt", failing)])
+    fail_standard_rules(monkeypatch, failing)
     value = {"a": "short", "b": f"password={SECRET}"}
     strict = redact_json(value, mode="strict")
     assert strict.value == {"a": "short", "b": "[REDACTED:redaction-failed]"}

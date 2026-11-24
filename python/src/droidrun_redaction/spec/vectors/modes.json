@@ -398,6 +398,51 @@
           "id": "abc"
         }
       }
+    },
+    {
+      "name": "compat unchanged: short values under secret keys",
+      "input": "token=hunter2 and api_key=x and signing_key=abc",
+      "expected": "token=hunter2 and api_key=x and signing_key=abc"
+    },
+    {
+      "name": "compat unchanged: escaped json in a quoted string",
+      "input": "upstream body: \"{\\\"token\\\":\\\"hunter2\\\",\\\"otp\\\":\\\"482913\\\"}\"",
+      "expected": "upstream body: \"{\\\"token\\\":\\\"hunter2\\\",\\\"otp\\\":\\\"482913\\\"}\""
+    },
+    {
+      "name": "compat unchanged: arrow separator",
+      "input": "password => \"hunter2\"",
+      "expected": "password =[REDACTED:generic-keyword] \"hunter2\""
+    },
+    {
+      "name": "compat unchanged: short and upper-case platform keys",
+      "input": "dr_sk_first and DR_SK_abcdefghijklmnopqrstuvwxyz",
+      "expected": "dr_sk_first and DR_SK_abcdefghijklmnopqrstuvwxyz"
+    },
+    {
+      "name": "compat unchanged: bearer credential stops at a punctuation mark",
+      "input": "Bearer abc!defghijklmnop",
+      "expected": "Bearer [REDACTED:auth-header]!defghijklmnop"
+    },
+    {
+      "name": "compat unchanged: a status word under password is redacted",
+      "input": "password: required",
+      "expected": "password: [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "compat unchanged: multiline quoted value is redacted through the closing quote",
+      "input": "password=\"first\nhunter2\"",
+      "expected": "password=\"[REDACTED:generic-keyword]\""
+    },
+    {
+      "name": "compat unchanged: a text shorter than eight units is not scanned",
+      "input": "token=x",
+      "expected": "token=x"
+    },
+    {
+      "name": "compat unchanged: a platform key of seven units is not scanned",
+      "input": "dr_sk_a",
+      "expected": "dr_sk_a"
     }
   ]
 }

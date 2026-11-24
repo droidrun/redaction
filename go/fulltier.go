@@ -44,11 +44,11 @@ func (e *engine) detectFullWindows(t *text) []hit {
 
 // detectFull is the full tier's `detect`: the merge of the full-tier hits and the standard hits (the
 // full-tier hits come first, so on an equal start their rule id wins).
-func (e *engine) detectFull(t *text) []hit {
-	if t.length() < e.spec.algorithms.Text.MinScanLength {
+func (e *engine) detectFull(t *text, opts detectOpts) []hit {
+	if t.length() < e.scanFloor(opts) {
 		return nil
 	}
-	return mergeHits(append(e.detectFullWindows(t), e.detect(t)...))
+	return mergeHits(append(e.detectFullWindows(t), e.detect(t, opts)...))
 }
 
 // tryDetect runs a detector and reports whether it finished; a panic is a failure.
@@ -70,11 +70,11 @@ func (e *engine) errorText(rec *recorder) []uint16 {
 
 // redactFullCompat is the full tier in compat mode (SPEC 9.4): when the full-tier rules fail, the
 // standard rules run alone; when those fail too, the whole text is `[REDACTED:error]`.
-func (e *engine) redactFullCompat(units []uint16, rec *recorder) []uint16 {
+func (e *engine) redactFullCompat(units []uint16, opts detectOpts, rec *recorder) []uint16 {
 	t := newText(units)
-	hits, finished := e.tryDetect(func() []hit { return e.detectFull(t) })
+	hits, finished := e.tryDetect(func() []hit { return e.detectFull(t, opts) })
 	if !finished {
-		hits, finished = e.tryDetect(func() []hit { return e.detect(t) })
+		hits, finished = e.tryDetect(func() []hit { return e.detect(t, opts) })
 	}
 	if !finished {
 		return e.errorText(rec)
@@ -87,10 +87,10 @@ func (e *engine) redactFullCompat(units []uint16, rec *recorder) []uint16 {
 // and the units beyond the scan cap are replaced by `[REDACTED:size-limit]`, merged with any hit they
 // touch. Every caller (redactText, the walker's leaf and key) has replaced a text over `maxChars`
 // before it gets here.
-func (e *engine) redactFullStrict(units []uint16, rec *recorder) []uint16 {
+func (e *engine) redactFullStrict(units []uint16, opts detectOpts, rec *recorder) []uint16 {
 	sizeLimit := e.spec.algorithms.RuleIDs.SizeLimit
 	t := newText(units)
-	hits, finished := e.tryDetect(func() []hit { return e.detectFull(t) })
+	hits, finished := e.tryDetect(func() []hit { return e.detectFull(t, opts) })
 	if !finished {
 		return e.errorText(rec)
 	}

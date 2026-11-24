@@ -109,3 +109,13 @@ All 26 rules other than `gcp` and `filter-comments` are `full`-tier rules in `sp
 | 1password | `token` with `check: base64-json` | 5.7 |
 | database-connection-string | `credential-uri` x3 | MongoDB, MySQL, PostgreSQL |
 | filter-comments | not ported (by design) | decided 2026-11-18 |
+
+## Rules that are not from the preset
+
+The standard tier and the opt-in `pii` group are the package's own rules, not ports. Nothing in the secretlint preset
+covers them, so there is no upstream parity test for them; the vectors in `spec/vectors/` are their reference.
+
+| rule | where | note |
+|---|---|---|
+| `key-pairs` | `strict` edit of `rules.json`, SPEC 4.18 | text pairs under the key verdict of JSON keys (short values, escaped JSON, `=>`) |
+| `email`, `phone`, `ip`, `otp` | `pii`, SPEC 4.19 to 4.22 | only with the option `pii` |

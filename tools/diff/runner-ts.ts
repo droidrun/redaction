@@ -30,16 +30,17 @@ async function redact(request: Request): Promise<{ out: unknown; hits: Hit[] }> 
         maxDepth: opts.maxDepth,
         maxNodes: opts.maxNodes,
         maxChars: opts.maxChars,
+        pii: opts.pii,
         ...skipKeys,
     };
     const stats = { hits: [] as Hit[] };
     if (request.kind === 'text') {
         const text = request.input as string;
         if (request.tier === 'standard') {
-            const result = redactTextSync(text, { mode, maxChars: opts.maxChars });
+            const result = redactTextSync(text, { mode, maxChars: opts.maxChars, pii: opts.pii });
             return { out: result.text, hits: result.hits };
         }
-        const result = await redactText(text, { mode, maxChars: opts.maxChars });
+        const result = await redactText(text, { mode, maxChars: opts.maxChars, pii: opts.pii });
         return { out: result.text, hits: result.hits };
     }
     if (request.tier === 'standard') {

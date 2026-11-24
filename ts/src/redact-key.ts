@@ -7,20 +7,20 @@ import { appendHits, applyHits, type Hit } from './hits.js';
 import { ALGORITHMS_SPEC } from './spec.js';
 import { detectSyncHits } from './sync-rules.js';
 
-const MIN_SCAN_LEN = ALGORITHMS_SPEC.text.minScanLength;
 const MAX_KEY_CHARS = ALGORITHMS_SPEC.sync.maxKeyChars;
 
 export type KeyDetector = (key: string) => Hit[];
 
-/** True when a key is long enough to hold a secret and short enough to be scanned (longer ones stay). */
-export function isScannableKey(key: string): boolean {
-    return key.length >= MIN_SCAN_LEN && key.length <= MAX_KEY_CHARS;
+/** True when a key is at least `floor` (`scanFloor`) and at most `maxKeyChars` long (longer ones stay). */
+export function isScannableKey(key: string, floor: number): boolean {
+    return key.length >= floor && key.length <= MAX_KEY_CHARS;
 }
 
 /** The key as written, or its placeholder when the key text itself holds a secret. `detect` is the standard
- *  rules (default) or, in the full tier, the full-tier rules too (SPEC 9.4). */
+ *  rules (default) or, in the full tier, the full-tier rules too (SPEC 9.4); it is the one that knows the
+ *  shortest key it scans. */
 export function redactKey(key: string, hits: Hit[], detect: KeyDetector = detectSyncHits): string {
-    if (!isScannableKey(key)) return key;
+    if (isOverlongKey(key)) return key;
     const found = detect(key);
     if (found.length === 0) return key;
     appendHits(hits, found);

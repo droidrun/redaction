@@ -35,6 +35,7 @@ type requestOpts struct {
 	MaxDepth *int     `json:"maxDepth"`
 	MaxNodes *int     `json:"maxNodes"`
 	SkipKeys []string `json:"skipKeys"`
+	PII      bool     `json:"pii"`
 }
 
 type response struct {
@@ -56,6 +57,7 @@ func options(req request) redaction.Options {
 		MaxDepth: req.Opts.MaxDepth,
 		MaxNodes: req.Opts.MaxNodes,
 		SkipKeys: req.Opts.SkipKeys,
+		PII:      req.Opts.PII,
 	}
 	if req.Mode == "compat" {
 		opts.Mode = redaction.Compat

@@ -111,6 +111,322 @@
       "name": "value that merely starts like a placeholder",
       "input": "password=[REDACTED]tail1234",
       "expected": "password=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under password",
+      "input": "password=x",
+      "mode": "strict",
+      "expected": "password=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under token",
+      "input": "token=hunter2",
+      "mode": "strict",
+      "expected": "token=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under client_secret",
+      "input": "client_secret=abc123xyz",
+      "mode": "strict",
+      "expected": "client_secret=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under api_key",
+      "input": "api_key=x",
+      "mode": "strict",
+      "expected": "api_key=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under DB_PASS",
+      "input": "DB_PASS=hunter2",
+      "mode": "strict",
+      "expected": "DB_PASS=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under SECRET_KEY",
+      "input": "SECRET_KEY=abc123",
+      "mode": "strict",
+      "expected": "SECRET_KEY=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under aws_secret_access_key",
+      "input": "aws_secret_access_key=abc",
+      "mode": "strict",
+      "expected": "aws_secret_access_key=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under signing_key",
+      "input": "signing_key=abc",
+      "mode": "strict",
+      "expected": "signing_key=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value in json text",
+      "input": "{\"password\":\"x\"}",
+      "mode": "strict",
+      "expected": "{\"password\":\"[REDACTED:generic-keyword]\"}"
+    },
+    {
+      "name": "strict: a text shorter than eight units is scanned",
+      "input": "token=x",
+      "mode": "strict",
+      "expected": "token=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: escaped json in a quoted string",
+      "input": "upstream body: \"{\\\"token\\\":\\\"hunter2\\\",\\\"otp\\\":\\\"482913\\\"}\"",
+      "mode": "strict",
+      "expected": "upstream body: \"{\\\"token\\\":\\\"[REDACTED:generic-keyword]\\\",\\\"otp\\\":\\\"[REDACTED:generic-keyword]\\\"}\""
+    },
+    {
+      "name": "strict: arrow separator",
+      "input": "password => \"hunter2\"",
+      "mode": "strict",
+      "expected": "password => \"[REDACTED:generic-keyword]\""
+    },
+    {
+      "name": "strict: assignment separator",
+      "input": "password := \"hunter2\"",
+      "mode": "strict",
+      "expected": "password := \"[REDACTED:generic-keyword]\""
+    },
+    {
+      "name": "strict: arrow separator without spaces",
+      "input": "token=>abc",
+      "mode": "strict",
+      "expected": "token=>[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: multiline quoted value is redacted through the closing quote",
+      "input": "password=\"first\nhunter2\"",
+      "mode": "strict",
+      "expected": "password=\"[REDACTED:generic-keyword]\""
+    },
+    {
+      "name": "strict: an unterminated quote fails closed, also on a kept word",
+      "input": "password=\"Bearer",
+      "mode": "strict",
+      "expected": "password=\"[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: number under a count key is kept, text under it is not",
+      "input": "max_tokens: 5 and max_tokens: five",
+      "mode": "strict",
+      "expected": "max_tokens: 5 and max_tokens: [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: status word in capitals is kept",
+      "input": "TOKEN: EXPIRED and auth: Failed",
+      "mode": "strict",
+      "expected": "TOKEN: EXPIRED and auth: Failed"
+    },
+    {
+      "name": "strict: a status word under a key the quoted pair rule knows is redacted",
+      "input": "password: required",
+      "mode": "strict",
+      "expected": "password: [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: invalid under password is redacted",
+      "input": "password=invalid",
+      "mode": "strict",
+      "expected": "password=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: false under secret is redacted",
+      "input": "secret=false",
+      "mode": "strict",
+      "expected": "secret=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: a scheme word under password is redacted",
+      "input": "password=Bearer",
+      "mode": "strict",
+      "expected": "password=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: a scheme word under Authorization is kept for the auth header rule",
+      "input": "Authorization: Bearer abc12345",
+      "mode": "strict",
+      "expected": "Authorization: Bearer [REDACTED:auth-header]"
+    },
+    {
+      "name": "strict: pair after a key without a verdict",
+      "input": "user=bob note=password=hunter2",
+      "mode": "strict",
+      "expected": "user=bob note=password=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: a lone mask character is a value, a run of them is a stand-in",
+      "input": "password=* and secret=****",
+      "mode": "strict",
+      "expected": "password=[REDACTED:generic-keyword] and secret=****"
+    },
+    {
+      "name": "strict: a kept value of 64 units stays",
+      "input": "token=your_api_key_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_here",
+      "mode": "strict",
+      "expected": "token=your_api_key_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_here"
+    },
+    {
+      "name": "strict: a doc placeholder longer than 64 units is redacted",
+      "input": "token=your_api_key_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_here",
+      "mode": "strict",
+      "expected": "token=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: a key hidden in a parent value is still found, yaml",
+      "input": "secrets:\n  api_key: sk-live-abc",
+      "mode": "strict",
+      "expected": "secrets:\n  api_key: [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: a value never starts after a line break",
+      "input": "auth:\n  password: hunter2\n  user: bob",
+      "mode": "strict",
+      "expected": "auth:\n  password: [REDACTED:generic-keyword]\n  user: bob"
+    },
+    {
+      "name": "strict: a pair inside the value of a pair, same line",
+      "input": "auth: password: hunter2",
+      "mode": "strict",
+      "expected": "auth: [REDACTED:generic-keyword] [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: a quoted pair inside the value of a pair",
+      "input": "token: password:\"hunter2 with spaces\"",
+      "mode": "strict",
+      "expected": "token: [REDACTED:generic-keyword]\"[REDACTED:generic-keyword]\""
+    },
+    {
+      "name": "strict: an escaped quoted pair inside a cookie value",
+      "input": "Cookie: secret=\\\"abc\\\" rest",
+      "mode": "strict",
+      "expected": "Cookie: [REDACTED:cookie]\\\"[REDACTED:generic-keyword]\\\" rest"
+    },
+    {
+      "name": "strict: otp key with an inner pair",
+      "input": "otp: api_key: hunter22",
+      "mode": "strict",
+      "expected": "otp: [REDACTED:generic-keyword] [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: an inner pair only the new rule knows, same line",
+      "input": "auth: token: hunter2",
+      "mode": "strict",
+      "expected": "auth: [REDACTED:generic-keyword] [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: an inner pair only the new rule knows, yaml",
+      "input": "auth:\n  token: hunter2",
+      "mode": "strict",
+      "expected": "auth:\n  token: [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: a scheme word under a key that is not an authorization key is redacted",
+      "input": "token=Bearer",
+      "mode": "strict",
+      "expected": "token=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: an unterminated quote fails closed on a scheme word too",
+      "input": "token=\"Bearer",
+      "mode": "strict",
+      "expected": "token=\"[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: an unterminated quote fails closed on a status word",
+      "input": "token=\"expired",
+      "mode": "strict",
+      "expected": "token=\"[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: a scheme word under an authorization key is kept for the auth header rule",
+      "input": "Authorization=Basic",
+      "mode": "strict",
+      "expected": "Authorization=Basic"
+    },
+    {
+      "name": "strict: pin key with an inner pair",
+      "input": "pin: password: hunter2",
+      "mode": "strict",
+      "expected": "pin: [REDACTED:generic-keyword] [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: json key shorter than eight units is scanned",
+      "input": {
+        "token=x": "v"
+      },
+      "mode": "strict",
+      "expected": {
+        "token=[REDACTED:generic-keyword]": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "strict: json key that holds a secret is scanned",
+      "input": {
+        "token=hunter2": 1
+      },
+      "mode": "strict",
+      "expected": {
+        "token=[REDACTED:generic-keyword]": "[REDACTED:key-context]"
+      }
+    },
+    {
+      "name": "strict worst case: 190 kept-looking pairs in one run",
+      "inputGen": {
+        "parts": [
+          [
+            "your_token=",
+            190
+          ]
+        ]
+      },
+      "mode": "strict",
+      "expectedGenSync": {
+        "parts": [
+          [
+            "your_token=[REDACTED:generic-keyword]",
+            1
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "your_token=[REDACTED:generic-keyword]",
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "name": "strict worst case: 180 quoted kept-looking pairs, the last quote is open",
+      "inputGen": {
+        "parts": [
+          [
+            "your_token=\"",
+            180
+          ]
+        ]
+      },
+      "mode": "strict",
+      "expectedGenSync": {
+        "parts": [
+          [
+            "your_token=\"",
+            180
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "your_token=\"",
+            180
+          ]
+        ]
+      }
     }
   ]
 }

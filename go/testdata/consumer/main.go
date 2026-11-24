@@ -14,18 +14,21 @@ import (
 )
 
 type vector struct {
-	Name          string                                      `json:"name"`
-	Input         json.RawMessage                             `json:"input"`
-	Mode          string                                      `json:"mode"`
-	Opts          struct{ MaxChars, MaxDepth, MaxNodes *int } `json:"opts"`
-	Expected      json.RawMessage                             `json:"expected"`
-	ExpectedSync  json.RawMessage                             `json:"expectedSync"`
-	ExpectedAsync json.RawMessage                             `json:"expectedAsync"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
+	Mode  string          `json:"mode"`
+	Opts  struct {
+		MaxChars, MaxDepth, MaxNodes *int
+		PII                          bool `json:"pii"`
+	} `json:"opts"`
+	Expected      json.RawMessage `json:"expected"`
+	ExpectedSync  json.RawMessage `json:"expectedSync"`
+	ExpectedAsync json.RawMessage `json:"expectedAsync"`
 }
 
 func (v vector) options(tier redaction.Tier) redaction.Options {
 	opts := redaction.Options{
-		Tier: tier, Mode: redaction.Compat,
+		Tier: tier, Mode: redaction.Compat, PII: v.Opts.PII,
 		MaxChars: v.Opts.MaxChars, MaxDepth: v.Opts.MaxDepth, MaxNodes: v.Opts.MaxNodes,
 	}
 	if v.Mode == "strict" {

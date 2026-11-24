@@ -45,6 +45,10 @@ const (
 type Options struct {
 	Tier Tier
 	Mode Mode
+	// PII also redacts emails, phone numbers, IP addresses and OTP codes in prose (the `pii` rule group
+	// of the spec, ids `email`, `phone`, `ip` and `otp`), in both tiers and both modes. It is off by
+	// default; with it off the output is the same as without the option.
+	PII bool
 	// SkipKeys replaces the default skip keys (`type`, `id`): a primitive value under such a key
 	// is not replaced by key context. A nil slice keeps the default; an empty one skips nothing.
 	SkipKeys []string
@@ -156,30 +160,33 @@ func (r *recorder) result() Result {
 type scanMode struct {
 	tier     Tier
 	strict   bool
+	pii      bool
 	maxChars int
 }
 
 func (e *engine) scanMode(opts Options, lim limits) scanMode {
-	return scanMode{tier: opts.tier(), strict: opts.Mode != Compat, maxChars: lim.maxChars}
+	return scanMode{tier: opts.tier(), strict: opts.Mode != Compat, pii: opts.PII, maxChars: lim.maxChars}
+}
+
+// detect is the part of the mode that decides the rules.
+func (m scanMode) detect() detectOpts {
+	return detectOpts{strict: m.strict, pii: m.pii}
 }
 
 // scan scans a text of units in the given mode and returns it with the hits spliced.
 func (e *engine) scan(units []uint16, mode scanMode, rec *recorder) []uint16 {
 	switch {
 	case mode.tier == TierFull && mode.strict:
-		return e.redactFullStrict(units, rec)
+		return e.redactFullStrict(units, mode.detect(), rec)
 	case mode.tier == TierFull:
-		return e.redactFullCompat(units, rec)
+		return e.redactFullCompat(units, mode.detect(), rec)
 	}
-	return e.redactUnits(units, rec)
+	return e.redactUnits(units, mode.detect(), rec)
 }
 
 // redactUnits scans a text of units with the standard rules and returns it with the hits spliced.
-func (e *engine) redactUnits(units []uint16, rec *recorder) []uint16 {
-	if len(units) < e.spec.algorithms.Text.MinScanLength {
-		return units
-	}
-	hits := e.detect(newText(units))
+func (e *engine) redactUnits(units []uint16, opts detectOpts, rec *recorder) []uint16 {
+	hits := e.detect(newText(units), opts)
 	rec.addHits(hits)
 	return e.splice(units, hits)
 }

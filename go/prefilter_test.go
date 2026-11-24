@@ -27,12 +27,14 @@ func searchersOf(t *testing.T) map[string][]*searcher {
 			case *cookieLines:
 				found[id] = append(found[id], rule.search)
 			case *authValues:
-				found[id] = append(found[id], rule.bearer, rule.scheme)
+				found[id] = append(append(found[id], rule.bearers...), rule.scheme)
 			case *keywordPairs:
 				found[id] = append(found[id], rule.search)
 			case *quotedPairs:
 				found[id] = append(found[id], rule.search)
 			case *unquotedPairs:
+				found[id] = append(found[id], rule.search)
+			case *keyPairs:
 				found[id] = append(found[id], rule.search)
 			case *queryValues:
 				found[id] = append(found[id], rule.search)
@@ -40,6 +42,7 @@ func searchersOf(t *testing.T) map[string][]*searcher {
 		}
 	}
 	collect("", theEngine.pipeline)
+	collect("strict:", theEngine.strictPII)
 	collect("full:", theEngine.full)
 	return found
 }

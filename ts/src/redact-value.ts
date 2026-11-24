@@ -39,6 +39,7 @@ import { keysHoldingPlaceholder, newPlacer, placeKey } from './place-key.js';
 import { isPrimitive } from './primitive.js';
 import { detectFullTierKeyHits } from './full-rules.js';
 import { isScannableKey, redactKey } from './redact-key.js';
+import { detectSyncHits, scanFloor } from './sync-rules.js';
 
 export { CREDENTIAL_KEY_RE, STRUCTURAL_SKIP_KEYS };
 
@@ -120,18 +121,18 @@ async function visit(
 }
 
 /** A key scanned with the full-tier rules; a failing scan falls back to the standard rules, like a leaf. */
-function fullTierKey(key: string, hits: Hit[]): string {
+function fullTierKey(key: string, hits: Hit[], opts: RedactValueOpts): string {
     try {
-        return redactKey(key, hits, detectFullTierKeyHits);
+        return redactKey(key, hits, (text) => detectFullTierKeyHits(text, { pii: opts.pii }));
     } catch {
-        return standardKey(key, hits);
+        return standardKey(key, hits, opts);
     }
 }
 
 /** The standard rules over a key; if even they fail the key is replaced (a failing scan never passes it). */
-function standardKey(key: string, hits: Hit[]): string {
+function standardKey(key: string, hits: Hit[], opts: RedactValueOpts): string {
     try {
-        return redactKey(key, hits);
+        return redactKey(key, hits, (text) => detectSyncHits(text, { pii: opts.pii }));
     } catch {
         hits.push({ ruleId: ALGORITHMS_SPEC.ruleIds.error, range: [0, key.length] });
         return buildReadPlaceholder(ALGORITHMS_SPEC.ruleIds.error);
@@ -141,8 +142,8 @@ function standardKey(key: string, hits: Hit[]): string {
 /** A key after the key scan of the full tier (SPEC 9.4): `opts.detect`, when given, is the detector of keys
  *  as of leaves (SPEC 13), else the full-tier rules. */
 async function scanKey(key: string, hits: Hit[], opts: RedactValueOpts): Promise<string> {
-    if (opts.detect === undefined) return fullTierKey(key, hits);
-    if (!isScannableKey(key)) return key;
+    if (opts.detect === undefined) return fullTierKey(key, hits, opts);
+    if (!isScannableKey(key, scanFloor(opts))) return key;
     try {
         const found = await opts.detect(key);
         if (found.length === 0) return key;
@@ -150,7 +151,7 @@ async function scanKey(key: string, hits: Hit[], opts: RedactValueOpts): Promise
         return applyHits(key, found);
     } catch {
         // Like a leaf (`redactText`): a failing detector falls back to the standard rules, never the raw key.
-        return standardKey(key, hits);
+        return standardKey(key, hits, opts);
     }
 }
 

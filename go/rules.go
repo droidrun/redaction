@@ -22,12 +22,17 @@ type engine struct {
 	placeholders *placeholders
 	evidence     *evidence
 	keys         *keyNames
-	pipeline     []pipelineEntry
-	full         []pipelineEntry
-	letters      *letterTable
-	whitespace   *unitSet
-	skipKeys     [][]uint16
-	failureIDs   map[string]bool
+	// pipeline is the rule list of compat, strict that of strict (SPEC 4.10); the two PII lists are those
+	// followed by the rules of `pii`.
+	pipeline   []pipelineEntry
+	strict     []pipelineEntry
+	compatPII  []pipelineEntry
+	strictPII  []pipelineEntry
+	full       []pipelineEntry
+	letters    *letterTable
+	whitespace *unitSet
+	skipKeys   [][]uint16
+	failureIDs map[string]bool
 }
 
 // builder compiles spec text; the first failure sticks and every later call is a no-op.
@@ -120,6 +125,9 @@ func newEngine(spec *loadedSpec) (*engine, error) {
 	if e.pipeline, err = e.buildRules(b, spec.rules.Pipeline, e.standardKinds()); err != nil {
 		return nil, err
 	}
+	if err = e.buildModeRules(b); err != nil {
+		return nil, err
+	}
 	if e.full, err = e.buildRules(b, spec.rules.Full, e.fullKinds()); err != nil {
 		return nil, err
 	}
@@ -185,6 +193,7 @@ func (e *engine) standardKinds() map[string]ruleBuilder {
 		"keyword-pairs":  e.newKeywordPairs,
 		"quoted-pairs":   e.newQuotedPairs,
 		"unquoted-pairs": e.newUnquotedPairs,
+		"key-pairs":      e.newKeyPairs,
 		"query-values":   e.newQueryValues,
 	}
 }
@@ -199,6 +208,25 @@ func (e *engine) fullKinds() map[string]ruleBuilder {
 		"pem-key":        e.newPemKey,
 		"credential-uri": e.newCredentialURI,
 	}
+}
+
+// buildModeRules builds the lists of the other modes and of `pii` (the list of compat is built).
+func (e *engine) buildModeRules(b *builder) error {
+	rules := &e.spec.rules
+	raws, err := strictRules(rules.Pipeline, rules.Strict)
+	if err != nil {
+		return err
+	}
+	if e.strict, err = e.buildRules(b, raws, e.standardKinds()); err != nil {
+		return err
+	}
+	piiRules, err := e.buildRules(b, rules.PII, e.standardKinds())
+	if err != nil {
+		return err
+	}
+	e.compatPII = append(append([]pipelineEntry(nil), e.pipeline...), piiRules...)
+	e.strictPII = append(append([]pipelineEntry(nil), e.strict...), piiRules...)
+	return nil
 }
 
 func (e *engine) buildRules(
@@ -223,9 +251,40 @@ func (e *engine) buildRules(
 	return rules, nil
 }
 
-// detect is the standard tier on a whole text: every rule in pipeline order, hits merged.
-func (e *engine) detect(t *text) []hit {
-	return mergeHits(collectHits(e.pipeline, t))
+// detectOpts is what decides the rule list of a scan: the mode and the opt-in `pii` group (SPEC 4).
+type detectOpts struct {
+	strict bool
+	pii    bool
+}
+
+// rules is the rule list of the options: the list of the mode, then the rules of `pii` when asked for.
+func (e *engine) rules(opts detectOpts) []pipelineEntry {
+	switch {
+	case opts.strict && opts.pii:
+		return e.strictPII
+	case opts.strict:
+		return e.strict
+	case opts.pii:
+		return e.compatPII
+	}
+	return e.pipeline
+}
+
+// scanFloor is the shortest text (or object key) a scan looks at: none in strict or with `pii`, else
+// `text.minScanLength` (SPEC 4, 9.1).
+func (e *engine) scanFloor(opts detectOpts) int {
+	if opts.strict || opts.pii {
+		return 0
+	}
+	return e.spec.algorithms.Text.MinScanLength
+}
+
+// detect is the standard tier on a whole text: every rule of the list in order, hits merged.
+func (e *engine) detect(t *text, opts detectOpts) []hit {
+	if t.length() < e.scanFloor(opts) {
+		return nil
+	}
+	return mergeHits(collectHits(e.rules(opts), t))
 }
 
 // collectHits runs every rule of the list over the text, in order, and tags each span with its rule.

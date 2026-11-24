@@ -1,8 +1,31 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-24)
 
-Preparation for making the repository public. No change to what is detected, except where noted.
+Adds the opt-in `pii` option and short-secret detection in `strict` mode to all three implementations (TypeScript,
+Python, Go), and prepares the repository for being public. `compat` mode output and the default of every call without
+the new option are unchanged.
+
+### New
+
+- **`pii` option (off by default).** `pii: true` on the text and JSON entry points (sync and async, both modes, both
+  tiers) also redacts emails, phone numbers, IPv4/IPv6 addresses and OTP codes in prose, as `[REDACTED:email]`,
+  `[REDACTED:phone]`, `[REDACTED:ip]` and `[REDACTED:otp]` (spec sections 4.19 to 4.22, vectors in `spec/vectors/pii.json`).
+  Without the option the output is unchanged. The option is `pii` in TypeScript (`redactText`, `redactJsonValue` and the
+  sync entries), `pii=True` in Python (`redact_text`, `redact_json`) and `Options.PII` in Go.
+- **Short secrets in `strict`.** In `strict`, text pairs use the key verdict of JSON keys: `password=x`, `token=hunter2`,
+  `DB_PASS=hunter2`, `signing_key=abc` and `{"password":"x"}` are redacted, also with escaped quotes
+  (`{\"token\":\"x\"}`) and the separators `=>` and `:=`; `token: expired` and a number under a count key
+  (`max_tokens: 5`) stay. A pair inside the value of another (`auth: password: hunter2`, YAML parents) is found, and a value
+  never starts after a line break. `dr_sk_` keys are redacted in any case and length, and the whole `Bearer` credential (up
+  to whitespace or a quote). A text or object key of any length is scanned in `strict` and with `pii`. `strict` redacts at
+  least everything 0.3.0 `strict` redacted (the old pair rules still run), except that after `=>` or `:=` a stand-in value
+  stays. `compat` is byte-identical to before (golden corpus). Consumers that run `strict` (the default in Python and Go)
+  redact more after the bump.
+- **`restoreRedacted` knows strict and `pii` keys (TypeScript).** A key that was replaced in `strict` or with `pii` maps
+  back to its stored key; a placeholder key that two stored keys could stand for stays a conflict.
+
+### Repository
 
 - **MIT license.** `LICENSE` at the root and in `ts/`, `python/` and `go/`; license fields in the npm and Python
   metadata; the wheel and the npm package carry `LICENSE` and `NOTICE`.

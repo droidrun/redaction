@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from ._detect import Hit
+from ._detect import Detect, Hit
 from ._keys import key_verdict, stronger_verdict
 from ._placeholder import (
     NUMBER_MARK,
@@ -67,7 +67,7 @@ class WalkState:
         max_chars: float,
         max_depth: float,
         skip: frozenset[str],
-        strict: bool,
+        options: Detect,
         full: bool = False,
     ):
         self.full = full
@@ -75,7 +75,8 @@ class WalkState:
         self.chars = max_chars
         self.max_depth = max_depth
         self.skip = skip
-        self.strict = strict
+        self.options = options
+        self.strict = options.strict
         self.counts: dict[str, int] = {}
         self.error: str | None = None
         self.ancestors: set[int] = set()
@@ -138,13 +139,14 @@ def _leaf_replacement(verdict: str, value: Any) -> str | None:
 
 def _scan_leaf_text(units: str, state: WalkState) -> str:
     if state.full:
-        scanned, hits, error = (scan_full_strict if state.strict else scan_full_compat)(units)
+        scan = scan_full_strict if state.strict else scan_full_compat
+        scanned, hits, error = scan(units, state.options)
         state.error = state.error or error
     elif not state.strict:
-        scanned, hits = scan_units(units)
+        scanned, hits = scan_units(units, state.options)
     else:
         try:
-            scanned, hits = scan_units(units)
+            scanned, hits = scan_units(units, state.options)
         except Exception as failure:
             state.error = state.error or type(failure).__name__
             return state.limit(_FAILED)
@@ -226,7 +228,7 @@ def _over_budget(state: WalkState) -> str:
 def _scan_key(units: str, state: WalkState) -> tuple[str, list[Hit], str | None]:
     """The key scan of the walk (the tier's rules; a key over `maxKeyChars` is left as it is)."""
     scan = (scan_full_strict if state.strict else scan_full_compat) if state.full else scan_standard
-    return redact_key(units, scan)
+    return redact_key(units, scan, state.options)
 
 
 def _next_key(key: str, state: WalkState) -> tuple[str, bool]:

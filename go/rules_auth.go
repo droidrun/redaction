@@ -4,6 +4,7 @@ import "encoding/json"
 
 type authSpec struct {
 	Bearer         string   `json:"bearer"`
+	BearerAlso     string   `json:"bearerAlso"`
 	Scheme         string   `json:"scheme"`
 	ValueClass     string   `json:"valueClass"`
 	MinValueLength int      `json:"minValueLength"`
@@ -16,7 +17,7 @@ type authSpec struct {
 // authValues is SPEC 4.5: `Bearer <value>`, and `Basic`/`Token <value>` when the value looks
 // like a credential and not like a word.
 type authValues struct {
-	bearer       *searcher
+	bearers      []*searcher
 	scheme       *searcher
 	value        *unitSet
 	minValue     int
@@ -32,8 +33,12 @@ func (e *engine) newAuthValues(b *builder, raw json.RawMessage) (scanner, error)
 	if err := decodeRule(raw, &spec); err != nil {
 		return nil, err
 	}
+	bearers := []*searcher{b.searcher(spec.Bearer)}
+	if spec.BearerAlso != "" {
+		bearers = append(bearers, b.searcher(spec.BearerAlso))
+	}
 	return &authValues{
-		bearer:       b.searcher(spec.Bearer),
+		bearers:      bearers,
 		scheme:       b.searcher(spec.Scheme),
 		value:        b.class(spec.ValueClass),
 		minValue:     spec.MinValueLength,
@@ -45,10 +50,11 @@ func (e *engine) newAuthValues(b *builder, raw json.RawMessage) (scanner, error)
 	}, b.err
 }
 
-func (a *authValues) bearerRanges(t *text) []span {
+// credentialRanges are the credentials of one `bearer` pattern: capture group 1 of every match.
+func credentialRanges(search *searcher, t *text) []span {
 	var found []span
 	for from := 0; ; {
-		loc := a.bearer.find(t, from)
+		loc := search.find(t, from)
 		if loc == nil {
 			return found
 		}
@@ -57,6 +63,16 @@ func (a *authValues) bearerRanges(t *text) []span {
 			found = append(found, span{loc[2], loc[3]})
 		}
 	}
+}
+
+// bearerRanges are the credentials of `bearer`, then those of `bearerAlso`: each is searched on its own, so
+// a wider pattern never consumes what the other would find.
+func (a *authValues) bearerRanges(t *text) []span {
+	var found []span
+	for _, search := range a.bearers {
+		found = append(found, credentialRanges(search, t)...)
+	}
+	return found
 }
 
 func (a *authValues) endsWord(units []uint16, at int) bool {

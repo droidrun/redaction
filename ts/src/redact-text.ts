@@ -8,14 +8,11 @@ import { applyHits, dedupeRanges, type Hit } from './hits.js';
 import type { RedactMode } from './mode.js';
 import { buildReadPlaceholder } from './placeholder.js';
 import { ALGORITHMS_SPEC } from './spec.js';
-import { detectSyncHits } from './sync-rules.js';
+import { detectSyncHits, scanFloor } from './sync-rules.js';
 
 export type { Hit };
 
 const ERROR_RULE_ID = ALGORITHMS_SPEC.ruleIds.error;
-
-/** Below this, not worth invoking the engine — no real secret is shorter. */
-const MIN_SCAN_LEN = ALGORITHMS_SPEC.text.minScanLength;
 
 /**
  * Scan window size: a text this long or shorter is scanned by the full-tier rules in one pass. A longer one is
@@ -38,6 +35,9 @@ export type RedactTextOpts = {
     /** Use the 0.1.1 placeholder `[REDACTED:<rule>:<last4>]` for matches of at least
      *  16 characters. Default: `[REDACTED:<rule>]`, which exposes nothing of the secret. */
     last4?: boolean;
+    /** Also redact emails, phone numbers, IP addresses and OTP codes in prose (the `pii` rule group of the
+     *  spec). Default false. */
+    pii?: boolean;
     /** Overrides the detector. */
     detect?: (text: string) => Promise<Hit[]>;
     /** Receives safe scan metadata. Callback failures cannot interrupt redaction. */
@@ -60,7 +60,7 @@ function emitEvent(opts: RedactTextOpts, name: string, attrs: Record<string, unk
  * found; a text that long is reported as `redaction.scan.capped`.
  */
 export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Promise<Hit[]> {
-    if (text.length < MIN_SCAN_LEN) return [];
+    if (text.length < scanFloor(opts)) return [];
 
     const capped = text.length > MAX_TOTAL_SCAN_LEN;
     if (capped) {
@@ -70,7 +70,8 @@ export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Pr
         });
     }
     const scanned = capped ? text.slice(0, MAX_TOTAL_SCAN_LEN) : text;
-    return dedupeRanges([...scanWindows(scanned).map(withLegacyId), ...detectSyncHits(text)]);
+    const detect = { mode: opts.mode, pii: opts.pii };
+    return dedupeRanges([...scanWindows(scanned).map(withLegacyId), ...detectSyncHits(text, detect)]);
 }
 
 /** The full-tier rules over `text` (already capped), in windows when long. */
@@ -112,15 +113,15 @@ export async function redactText(
         emitEvent(opts, 'redaction.detect.failed', {
             errorName: err instanceof Error ? err.constructor.name : typeof err,
         });
-        return degradedRedaction(text);
+        return degradedRedaction(text, opts);
     }
 }
 
 /** The scanners failed: the deterministic rules still run, and if they fail too
  *  the text is replaced. A scan failure never lets a secret through. */
-function degradedRedaction(text: string): { text: string; hits: Hit[] } {
+function degradedRedaction(text: string, opts: RedactTextOpts): { text: string; hits: Hit[] } {
     try {
-        const hits = detectSyncHits(text);
+        const hits = detectSyncHits(text, { pii: opts.pii });
         return { text: applyHits(text, hits), hits };
     } catch {
         const hit: Hit = { ruleId: ERROR_RULE_ID, range: [0, 0] };

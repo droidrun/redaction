@@ -116,6 +116,42 @@
       "name": "cookie value continues past another escape",
       "input": "Cookie: a=b\\Xxyz tail",
       "expected": "Cookie: [REDACTED:cookie]"
+    },
+    {
+      "name": "strict: bearer credential with a punctuation mark",
+      "input": "Bearer abc!defghijklmnop",
+      "mode": "strict",
+      "expected": "Bearer [REDACTED:auth-header]"
+    },
+    {
+      "name": "strict: bearer credential with a colon",
+      "input": "Bearer foo:barbazquux",
+      "mode": "strict",
+      "expected": "Bearer [REDACTED:auth-header]"
+    },
+    {
+      "name": "strict: bearer credential ends at a quote",
+      "input": "curl -H \"Authorization: Bearer abc!defghij\" url",
+      "mode": "strict",
+      "expected": "curl -H \"Authorization: Bearer [REDACTED:auth-header]\" url"
+    },
+    {
+      "name": "strict: bearer credential in escaped json ends at the escaped quote",
+      "input": "{\\\"hdr\\\":\\\"Bearer abc!defghij\\\"}",
+      "mode": "strict",
+      "expected": "{\\\"hdr\\\":\\\"Bearer [REDACTED:auth-header]\\\"}"
+    },
+    {
+      "name": "strict: bearer credential in quotes",
+      "input": "Authorization: Bearer \"abcdef\"",
+      "mode": "strict",
+      "expected": "Authorization: Bearer \"[REDACTED:auth-header]\""
+    },
+    {
+      "name": "strict: a second bearer inside the first credential is still found",
+      "input": "Bearer user:abcdefgh&Bearer pwd=null, x",
+      "mode": "strict",
+      "expected": "Bearer [REDACTED:auth-header] [REDACTED:auth-header], x"
     }
   ]
 }

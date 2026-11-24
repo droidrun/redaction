@@ -24,6 +24,7 @@ import { isPrimitive } from './primitive.js';
 import { buildReadPlaceholder } from './placeholder.js';
 import { isOverlongKey, isScannableKey } from './redact-key.js';
 import { ALGORITHMS_SPEC } from './spec.js';
+import { scanFloor } from './sync-rules.js';
 
 const { ruleIds } = ALGORITHMS_SPEC;
 
@@ -171,7 +172,7 @@ function* nextKey(
         return { outKey: limitPlaceholder(ruleIds.sizeLimit, state.hits), changed: true };
     }
     state.chars -= key.length;
-    if (!isScannableKey(key)) return { outKey: key, changed: false };
+    if (!isScannableKey(key, scanFloor({ mode: 'strict' }))) return { outKey: key, changed: false };
     const scanned = yield key;
     appendHits(state.hits, scanned.hits);
     return { outKey: scanned.text, changed: scanned.text !== key };

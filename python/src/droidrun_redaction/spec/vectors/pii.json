@@ -1,0 +1,748 @@
+{
+  "description": "The opt-in `pii` option: emails, phone numbers, IP addresses and OTP codes in prose. Cases with `opts.pii` run with the option on; the others pin that nothing changes without it. Phone numbers come from ranges set aside for fiction (UK Ofcom drama range 020 7946 0xxx, French ARCEP range 01 99 00 xx xx, Bundesnetzagentur range 030 23125 xxx, NANP 555-01xx); email addresses use example.com, example.org, example.net and the .example and .xx names.",
+  "cases": [
+    {
+      "name": "email: plain address",
+      "input": "contact person@example.com today",
+      "opts": {
+        "pii": true
+      },
+      "expected": "contact [REDACTED:email] today"
+    },
+    {
+      "name": "email: upper case, plus tag, subdomain",
+      "input": "reach A.B+tag@Sub.Example.ORG please",
+      "opts": {
+        "pii": true
+      },
+      "expected": "reach [REDACTED:email] please"
+    },
+    {
+      "name": "email: in angle brackets",
+      "input": "From: <a@b.example>",
+      "opts": {
+        "pii": true
+      },
+      "expected": "From: <[REDACTED:email]>"
+    },
+    {
+      "name": "email: sentence period stays outside",
+      "input": "mail me at bob@example.com.",
+      "opts": {
+        "pii": true
+      },
+      "expected": "mail me at [REDACTED:email]."
+    },
+    {
+      "name": "email: two addresses",
+      "input": "a@example.org, b@example.net",
+      "opts": {
+        "pii": true
+      },
+      "expected": "[REDACTED:email], [REDACTED:email]"
+    },
+    {
+      "name": "email: a text shorter than eight units is scanned",
+      "input": "a@b.xx",
+      "opts": {
+        "pii": true
+      },
+      "expected": "[REDACTED:email]"
+    },
+    {
+      "name": "email kept: version after the at sign",
+      "input": "upgrade react@18.2.0 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "upgrade react@18.2.0 now"
+    },
+    {
+      "name": "email kept: asset name",
+      "input": "load icon@2x.png first",
+      "opts": {
+        "pii": true
+      },
+      "expected": "load icon@2x.png first"
+    },
+    {
+      "name": "email kept: host without a dot",
+      "input": "login user@localhost ok",
+      "opts": {
+        "pii": true
+      },
+      "expected": "login user@localhost ok"
+    },
+    {
+      "name": "email kept: package with a semver",
+      "input": "install pkg@1.2.3 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "install pkg@1.2.3 now"
+    },
+    {
+      "name": "phone: international with spaces",
+      "input": "call +44 20 7946 0958 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "call [REDACTED:phone] now"
+    },
+    {
+      "name": "phone: north american with parentheses",
+      "input": "call (415) 555-0123 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "call [REDACTED:phone] now"
+    },
+    {
+      "name": "phone: international with dots",
+      "input": "call +33.1.99.00.12.34 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "call [REDACTED:phone] now"
+    },
+    {
+      "name": "phone: international without separators",
+      "input": "call +493023125123 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "call [REDACTED:phone] now"
+    },
+    {
+      "name": "phone: north american with dashes",
+      "input": "call 415-555-0123 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "call [REDACTED:phone] now"
+    },
+    {
+      "name": "phone: country code with parentheses",
+      "input": "call +1 (415) 555-0123 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "call [REDACTED:phone] now"
+    },
+    {
+      "name": "phone: leading one with dashes",
+      "input": "call 1-415-555-0123 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "call [REDACTED:phone] now"
+    },
+    {
+      "name": "phone: national grouped, three groups",
+      "input": "call 020 7946 0958 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "call [REDACTED:phone] now"
+    },
+    {
+      "name": "phone: national grouped, pairs",
+      "input": "call 01 99 00 12 34 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "call [REDACTED:phone] now"
+    },
+    {
+      "name": "phone kept: timestamp",
+      "input": "at 2026-11-19 10:00:59 done",
+      "opts": {
+        "pii": true
+      },
+      "expected": "at 2026-11-19 10:00:59 done"
+    },
+    {
+      "name": "phone kept: request id",
+      "input": "Request ID 1234567890",
+      "opts": {
+        "pii": true
+      },
+      "expected": "Request ID 1234567890"
+    },
+    {
+      "name": "phone kept: id in a path",
+      "input": "GET /devices/1234567890",
+      "opts": {
+        "pii": true
+      },
+      "expected": "GET /devices/1234567890"
+    },
+    {
+      "name": "phone kept: version",
+      "input": "released v0.3.0 today",
+      "opts": {
+        "pii": true
+      },
+      "expected": "released v0.3.0 today"
+    },
+    {
+      "name": "phone kept: too many digits for a number",
+      "input": "ref +12345678901234567890 end",
+      "opts": {
+        "pii": true
+      },
+      "expected": "ref +12345678901234567890 end"
+    },
+    {
+      "name": "phone: the first 15 digits of a longer run with separators are a number",
+      "input": "ref +1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 end",
+      "opts": {
+        "pii": true
+      },
+      "expected": "ref [REDACTED:phone] 6 7 end"
+    },
+    {
+      "name": "ip: v4 address",
+      "input": "host 192.0.2.123 is up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "host [REDACTED:ip] is up"
+    },
+    {
+      "name": "ip: v4 address with a port",
+      "input": "connect 192.0.2.123:8080 failed",
+      "opts": {
+        "pii": true
+      },
+      "expected": "connect [REDACTED:ip]:8080 failed"
+    },
+    {
+      "name": "ip: v6 address",
+      "input": "peer 2001:db8::1 is up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "peer [REDACTED:ip] is up"
+    },
+    {
+      "name": "ip: v6 address in brackets with a port",
+      "input": "connect [fdab::cafe]:8080 failed",
+      "opts": {
+        "pii": true
+      },
+      "expected": "connect [[REDACTED:ip]]:8080 failed"
+    },
+    {
+      "name": "ip: full v6 address",
+      "input": "peer 2001:0db8:85a3:0000:0000:8a2e:0370:7334 up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "peer [REDACTED:ip] up"
+    },
+    {
+      "name": "ip: v6 address with leading compression",
+      "input": "peer ::ffff:abcd:1234 up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "peer [REDACTED:ip] up"
+    },
+    {
+      "name": "ip: v6 address with trailing compression",
+      "input": "2001:db8:1:: up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "[REDACTED:ip] up"
+    },
+    {
+      "name": "ip: v6 address before a colon",
+      "input": "Error 2001:db8::1: refused",
+      "opts": {
+        "pii": true
+      },
+      "expected": "Error [REDACTED:ip]: refused"
+    },
+    {
+      "name": "ip kept: version with a v",
+      "input": "running v1.2.3.4 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "running v1.2.3.4 now"
+    },
+    {
+      "name": "ip kept: version word",
+      "input": "using version 1.2.3.4 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "using version 1.2.3.4 now"
+    },
+    {
+      "name": "ip kept: android version",
+      "input": "on android 14.0.0.1 only",
+      "opts": {
+        "pii": true
+      },
+      "expected": "on android 14.0.0.1 only"
+    },
+    {
+      "name": "ip kept: build word",
+      "input": "from build 1.2.3.4 only",
+      "opts": {
+        "pii": true
+      },
+      "expected": "from build 1.2.3.4 only"
+    },
+    {
+      "name": "ip kept: firmware word",
+      "input": "on firmware 1.0.0.12 only",
+      "opts": {
+        "pii": true
+      },
+      "expected": "on firmware 1.0.0.12 only"
+    },
+    {
+      "name": "ip kept: sdk word",
+      "input": "with sdk 33.0.1.0 only",
+      "opts": {
+        "pii": true
+      },
+      "expected": "with sdk 33.0.1.0 only"
+    },
+    {
+      "name": "ip kept: octet above 255",
+      "input": "address 999.1.1.1 invalid",
+      "opts": {
+        "pii": true
+      },
+      "expected": "address 999.1.1.1 invalid"
+    },
+    {
+      "name": "ip kept: scope operator",
+      "input": "call std::vector now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "call std::vector now"
+    },
+    {
+      "name": "ip kept: mac address",
+      "input": "nic aa:bb:cc:dd:ee:ff up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "nic aa:bb:cc:dd:ee:ff up"
+    },
+    {
+      "name": "ip kept: time of day",
+      "input": "at 10:00:59 and 23:59:59 sharp",
+      "opts": {
+        "pii": true
+      },
+      "expected": "at 10:00:59 and 23:59:59 sharp"
+    },
+    {
+      "name": "otp: verification code sentence",
+      "input": "Your verification code is 482913",
+      "opts": {
+        "pii": true
+      },
+      "expected": "Your verification code is [REDACTED:otp]"
+    },
+    {
+      "name": "otp: OTP code",
+      "input": "OTP code: 482913",
+      "opts": {
+        "pii": true
+      },
+      "expected": "OTP code: [REDACTED:otp]"
+    },
+    {
+      "name": "otp: MFA code",
+      "input": "MFA code: 482913",
+      "opts": {
+        "pii": true
+      },
+      "expected": "MFA code: [REDACTED:otp]"
+    },
+    {
+      "name": "otp: German noun",
+      "input": "Bestätigungscode 482913",
+      "opts": {
+        "pii": true
+      },
+      "expected": "Bestätigungscode [REDACTED:otp]"
+    },
+    {
+      "name": "otp: Chinese noun",
+      "input": "验证码 482913",
+      "opts": {
+        "pii": true
+      },
+      "expected": "验证码 [REDACTED:otp]"
+    },
+    {
+      "name": "otp: Chinese noun with a full-width colon",
+      "input": "验证码：482913",
+      "opts": {
+        "pii": true
+      },
+      "expected": "验证码：[REDACTED:otp]"
+    },
+    {
+      "name": "otp: Japanese noun",
+      "input": "認証コードは482913です",
+      "opts": {
+        "pii": true
+      },
+      "expected": "認証コードは[REDACTED:otp]です"
+    },
+    {
+      "name": "otp: French noun",
+      "input": "Votre code de vérification est 482913",
+      "opts": {
+        "pii": true
+      },
+      "expected": "Votre code de vérification est [REDACTED:otp]"
+    },
+    {
+      "name": "otp: four digits with an explicit noun",
+      "input": "Your OTP is 4821",
+      "opts": {
+        "pii": true
+      },
+      "expected": "Your OTP is [REDACTED:otp]"
+    },
+    {
+      "name": "otp: bare code with six digits",
+      "input": "your code is 123456",
+      "opts": {
+        "pii": true
+      },
+      "expected": "your code is [REDACTED:otp]"
+    },
+    {
+      "name": "otp kept: bare code with four digits",
+      "input": "your code is 4821 ok",
+      "opts": {
+        "pii": true
+      },
+      "expected": "your code is 4821 ok"
+    },
+    {
+      "name": "otp kept: error code",
+      "input": "error code 5000",
+      "opts": {
+        "pii": true
+      },
+      "expected": "error code 5000"
+    },
+    {
+      "name": "otp kept: error code with six digits",
+      "input": "error code 123456",
+      "opts": {
+        "pii": true
+      },
+      "expected": "error code 123456"
+    },
+    {
+      "name": "otp kept: exit code",
+      "input": "exit code 1370",
+      "opts": {
+        "pii": true
+      },
+      "expected": "exit code 1370"
+    },
+    {
+      "name": "otp kept: status code",
+      "input": "status code 404",
+      "opts": {
+        "pii": true
+      },
+      "expected": "status code 404"
+    },
+    {
+      "name": "otp kept: response code",
+      "input": "response code 200000",
+      "opts": {
+        "pii": true
+      },
+      "expected": "response code 200000"
+    },
+    {
+      "name": "otp kept: postal code",
+      "input": "postal code 941031",
+      "opts": {
+        "pii": true
+      },
+      "expected": "postal code 941031"
+    },
+    {
+      "name": "otp kept: count key",
+      "input": "max_tokens: 5",
+      "opts": {
+        "pii": true
+      },
+      "expected": "max_tokens: 5"
+    },
+    {
+      "name": "otp kept: port",
+      "input": "listening on port 8080",
+      "opts": {
+        "pii": true
+      },
+      "expected": "listening on port 8080"
+    },
+    {
+      "name": "otp kept: noun inside a word",
+      "input": "print the barcode 123456 now",
+      "opts": {
+        "pii": true
+      },
+      "expected": "print the barcode 123456 now"
+    },
+    {
+      "name": "json: strings and keys are scanned",
+      "input": {
+        "note": "call bob@example.com",
+        "bob@example.com": "x",
+        "n": 3
+      },
+      "opts": {
+        "pii": true
+      },
+      "expected": {
+        "note": "call [REDACTED:email]",
+        "[REDACTED:email]": "x",
+        "n": 3
+      }
+    },
+    {
+      "name": "json: a key shorter than eight units is scanned",
+      "input": {
+        "a@b.xx": "x"
+      },
+      "opts": {
+        "pii": true
+      },
+      "expected": {
+        "[REDACTED:email]": "x"
+      }
+    },
+    {
+      "name": "json strict: strings are scanned",
+      "input": {
+        "note": "peer 2001:db8::1 up"
+      },
+      "mode": "strict",
+      "opts": {
+        "pii": true
+      },
+      "expected": {
+        "note": "peer [REDACTED:ip] up"
+      }
+    },
+    {
+      "name": "strict: text is scanned",
+      "input": "Your verification code is 482913 for +493023125123",
+      "mode": "strict",
+      "opts": {
+        "pii": true
+      },
+      "expected": "Your verification code is [REDACTED:otp] for [REDACTED:phone]"
+    },
+    {
+      "name": "secret and pii in one text",
+      "input": "token=Zq9abcDEF123ghi mail bob@example.com",
+      "opts": {
+        "pii": true
+      },
+      "expected": "token=[REDACTED:generic-keyword] mail [REDACTED:email]"
+    },
+    {
+      "name": "ip kept: two colons without brackets",
+      "input": "peer fe80::1 is up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "peer fe80::1 is up"
+    },
+    {
+      "name": "ip: two colons inside brackets",
+      "input": "peer [fe80::1] is up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "peer [[REDACTED:ip]] is up"
+    },
+    {
+      "name": "option off: email, phone, ip and otp stay",
+      "input": "mail bob@example.com or +33.1.99.00.12.34 from 192.0.2.123 and [fdab::cafe] code is 482913",
+      "expected": "mail bob@example.com or +33.1.99.00.12.34 from 192.0.2.123 and [fdab::cafe] code is 482913"
+    },
+    {
+      "name": "option off, strict: email, phone, ip and otp stay",
+      "input": "mail bob@example.com or +33.1.99.00.12.34 from 192.0.2.123 and [fdab::cafe] code is 482913",
+      "mode": "strict",
+      "expected": "mail bob@example.com or +33.1.99.00.12.34 from 192.0.2.123 and [fdab::cafe] code is 482913"
+    },
+    {
+      "name": "option off: json strings stay",
+      "input": {
+        "note": "call bob@example.com"
+      },
+      "expected": {
+        "note": "call bob@example.com"
+      }
+    },
+    {
+      "name": "option explicitly false: nothing is redacted",
+      "input": "mail bob@example.com",
+      "opts": {
+        "pii": false
+      },
+      "expected": "mail bob@example.com"
+    },
+    {
+      "name": "option off: a text shorter than eight units is not scanned",
+      "input": "a@b.xx",
+      "expected": "a@b.xx"
+    },
+    {
+      "name": "worst case, email: 2,000 units of local part and at sign",
+      "inputGen": {
+        "parts": [
+          [
+            "a@",
+            1000
+          ]
+        ]
+      },
+      "opts": {
+        "pii": true
+      },
+      "expectedGenSync": {
+        "parts": [
+          [
+            "a@",
+            1000
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "a@",
+            1000
+          ]
+        ]
+      }
+    },
+    {
+      "name": "worst case, phone: a plus sign and 999 separated digits",
+      "inputGen": {
+        "parts": [
+          [
+            "+1",
+            1
+          ],
+          [
+            " 2",
+            999
+          ]
+        ]
+      },
+      "opts": {
+        "pii": true
+      },
+      "expectedGenSync": {
+        "parts": [
+          [
+            "[REDACTED:phone]",
+            1
+          ],
+          [
+            " 2",
+            985
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "[REDACTED:phone]",
+            1
+          ],
+          [
+            " 2",
+            985
+          ]
+        ]
+      }
+    },
+    {
+      "name": "worst case, ip: 1,000 hex groups",
+      "inputGen": {
+        "parts": [
+          [
+            "1:",
+            1000
+          ]
+        ]
+      },
+      "opts": {
+        "pii": true
+      },
+      "expectedGenSync": {
+        "parts": [
+          [
+            "1:",
+            1000
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "1:",
+            1000
+          ]
+        ]
+      }
+    },
+    {
+      "name": "worst case, otp: 400 bare nouns",
+      "inputGen": {
+        "parts": [
+          [
+            "code ",
+            400
+          ]
+        ]
+      },
+      "opts": {
+        "pii": true
+      },
+      "expectedGenSync": {
+        "parts": [
+          [
+            "code ",
+            400
+          ]
+        ]
+      },
+      "expectedGenAsync": {
+        "parts": [
+          [
+            "code ",
+            400
+          ]
+        ]
+      }
+    }
+  ]
+}

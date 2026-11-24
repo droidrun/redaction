@@ -39,6 +39,7 @@ def test_every_category_is_present():
         "keywords.json",
         "modes.json",
         "nested-json.json",
+        "pii.json",
         "url-query.json",
     ]
 

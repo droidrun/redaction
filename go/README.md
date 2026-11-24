@@ -9,7 +9,7 @@ dependencies.
 ## Install
 
 ```sh
-go get github.com/droidrun/redaction/go@v0.3.0   # resolved through the tag go/v0.3.0
+go get github.com/droidrun/redaction/go@v0.4.0   # resolved through the tag go/v0.4.0
 ```
 
 The module lives in the `go/` directory, so its tags are `go/vX.Y.Z`
@@ -53,8 +53,8 @@ text, result = redaction.RedactText(line, redaction.Options{Tier: redaction.Tier
   span handlers: a string under a secret key becomes `[REDACTED:key-context]`, any other string is
   scanned, a number is replaced only under `VerdictAny` (counts such as `max_tokens` stay), every
   other type is returned as it is.
-- `Options{Tier, Mode, SkipKeys, MaxDepth, MaxNodes, MaxChars}`; `Tier` is `TierStandard` (the zero
-  value) or `TierFull`; a nil limit is the spec default and an
+- `Options{Tier, Mode, PII, SkipKeys, MaxDepth, MaxNodes, MaxChars}`; `Tier` is `TierStandard` (the zero
+  value) or `TierFull`; `PII` is [below](#personal-data-the-pii-option); a nil limit is the spec default and an
   explicit one is used as given, so `redaction.Limit(0)` is a limit of zero (as in the TypeScript
   package). `SkipKeys` replaces the default skip keys (`type`, `id`); nil keeps them, an empty
   slice skips nothing.
@@ -99,7 +99,7 @@ replaced; `example_test.go` runs this.
   scans a longer text with the standard rules beyond that cap; Strict replaces the units beyond the cap
   by `[REDACTED:size-limit]`.
 - `RedactField` and the key rules (`IsSecretKeyName`, `KeyVerdict`) are the same in both tiers. In
-  `RedactJSON` an object key (from 8 up to 4,096 units) is scanned with the rules of the tier: in the
+  `RedactJSON` an object key (from 8 units in `Compat` without `PII`, from 1 in `Strict` and with `PII`, up to 4,096) is scanned with the rules of the tier: in the
   full tier a key that is itself a token (npm, Slack, 1Password, ...) is replaced by its placeholder,
   in both modes.
 
@@ -116,6 +116,33 @@ replaced; `example_test.go` runs this.
   (SPEC 9.4, as in the TypeScript package: `MaxChars`, `MaxDepth` and `MaxNodes` are not used), and a
   failing scanner falls back to the standard rules, then to `[REDACTED:error]`. Use Compat only to
   match old output.
+
+In `Strict` the same key names that decide JSON keys also decide **text pairs** (`key: value`,
+`key=value`, `key => "value"`, `key := "value"`, also inside escaped JSON): a value under a key with
+the `VerdictAny` verdict is redacted even when it is short (`password=x`, `DB_PASS=hunter2`), under
+`VerdictString` unless it is all digits (`max_tokens: 5`). Stand-ins (`changeme`, `xxxx`, `<token>`),
+the words `expired`, `required`, `failed`, `missing`, `invalid`, `true`, `false`, `null`, `none` (up to
+64 units) and, under an authorization key, the scheme words `Bearer`, `Basic`, `Digest` stay. A
+value never starts after a line break, and a pair inside the value of another (`auth: password:
+hunter2`) is found. `Strict` also redacts `dr_sk_` keys in any case and length and the whole `Bearer`
+credential up to whitespace or a quote, and scans a text or key of any length. It redacts at least
+everything the 0.3.0 `Strict` redacted; `Compat` does none of this.
+
+## Personal data: the `PII` option
+
+`Options{PII: true}` (default false), in both tiers and both modes, also redacts in prose and in JSON
+strings and keys:
+
+| rule id | what | stays |
+|---|---|---|
+| `email` | `person@example.com`, `A.B+tag@Example.CO.uk` | `react@18.2.0`, `icon@2x.png`, `user@localhost` |
+| `phone` | `+44 20 7946 0958`, `(415) 555-0123`, `415-555-0123`, `020 7946 0958`, `01 99 00 12 34` | `Request ID 1234567890`, `2026-11-19 10:00:59`, `v0.3.0` |
+| `ip` | IPv4 `192.0.2.123`, IPv6 `2001:db8::1`, `[fdab::cafe]:8080` (the address only, a port stays) | `version 1.2.3.4`, `android 14.0.0.1`, `999.1.1.1`, `std::vector` |
+| `otp` | the digits after a code noun (`Your verification code is 482913`, `OTP code: 482913`) | `error code 5000`, `exit code 1370`, `response code 200000`, `port 8080` |
+
+The placeholders are `[REDACTED:email]`, `[REDACTED:phone]`, `[REDACTED:ip]` and `[REDACTED:otp]`; a text
+of any length is scanned. Names, postal addresses, IDN emails, URL-encoded values and prose secrets such
+as `password hunter2` are not detected; the rules are in SPEC sections 4.19 to 4.22 and 15.
 
 ## Limits
 

@@ -55,7 +55,9 @@ def _load() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         rules, keys, algorithms = (_checked(json.loads(files[name])) for name in _HASHED_FILES)
     except ValueError:
         raise SpecError("redaction spec data is not valid") from None
-    has_no_rules = len(rules.get("pipeline", [])) == 0 or len(rules.get("full", [])) == 0
+    has_no_rules = any(len(rules.get(name, [])) == 0 for name in ("pipeline", "pii", "full"))
+    if not isinstance(rules.get("strict"), list):
+        raise SpecError("redaction spec holds no strict rules")
     if has_no_rules or len(keys.get("secretWords", [])) == 0:
         raise SpecError("redaction spec holds no rules")
     return rules, keys, algorithms
@@ -90,3 +92,29 @@ def expand_pattern(template: str, depth: int = 0) -> str:
         raise SpecError("redaction spec macros nest too deep")
     expanded = _MACRO_REFERENCE.sub(lambda found: _expand_macro(found.group(1)), template)
     return expanded if expanded == template else expand_pattern(expanded, depth + 1)
+
+
+def _matches_edit(rule: dict[str, Any], edit: dict[str, Any]) -> bool:
+    is_id = "id" not in edit or rule["id"] == edit["id"]
+    is_kind = "kind" not in edit or rule["kind"] == edit["kind"]
+    return is_id and is_kind
+
+
+def _apply_edit(rules: list[dict[str, Any]], edit: dict[str, Any]) -> list[dict[str, Any]]:
+    targets = [rule for rule in rules if _matches_edit(rule, edit)]
+    if not targets:
+        raise SpecError("a strict edit of the spec matches no rule")
+    if "add" in edit:
+        if len(targets) != 1:
+            raise SpecError("a strict edit that adds a rule must match one rule")
+        at = next(index for index, rule in enumerate(rules) if rule is targets[0])
+        return [*rules[: at + 1], edit["add"], *rules[at + 1 :]]
+    return [{**rule, **edit["set"]} if _matches_edit(rule, edit) else rule for rule in rules]
+
+
+def strict_rules(rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The `strict` rule list (SPEC 4.10): the `compat` list with the `strict` edits of the spec applied."""
+    edited = list(rules)
+    for edit in RULES["strict"]:
+        edited = _apply_edit(edited, edit)
+    return edited

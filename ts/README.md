@@ -18,7 +18,7 @@ for every npm install, also for a public package: a GitHub token with `read:pack
 Provide `NODE_AUTH_TOKEN` through your secret manager (a GitHub token with `read:packages`), then install:
 
 ```sh
-pnpm add @droidrun/redaction@0.3.0
+pnpm add @droidrun/redaction@0.4.0
 ```
 
 For Docker, use a BuildKit secret instead of a build argument or a token stored in the image:
@@ -119,6 +119,18 @@ Everything the sync path (and, inside it, the async path) detects:
   `cvc`, `sig`, `jwt`, `pass`, `auth`. Words match as such or as a plural, so `secretary`,
   `passwordless`, `tokenizer`, `passThrough` and the Twilio `sid` stay. `isSecretKeyName(key)` is exported, and so is `keyVerdict(key)`: `'none'`, `'string'` (strings are replaced, numbers stay: `max_tokens`, `tokens`) or `'any'` (numbers too: `pin`, `password`).
 
+In `mode: 'strict'` the same key names also decide **text pairs** (`key: value`, `key=value`, `key => "value"`,
+`key := "value"`, also inside escaped JSON): a value under a key with an `any` verdict is redacted even when it is short
+(`password=x`, `DB_PASS=hunter2`), under a `string` verdict unless it is all digits (`max_tokens: 5`). Stand-ins
+(`changeme`, `xxxx`, `<token>`), the words `expired`, `required`, `failed`, `missing`, `invalid`, `true`, `false`,
+`null`, `none` (up to 64 characters) and, under an authorization key, the scheme words `Bearer`, `Basic`, `Digest` stay
+(`token: expired`, `Authorization: Bearer abc12345`). A value never starts after a line break, and a pair inside the value
+of another (`auth: password: hunter2`, YAML parents) is found. Strict also redacts `dr_sk_` keys in any case and length,
+and the whole `Bearer` credential up to whitespace or a quote (`Bearer abc!defghijklmnop`, also `Bearer "abc"`). A text
+or key of any length is scanned. **`strict` redacts at least everything 0.3.0 `strict` redacted**: the 0.3.0 pair rules
+still run (`password: required` is redacted, as before), the new pair rule is added to them; the one exception is the
+separators `=>` and `:=`, where a stand-in value now stays. `compat` does none of this: its output is that of 0.2.0.
+
 What a secret-named key does to the value below it:
 
 - a **string** is replaced (`[REDACTED:key-context]`), also inside a container under the key;
@@ -131,13 +143,30 @@ What a secret-named key does to the value below it:
   container under it is still walked. Object **keys** are scanned too: a key that holds a secret
   becomes a placeholder key.
 
+### Personal data: the `pii` option
+
+`pii: true` (default `false`) on `redactTextSync`, `redactJsonValueSync`, `redactText` and `redactJsonValue`, in both
+modes, also redacts, in prose and in JSON strings and keys:
+
+| rule id | what | stays |
+|---|---|---|
+| `email` | `person@example.com`, `A.B+tag@Example.CO.uk` | `react@18.2.0`, `icon@2x.png`, `user@localhost`, `pkg@1.2.3` |
+| `phone` | `+44 20 7946 0958`, `+33.1.99.00.12.34`, `+493023125123`, `(415) 555-0123`, `415-555-0123`, `020 7946 0958`, `01 99 00 12 34` | `Request ID 1234567890`, `/devices/1234567890`, `2026-11-19 10:00:59`, `v0.3.0` |
+| `ip` | IPv4 (`192.0.2.123`), IPv6 (`2001:db8::1`, `::ffff:abcd:1234`, `[fdab::cafe]:8080`); a port stays | `version 1.2.3.4`, `android 14.0.0.1`, `firmware 1.0.0.12`, `sdk 33.0.1.0`, `999.1.1.1`, `std::vector` |
+| `otp` | the digits after a code noun (`Your verification code is 482913`, `OTP code: 482913`, `验证码 482913`) | `error code 5000`, `exit code 1370`, `status code 404`, `response code 200000`, `postal code 941031`, `port 8080` |
+
+The placeholders are `[REDACTED:email]`, `[REDACTED:phone]`, `[REDACTED:ip]` and `[REDACTED:otp]`. With the option a text of any
+length is scanned (`a@b.xx`). Rules and limits (names, addresses, IDN emails, URL-encoded values and prose secrets such as
+`password hunter2` are not detected) are in [`../spec/SPEC.md`](../spec/SPEC.md) sections 4.19 to 4.22 and 15.
+`restoreRedacted` maps back keys redacted with the option.
+
 ### Sync API
 
-- `redactTextSync(text, opts?)`: `{ text, hits }`. `opts.maxChars` (default 4,000,000): a longer
+- `redactTextSync(text, opts?)`: `{ text, hits }`. `opts.mode`, `opts.pii` (above). `opts.maxChars` (default 4,000,000): a longer
   text is replaced whole by `[REDACTED:size-limit]` (the limit applies before the short-text
   shortcut; no prefix is exposed). A non-string is turned into one (`String(x)`); it never throws.
 - `redactJsonValueSync(value, opts?)`: the redacted copy; the input is never mutated. Options:
-  `skipKeys`, `maxDepth` (64; deeper becomes `[REDACTED:depth-limit]`), `maxNodes` (500,000 values:
+  `mode`, `pii`, `skipKeys`, `maxDepth` (64; deeper becomes `[REDACTED:depth-limit]`), `maxNodes` (500,000 values:
   every leaf and container counts; on exhaustion traversal stops and the rest becomes
   `[REDACTED:size-limit]`, keys beyond it are omitted), `maxChars` (4,000,000 across all strings; a leaf
   that does not fit is replaced whole), `stats` (`{ hits }` receives rule ids and ranges, never matched
@@ -154,7 +183,7 @@ What a secret-named key does to the value below it:
 - `redactText(text, opts?)`: `{ text, hits }`. It never throws, including if the event callback
   fails. If the scanners fail it falls back to the sync rules (and to `[REDACTED:error]` for the
   whole text if those fail too): a scan failure never passes a secret.
-- `RedactTextOpts`: optional `detect` override, `onEvent(name, attrs)` hook (events
+- `RedactTextOpts`: `mode`, `pii`, optional `detect` override, `onEvent(name, attrs)` hook (events
   `redaction.scan.capped` and `redaction.detect.failed`; messages and input are never sent) and,
   new in 0.2.0, `last4` (below).
 - `redactJsonValue(value, stats, opts?)`: recursively scans string leaves, appending findings to
@@ -274,7 +303,8 @@ semantics are in [`../spec/SPEC.md`](../spec/SPEC.md).
 - The full-tier rules see the first 2,000,000 characters of each leaf; beyond that only the sync rules
   run (fail closed for the sync formats, documented gap for full-tier-only formats).
 - Short, unlabeled passwords in free text are not detected; a secret-named key provides the context
-  to redact such a value.
+  to redact such a value (in `compat` only for values with evidence of being secret; in `strict` for any value, see
+  the key names above). A secret after a word and no separator (`the password hunter2`) is a known gap.
 - Keys are only scanned for secrets, not renamed otherwise; two keys that become the same
   placeholder collapse into one.
 - The sync path replaces a text or leaf over its limit whole; a restore cannot bring that back
@@ -315,7 +345,7 @@ marker in values, keys, escaped JSON, URL userinfo, nested queries, cookies; ide
 round trip, also after deleting, inserting and reordering items), the perf and adversarial budgets,
 a 0.1.1 export-compat test, the golden replay, and the spec-integrity tests.
 
-After merge, a `v<version>` tag (for example `v0.3.0`) triggers publishing to GitHub Packages (the repository is
+After merge, a `v<version>` tag (for example `v0.4.0`) triggers publishing to GitHub Packages (the repository is
 MIT-licensed, see `LICENSE`; third-party notices are in `NOTICE`). The workflow
 checks the tag against `package.json`, requires the tagged commit to be on `main`,
 runs typecheck and tests, and uses `GITHUB_TOKEN` with `packages:write`.
