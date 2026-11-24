@@ -11,10 +11,18 @@
 import { collectHits, prepareRules, type PreparedRule } from './algorithms/registry.js';
 import { dedupeRanges, type Hit } from './hits.js';
 import type { RedactMode } from './mode.js';
-import { RULES_SPEC, strictRules } from './spec.js';
+import { ALGORITHMS_SPEC, RULES_SPEC, strictRules } from './spec.js';
 
 /** What decides the rule list of a scan: the failure mode and the opt-in `pii` group. */
 export type DetectOpts = { mode?: RedactMode; pii?: boolean };
+
+/** Below this length `compat` without `pii` scans nothing (v0.2.0); `strict` and `pii` scan every text. */
+const COMPAT_MIN_LENGTH = ALGORITHMS_SPEC.text.minScanLength;
+
+/** The shortest text (or object key) a scan looks at (SPEC 9.1). */
+export function scanFloor(opts: DetectOpts): number {
+    return opts.mode === 'strict' || opts.pii === true ? 0 : COMPAT_MIN_LENGTH;
+}
 
 const PII = prepareRules(RULES_SPEC.pii);
 const COMPAT = prepareRules(RULES_SPEC.pipeline);
@@ -28,6 +36,7 @@ const RULE_LISTS: Record<RedactMode, { plain: PreparedRule[]; withPii: PreparedR
  *  ranges merged. Earlier rules win equal starts (the merged hit keeps the first
  *  rule's id). */
 export function detectSyncHits(text: string, opts: DetectOpts = {}): Hit[] {
+    if (text.length < scanFloor(opts)) return [];
     const lists = RULE_LISTS[opts.mode ?? 'compat'];
     return dedupeRanges(collectHits(opts.pii === true ? lists.withPii : lists.plain, text));
 }

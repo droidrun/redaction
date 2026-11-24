@@ -1,5 +1,5 @@
 {
-  "description": "The opt-in `pii` option: emails, phone numbers, IP addresses and OTP codes in prose. Cases with `opts.pii` run with the option on; the others pin that nothing changes without it.",
+  "description": "The opt-in `pii` option: emails, phone numbers, IP addresses and OTP codes in prose. Cases with `opts.pii` run with the option on; the others pin that nothing changes without it. Phone numbers come from ranges set aside for fiction (UK Ofcom drama range 020 7946 0xxx, French ARCEP range 01 99 00 xx xx, Bundesnetzagentur range 030 23125 xxx, NANP 555-01xx); email addresses use example.com, example.org, example.net and the .example and .xx names.",
   "cases": [
     {
       "name": "email: plain address",
@@ -10,8 +10,8 @@
       "expected": "contact [REDACTED:email] today"
     },
     {
-      "name": "email: upper case, plus tag, two-level domain",
-      "input": "reach A.B+tag@Example.CO.uk please",
+      "name": "email: upper case, plus tag, subdomain",
+      "input": "reach A.B+tag@Sub.Example.ORG please",
       "opts": {
         "pii": true
       },
@@ -19,7 +19,7 @@
     },
     {
       "name": "email: in angle brackets",
-      "input": "From: <a@b.com>",
+      "input": "From: <a@b.example>",
       "opts": {
         "pii": true
       },
@@ -40,6 +40,14 @@
         "pii": true
       },
       "expected": "[REDACTED:email], [REDACTED:email]"
+    },
+    {
+      "name": "email: a text shorter than eight units is scanned",
+      "input": "a@b.xx",
+      "opts": {
+        "pii": true
+      },
+      "expected": "[REDACTED:email]"
     },
     {
       "name": "email kept: version after the at sign",
@@ -91,7 +99,7 @@
     },
     {
       "name": "phone: international with dots",
-      "input": "call +33.6.12.34.56.78 now",
+      "input": "call +33.1.99.00.12.34 now",
       "opts": {
         "pii": true
       },
@@ -99,7 +107,7 @@
     },
     {
       "name": "phone: international without separators",
-      "input": "call +491701234567 now",
+      "input": "call +493023125123 now",
       "opts": {
         "pii": true
       },
@@ -139,7 +147,7 @@
     },
     {
       "name": "phone: national grouped, pairs",
-      "input": "call 06 12 34 56 78 now",
+      "input": "call 01 99 00 12 34 now",
       "opts": {
         "pii": true
       },
@@ -186,6 +194,14 @@
       "expected": "ref +12345678901234567890 end"
     },
     {
+      "name": "phone: the first 15 digits of a longer run with separators are a number",
+      "input": "ref +1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 end",
+      "opts": {
+        "pii": true
+      },
+      "expected": "ref [REDACTED:phone] 6 7 end"
+    },
+    {
       "name": "ip: v4 address",
       "input": "host 192.0.2.123 is up",
       "opts": {
@@ -226,6 +242,30 @@
       "expected": "peer [REDACTED:ip] up"
     },
     {
+      "name": "ip: v6 address with leading compression",
+      "input": "peer ::ffff:abcd:1234 up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "peer [REDACTED:ip] up"
+    },
+    {
+      "name": "ip: v6 address with trailing compression",
+      "input": "2001:db8:1:: up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "[REDACTED:ip] up"
+    },
+    {
+      "name": "ip: v6 address before a colon",
+      "input": "Error 2001:db8::1: refused",
+      "opts": {
+        "pii": true
+      },
+      "expected": "Error [REDACTED:ip]: refused"
+    },
+    {
       "name": "ip kept: version with a v",
       "input": "running v1.2.3.4 now",
       "opts": {
@@ -256,6 +296,22 @@
         "pii": true
       },
       "expected": "from build 1.2.3.4 only"
+    },
+    {
+      "name": "ip kept: firmware word",
+      "input": "on firmware 1.0.0.12 only",
+      "opts": {
+        "pii": true
+      },
+      "expected": "on firmware 1.0.0.12 only"
+    },
+    {
+      "name": "ip kept: sdk word",
+      "input": "with sdk 33.0.1.0 only",
+      "opts": {
+        "pii": true
+      },
+      "expected": "with sdk 33.0.1.0 only"
     },
     {
       "name": "ip kept: octet above 255",
@@ -410,6 +466,22 @@
       "expected": "status code 404"
     },
     {
+      "name": "otp kept: response code",
+      "input": "response code 200000",
+      "opts": {
+        "pii": true
+      },
+      "expected": "response code 200000"
+    },
+    {
+      "name": "otp kept: postal code",
+      "input": "postal code 941031",
+      "opts": {
+        "pii": true
+      },
+      "expected": "postal code 941031"
+    },
+    {
       "name": "otp kept: count key",
       "input": "max_tokens: 5",
       "opts": {
@@ -450,6 +522,18 @@
       }
     },
     {
+      "name": "json: a key shorter than eight units is scanned",
+      "input": {
+        "a@b.xx": "x"
+      },
+      "opts": {
+        "pii": true
+      },
+      "expected": {
+        "[REDACTED:email]": "x"
+      }
+    },
+    {
       "name": "json strict: strings are scanned",
       "input": {
         "note": "peer 2001:db8::1 up"
@@ -464,7 +548,7 @@
     },
     {
       "name": "strict: text is scanned",
-      "input": "Your verification code is 482913 for +491701234567",
+      "input": "Your verification code is 482913 for +493023125123",
       "mode": "strict",
       "opts": {
         "pii": true
@@ -480,15 +564,31 @@
       "expected": "token=[REDACTED:generic-keyword] mail [REDACTED:email]"
     },
     {
+      "name": "ip kept: two colons without brackets",
+      "input": "peer fe80::1 is up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "peer fe80::1 is up"
+    },
+    {
+      "name": "ip: two colons inside brackets",
+      "input": "peer [fe80::1] is up",
+      "opts": {
+        "pii": true
+      },
+      "expected": "peer [[REDACTED:ip]] is up"
+    },
+    {
       "name": "option off: email, phone, ip and otp stay",
-      "input": "mail bob@example.com or +491701234567 from 192.0.2.123 and [fdab::cafe] code is 482913",
-      "expected": "mail bob@example.com or +491701234567 from 192.0.2.123 and [fdab::cafe] code is 482913"
+      "input": "mail bob@example.com or +33.1.99.00.12.34 from 192.0.2.123 and [fdab::cafe] code is 482913",
+      "expected": "mail bob@example.com or +33.1.99.00.12.34 from 192.0.2.123 and [fdab::cafe] code is 482913"
     },
     {
       "name": "option off, strict: email, phone, ip and otp stay",
-      "input": "mail bob@example.com or +491701234567 from 192.0.2.123 and [fdab::cafe] code is 482913",
+      "input": "mail bob@example.com or +33.1.99.00.12.34 from 192.0.2.123 and [fdab::cafe] code is 482913",
       "mode": "strict",
-      "expected": "mail bob@example.com or +491701234567 from 192.0.2.123 and [fdab::cafe] code is 482913"
+      "expected": "mail bob@example.com or +33.1.99.00.12.34 from 192.0.2.123 and [fdab::cafe] code is 482913"
     },
     {
       "name": "option off: json strings stay",
@@ -506,6 +606,11 @@
         "pii": false
       },
       "expected": "mail bob@example.com"
+    },
+    {
+      "name": "option off: a text shorter than eight units is not scanned",
+      "input": "a@b.xx",
+      "expected": "a@b.xx"
     },
     {
       "name": "worst case, email: 2,000 units of local part and at sign",
@@ -638,22 +743,6 @@
           ]
         ]
       }
-    },
-    {
-      "name": "ip kept: two colons without brackets",
-      "input": "peer fe80::1 is up",
-      "opts": {
-        "pii": true
-      },
-      "expected": "peer fe80::1 is up"
-    },
-    {
-      "name": "ip: two colons inside brackets",
-      "input": "peer [fe80::1] is up",
-      "opts": {
-        "pii": true
-      },
-      "expected": "peer [[REDACTED:ip]] is up"
     }
   ]
 }

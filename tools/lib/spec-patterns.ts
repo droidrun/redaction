@@ -74,6 +74,7 @@ const LITERAL_FIELDS = new Set([
     'ignoreSuffixes',
     'ignoreAfterWords',
     'statusWords',
+    'schemeKeys',
     'schemeWords',
 ]);
 /** Fields that hold a pattern (the other regex-bearing fields hold one character class). */
@@ -83,6 +84,7 @@ const PATTERN_FIELDS = new Set([
     'footer',
     'prefix',
     'bearer',
+    'bearerAlso',
     'scheme',
     'label',
     'queryKey',

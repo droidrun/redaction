@@ -89,10 +89,30 @@ function ruleShapeProblems(dir: string): Problem[] {
     );
 }
 
-/** The rule ids a strict edit names: the one it targets and the one of the rule it replaces it with. */
+/** The rule ids a strict edit names: the one it targets and the one of the rule it adds. */
 function strictEditIds(edit: Record<string, unknown>): string[] {
-    const replaced = edit.replace as { id: string } | undefined;
-    return [edit.id, replaced?.id].filter((id): id is string => typeof id === 'string');
+    const added = edit.add as { id: string } | undefined;
+    return [edit.id, added?.id].filter((id): id is string => typeof id === 'string');
+}
+
+/** Every `strict` edit must match at least one rule of the list it edits, and one that adds a rule exactly
+ *  one (SPEC 4.10); the edits are applied in order, so a later edit sees the rules an earlier one added. */
+function strictEditProblems(dir: string): Problem[] {
+    const spec = readSpecDir(dir);
+    let rules = [...spec.rules.pipeline];
+    return spec.rules.strict.flatMap((edit, index) => {
+        const targets = rules.filter((rule) => {
+            const isId = edit.id === undefined || rule.id === edit.id;
+            return isId && (edit.kind === undefined || rule.kind === edit.kind);
+        });
+        if (edit.add !== undefined && targets.length === 1) {
+            const at = rules.indexOf(targets[0] as Record<string, unknown>);
+            rules = [...rules.slice(0, at + 1), edit.add as Record<string, unknown>, ...rules.slice(at + 1)];
+        }
+        if (targets.length === 0) return [`strict[${index}]: the edit matches no rule`];
+        const addsToMany = edit.add !== undefined && targets.length !== 1;
+        return addsToMany ? [`strict[${index}]: an edit that adds a rule must match exactly one rule`] : [];
+    });
 }
 
 function ruleIdProblems(dir: string): Problem[] {
@@ -252,6 +272,7 @@ export async function lintDir(
     const problems = [
         ...validateSchemas(dir, schemaDir),
         ...ruleIdProblems(dir),
+        ...strictEditProblems(dir),
         ...ruleShapeProblems(dir),
         ...tokenShapeProblems(readSpecDir(dir)),
         ...unclassifiedFields(readSpecDir(dir)),

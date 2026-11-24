@@ -119,13 +119,17 @@ Everything the sync path (and, inside it, the async path) detects:
   `cvc`, `sig`, `jwt`, `pass`, `auth`. Words match as such or as a plural, so `secretary`,
   `passwordless`, `tokenizer`, `passThrough` and the Twilio `sid` stay. `isSecretKeyName(key)` is exported, and so is `keyVerdict(key)`: `'none'`, `'string'` (strings are replaced, numbers stay: `max_tokens`, `tokens`) or `'any'` (numbers too: `pin`, `password`).
 
-In `mode: 'strict'` the same key names also decide **text pairs** (`key: value`, `key=value`, `key => "value"`, also
-inside escaped JSON): a value under a key with an `any` verdict is redacted even when it is short (`password=x`,
-`DB_PASS=hunter2`), under a `string` verdict unless it is all digits (`max_tokens: 5`). Stand-ins (`changeme`,
-`xxxx`, `<token>`), the words `expired`, `required`, `failed`, `missing`, `invalid`, `true`, `false`, `null`, `none` and
-the scheme words `Bearer`, `Basic`, `Digest` stay (`token: expired`, `password: required`). Strict also redacts
-`dr_sk_` keys in any case and length, and the whole `Bearer` credential up to whitespace or a quote
-(`Bearer abc!defghijklmnop`). `compat` does none of this: its output is that of 0.2.0.
+In `mode: 'strict'` the same key names also decide **text pairs** (`key: value`, `key=value`, `key => "value"`,
+`key := "value"`, also inside escaped JSON): a value under a key with an `any` verdict is redacted even when it is short
+(`password=x`, `DB_PASS=hunter2`), under a `string` verdict unless it is all digits (`max_tokens: 5`). Stand-ins
+(`changeme`, `xxxx`, `<token>`), the words `expired`, `required`, `failed`, `missing`, `invalid`, `true`, `false`,
+`null`, `none` (up to 64 characters) and, under an authorization key, the scheme words `Bearer`, `Basic`, `Digest` stay
+(`token: expired`, `Authorization: Bearer abc12345`). A value never starts after a line break, and a pair inside the value
+of another (`auth: password: hunter2`, YAML parents) is found. Strict also redacts `dr_sk_` keys in any case and length,
+and the whole `Bearer` credential up to whitespace or a quote (`Bearer abc!defghijklmnop`, also `Bearer "abc"`). A text
+or key of any length is scanned. **`strict` redacts at least everything 0.3.0 `strict` redacted**: the 0.3.0 pair rules
+still run (`password: required` is redacted, as before), the new pair rule is added to them; the one exception is the
+separators `=>` and `:=`, where a stand-in value now stays. `compat` does none of this: its output is that of 0.2.0.
 
 What a secret-named key does to the value below it:
 
@@ -147,14 +151,14 @@ modes, also redacts, in prose and in JSON strings and keys:
 | rule id | what | stays |
 |---|---|---|
 | `email` | `person@example.com`, `A.B+tag@Example.CO.uk` | `react@18.2.0`, `icon@2x.png`, `user@localhost`, `pkg@1.2.3` |
-| `phone` | `+44 20 7946 0958`, `+33.6.12.34.56.78`, `+491701234567`, `(415) 555-0123`, `415-555-0123`, `020 7946 0958` | `Request ID 1234567890`, `/devices/1234567890`, `2026-11-19 10:00:59`, `v0.3.0` |
-| `ip` | IPv4 (`192.0.2.123`), IPv6 (`2001:db8::1`, `[fdab::cafe]:8080`); a port stays | `version 1.2.3.4`, `android 14.0.0.1`, `build 1.2.3.4`, `999.1.1.1`, `std::vector` |
-| `otp` | the digits after a code noun (`Your verification code is 482913`, `OTP code: 482913`, `验证码 482913`) | `error code 5000`, `exit code 1370`, `status code 404`, `port 8080` |
+| `phone` | `+44 20 7946 0958`, `+33.1.99.00.12.34`, `+493023125123`, `(415) 555-0123`, `415-555-0123`, `020 7946 0958`, `01 99 00 12 34` | `Request ID 1234567890`, `/devices/1234567890`, `2026-11-19 10:00:59`, `v0.3.0` |
+| `ip` | IPv4 (`192.0.2.123`), IPv6 (`2001:db8::1`, `::ffff:abcd:1234`, `[fdab::cafe]:8080`); a port stays | `version 1.2.3.4`, `android 14.0.0.1`, `firmware 1.0.0.12`, `sdk 33.0.1.0`, `999.1.1.1`, `std::vector` |
+| `otp` | the digits after a code noun (`Your verification code is 482913`, `OTP code: 482913`, `验证码 482913`) | `error code 5000`, `exit code 1370`, `status code 404`, `response code 200000`, `postal code 941031`, `port 8080` |
 
-The placeholders are `[REDACTED:email]`, `[REDACTED:phone]`, `[REDACTED:ip]` and `[REDACTED:otp]`. Rules and limits
-(names, addresses, IDN emails, URL-encoded values and prose secrets such as `password hunter2` are not detected) are in
-[`../spec/SPEC.md`](../spec/SPEC.md) sections 4.19 to 4.22 and 15. `restoreRedacted` does not know the option: a key
-that was replaced by a PII placeholder is a conflict on restore.
+The placeholders are `[REDACTED:email]`, `[REDACTED:phone]`, `[REDACTED:ip]` and `[REDACTED:otp]`. With the option a text of any
+length is scanned (`a@b.xx`). Rules and limits (names, addresses, IDN emails, URL-encoded values and prose secrets such as
+`password hunter2` are not detected) are in [`../spec/SPEC.md`](../spec/SPEC.md) sections 4.19 to 4.22 and 15.
+`restoreRedacted` maps back keys redacted with the option.
 
 ### Sync API
 

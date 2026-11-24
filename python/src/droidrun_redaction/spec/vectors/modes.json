@@ -433,6 +433,16 @@
       "name": "compat unchanged: multiline quoted value is redacted through the closing quote",
       "input": "password=\"first\nhunter2\"",
       "expected": "password=\"[REDACTED:generic-keyword]\""
+    },
+    {
+      "name": "compat unchanged: a text shorter than eight units is not scanned",
+      "input": "token=x",
+      "expected": "token=x"
+    },
+    {
+      "name": "compat unchanged: a platform key of seven units is not scanned",
+      "input": "dr_sk_a",
+      "expected": "dr_sk_a"
     }
   ]
 }

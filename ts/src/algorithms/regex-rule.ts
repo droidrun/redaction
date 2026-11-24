@@ -14,8 +14,8 @@ import type { Rule } from '../spec.js';
 
 export type Scanner = (text: string) => Range[];
 
-/** A range a pattern found and where the whole match began (the group can start later). */
-type Candidate = { range: Range; matchStart: number };
+/** A range a pattern found and where the whole match began and ended (the group can be smaller). */
+type Candidate = { range: Range; matchStart: number; matchEnd: number };
 
 type Filter = {
     requireClass?: string;
@@ -25,6 +25,8 @@ type Filter = {
     ignoreSuffixes?: string[];
     ignoreAfterWords?: string[];
     afterGapClass?: string;
+    ignoreBeforeClass?: string;
+    ignoreAfterClass?: string;
     check?: string;
     minColons?: number;
 };
@@ -62,18 +64,33 @@ function prepareSuffixes(filter: Filter): (value: string) => boolean {
     };
 }
 
+/** True when the unit before the whole match is in `ignoreBeforeClass` or the unit after it is in
+ *  `ignoreAfterClass` (SPEC 4.1): the match is a piece of something longer. */
+function prepareEdges(filter: Filter): (text: string, matchStart: number, matchEnd: number) => boolean {
+    const before = filter.ignoreBeforeClass;
+    const after = filter.ignoreAfterClass;
+    const blocksBefore = before === undefined ? () => false : charTest(before);
+    const blocksAfter = after === undefined ? () => false : charTest(after);
+    return (text, matchStart, matchEnd) => {
+        if (matchStart > 0 && blocksBefore(text[matchStart - 1] as string)) return true;
+        return matchEnd < text.length && blocksAfter(text[matchEnd] as string);
+    };
+}
+
 function prepareFilter(filter: Filter): (text: string, candidate: Candidate) => boolean {
     const hasClass = filter.requireClass === undefined ? () => true : containsTest(filter.requireClass);
     const passesCheck = prepareCheck(filter);
     const hasIgnoredSuffix = prepareSuffixes(filter);
     const hasIgnoredContext = prepareContext(filter);
-    return (text, { range: [start, end], matchStart }) => {
+    const isPiece = prepareEdges(filter);
+    return (text, { range: [start, end], matchStart, matchEnd }) => {
         const value = text.slice(start, end);
         if (!hasClass(value)) return false;
         if (filter.requireLiteral !== undefined && !value.includes(filter.requireLiteral)) return false;
         if (filter.ignoreEquals?.includes(value) === true) return false;
         if (hasIgnoredSuffix(value)) return false;
         if (hasIgnoredContext(text, matchStart)) return false;
+        if (isPiece(text, matchStart, matchEnd)) return false;
         if (!passesCheck(value)) return false;
         return !(filter.dropPlaceholder === true && isPlaceholderValue(text, start, end));
     };
@@ -97,7 +114,7 @@ function prepareGuarded(rule: RegexRule): (text: string) => Candidate[] {
                 pattern.lastIndex = start + 1;
                 continue;
             }
-            found.push({ range: [start, end], matchStart: start });
+            found.push({ range: [start, end], matchStart: start, matchEnd: end });
         }
         return found;
     };
@@ -110,7 +127,8 @@ function prepareGroup(rule: RegexRule): (text: string) => Candidate[] {
         const found: Candidate[] = [];
         for (const match of text.matchAll(pattern)) {
             const range = match.indices?.[group];
-            if (range) found.push({ range: [range[0], range[1]], matchStart: match.index });
+            const matchEnd = match.index + match[0].length;
+            if (range) found.push({ range: [range[0], range[1]], matchStart: match.index, matchEnd });
         }
         return found;
     };
@@ -142,7 +160,8 @@ export function prepareCookieLines(rule: CookieRule): Scanner {
                 continue;
             }
             pattern.lastIndex = end;
-            if (passes(text, { range: [start, end], matchStart: match.index })) ranges.push([start, end]);
+            const candidate = { range: [start, end] as Range, matchStart: match.index, matchEnd: end };
+            if (passes(text, candidate)) ranges.push([start, end]);
         }
         return ranges;
     };

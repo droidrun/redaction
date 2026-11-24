@@ -8,14 +8,11 @@ import { applyHits, dedupeRanges, type Hit } from './hits.js';
 import type { RedactMode } from './mode.js';
 import { buildReadPlaceholder } from './placeholder.js';
 import { ALGORITHMS_SPEC } from './spec.js';
-import { detectSyncHits } from './sync-rules.js';
+import { detectSyncHits, scanFloor } from './sync-rules.js';
 
 export type { Hit };
 
 const ERROR_RULE_ID = ALGORITHMS_SPEC.ruleIds.error;
-
-/** Below this, not worth invoking the engine — no real secret is shorter. */
-const MIN_SCAN_LEN = ALGORITHMS_SPEC.text.minScanLength;
 
 /**
  * Scan window size: a text this long or shorter is scanned by the full-tier rules in one pass. A longer one is
@@ -63,7 +60,7 @@ function emitEvent(opts: RedactTextOpts, name: string, attrs: Record<string, unk
  * found; a text that long is reported as `redaction.scan.capped`.
  */
 export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Promise<Hit[]> {
-    if (text.length < MIN_SCAN_LEN) return [];
+    if (text.length < scanFloor(opts)) return [];
 
     const capped = text.length > MAX_TOTAL_SCAN_LEN;
     if (capped) {

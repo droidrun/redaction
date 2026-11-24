@@ -5,6 +5,7 @@
     "WS": "\t\n\u000b\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff",
     "ESCAPED_QUOTE": "(?:\\\\*[\"'])",
     "UUID": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+    "HSPACE": "\t\u000b\f \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff",
     "OCTET": "(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])",
     "OTP_JOIN": "[{{WS}}:=：]{0,3}(?:(?:{{OTP_IS}}|[为是は])[{{WS}}:：]{0,3})?",
     "OTP_NOUN_CJK": "(?:验证码|驗證碼|校验码|动态码|認証コード|確認コード|認証番号|確認番号|ワンタイムパスワード)",
@@ -427,21 +428,39 @@
     {
       "id": "platform-key",
       "set": {
-        "pattern": "\\b[dD][rR]_[sS][kK]_[A-Za-z0-9_-]+"
+        "pattern": "[dD][rR]_[sS][kK]_[A-Za-z0-9_-]+"
       }
     },
     {
       "id": "auth-header",
       "set": {
-        "bearer": "\\b{{BEARER}}[{{WS}}]+([^{{WS}}\"'<>,;\\\\]+)"
+        "bearerAlso": "\\b{{BEARER}}[{{WS}}]+[\"']?([^{{WS}}\"'<>,;\\\\]+)"
+      }
+    },
+    {
+      "kind": "keyword-pairs",
+      "set": {
+        "prefix": "{{KEYWORDS}}[A-Za-z0-9_-]{0,64}?{{ESCAPED_QUOTE}}?[{{WS}}]*(?:=>|:=|[:=])[{{WS}}]*{{ESCAPED_QUOTE}}?"
       }
     },
     {
       "kind": "quoted-pairs",
-      "replace": {
+      "set": {
+        "label": "\\b{{SECRET_WORDS}}\\b{{ESCAPED_QUOTE}}?[{{WS}}]*(?:=>|:=|[:=])[{{WS}}]*(\\\\*)([\"'])"
+      }
+    },
+    {
+      "kind": "unquoted-pairs",
+      "set": {
+        "prefix": "\\b{{SECRET_WORDS}}\\b{{ESCAPED_QUOTE}}?[{{WS}}]*(?:=>|:=|[:=])[{{WS}}]*{{ESCAPED_QUOTE}}?"
+      }
+    },
+    {
+      "kind": "unquoted-pairs",
+      "add": {
         "id": "generic-keyword",
         "kind": "key-pairs",
-        "label": "(?:=>|[:=])[{{WS}}]*(?:(\\\\*)([\"']))?",
+        "label": "(?:=>|:=|[:=])[{{HSPACE}}]*(?:(\\\\*)([\"']))?",
         "valueLimit": 1024,
         "plainChar": "[^{{WS}},\"';}\\\\]",
         "escapeStop": "[\\\\\"']",
@@ -453,6 +472,7 @@
         "quoteChar": "[\"']",
         "digitClass": "[0-9]",
         "standInMinLength": 2,
+        "keptMaxLength": 64,
         "statusWords": [
           "expired",
           "required",
@@ -468,12 +488,13 @@
           "bearer",
           "basic",
           "digest"
+        ],
+        "schemeKeys": [
+          "authorization",
+          "proxyauthorization",
+          "auth"
         ]
       }
-    },
-    {
-      "kind": "unquoted-pairs",
-      "remove": true
     }
   ],
   "pii": [
@@ -564,14 +585,20 @@
         "version",
         "build",
         "android",
-        "ios"
+        "ios",
+        "firmware",
+        "sdk",
+        "os",
+        "kernel"
       ],
       "afterGapClass": "[{{WS}}:=]"
     },
     {
       "id": "ip",
       "kind": "regex",
-      "pattern": "\\b[0-9A-Fa-f:]{5,45}\\b",
+      "pattern": "[0-9A-Fa-f:]{3,44}(?:[0-9A-Fa-f]|::)",
+      "ignoreBeforeClass": "[0-9A-Za-z_:]",
+      "ignoreAfterClass": "[0-9A-Za-z_]",
       "check": "ipv6",
       "minColons": 3
     },
@@ -597,7 +624,12 @@
       "ignoreAfterWords": [
         "error",
         "exit",
-        "status"
+        "status",
+        "response",
+        "postal",
+        "zip",
+        "area",
+        "country"
       ],
       "afterGapClass": "[{{WS}}]"
     }

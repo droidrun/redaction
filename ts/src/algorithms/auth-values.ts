@@ -12,6 +12,7 @@ import type { Rule } from '../spec.js';
 
 type AuthRule = Rule & {
     bearer: string;
+    bearerAlso?: string;
     scheme: string;
     valueClass: string;
     minValueLength: number;
@@ -21,8 +22,9 @@ type AuthRule = Rule & {
     plainWords: string[];
 };
 
-function prepareBearer(rule: AuthRule): Scanner {
-    const pattern = compile(rule.bearer, 'gd');
+/** The credentials of one `bearer` pattern: capture group 1 of every match. */
+function prepareBearerPattern(source: string): Scanner {
+    const pattern = compile(source, 'gd');
     return (text) => {
         const ranges: Range[] = [];
         for (const match of text.matchAll(pattern)) {
@@ -31,6 +33,15 @@ function prepareBearer(rule: AuthRule): Scanner {
         }
         return ranges;
     };
+}
+
+/** `bearer`, and `bearerAlso` when the rule has it: each is searched on its own, so a wider pattern never
+ *  consumes what the other would have found. */
+function prepareBearer(rule: AuthRule): Scanner {
+    const scanners = [rule.bearer, ...(rule.bearerAlso === undefined ? [] : [rule.bearerAlso])].map(
+        prepareBearerPattern,
+    );
+    return (text) => scanners.flatMap((scan) => scan(text));
 }
 
 function prepareScheme(rule: AuthRule): Scanner {

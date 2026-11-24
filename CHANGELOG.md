@@ -10,10 +10,14 @@ Preparation for making the repository public. No change to what is detected, exc
   Without the option the output is unchanged. TypeScript only in this slice: Python and Go follow with the same vectors.
 - **Short secrets in `strict` (TypeScript so far).** In `strict`, text pairs use the key verdict of JSON keys: `password=x`,
   `token=hunter2`, `DB_PASS=hunter2`, `signing_key=abc` and `{"password":"x"}` are redacted, also with escaped quotes
-  (`{\"token\":\"x\"}`) and the `=>` separator; `token: expired`, `password: required` and a number under a count key
-  (`max_tokens: 5`) stay. `dr_sk_` keys are redacted in any case and length, and the whole `Bearer` credential (up to
-  whitespace or a quote). `compat` is byte-identical to before (golden corpus). Consumers that run `strict` redact more
-  after the bump.
+  (`{\"token\":\"x\"}`) and the separators `=>` and `:=`; `token: expired` and a number under a count key
+  (`max_tokens: 5`) stay. A pair inside the value of another (`auth: password: hunter2`, YAML parents) is found, and a value
+  never starts after a line break. `dr_sk_` keys are redacted in any case and length, and the whole `Bearer` credential (up
+  to whitespace or a quote). A text or object key of any length is scanned in `strict` and with `pii`. `strict` redacts at
+  least everything 0.3.0 `strict` redacted (the old pair rules still run), except that after `=>` or `:=` a stand-in value
+  stays. `compat` is byte-identical to before (golden corpus). Consumers that run `strict` redact more after the bump.
+- **`restoreRedacted` knows strict and `pii` keys.** A key that was replaced in `strict` or with `pii` maps back to its
+  stored key; a placeholder key that two stored keys could stand for stays a conflict.
 
 - **MIT license.** `LICENSE` at the root and in `ts/`, `python/` and `go/`; license fields in the npm and Python
   metadata; the wheel and the npm package carry `LICENSE` and `NOTICE`.

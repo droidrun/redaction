@@ -3,17 +3,14 @@
  * (`version 1.2.3.4`, `error code 123456`; SPEC 4.1 `ignoreAfterWords`).
  */
 import type { CharTest } from '../portable.js';
+import { labelStart } from './query-value.js';
 
-const isLetter = (unit: string | undefined): boolean => {
-    return unit !== undefined && ((unit >= 'a' && unit <= 'z') || (unit >= 'A' && unit <= 'Z'));
-};
+const isLetter = (unit: string): boolean => (unit >= 'a' && unit <= 'z') || (unit >= 'A' && unit <= 'Z');
 
 /** The lower-case ASCII letters that end just before `at`, after skipping the units of `isGap` there.
  *  Empty when no letter stands there. */
 export function wordBefore(text: string, at: number, isGap: CharTest): string {
-    let end = at;
-    while (end > 0 && isGap(text[end - 1] as string)) end -= 1;
-    let start = end;
-    while (start > 0 && isLetter(text[start - 1])) start -= 1;
+    const end = labelStart(text, at, isGap, Number.POSITIVE_INFINITY);
+    const start = labelStart(text, end, isLetter, Number.POSITIVE_INFINITY);
     return text.slice(start, end).toLowerCase();
 }

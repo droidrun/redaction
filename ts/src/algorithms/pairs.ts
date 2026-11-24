@@ -44,8 +44,10 @@ type KeyPairsRule = Rule & {
     quoteChar: string;
     digitClass: string;
     standInMinLength: number;
+    keptMaxLength: number;
     statusWords: string[];
     schemeWords: string[];
+    schemeKeys: string[];
 };
 
 export function prepareKeywordPairs(rule: KeywordRule): Scanner {
@@ -145,32 +147,39 @@ export function prepareUnquotedPairs(rule: UnquotedRule): Scanner {
     };
 }
 
-/** The value of a `key = value` pair that the key verdict makes secret, or none: a stand-in, a documentation
- *  placeholder, a status or scheme word, and (under a `string` verdict) a plain number stay. */
-function prepareKeptValue(rule: KeyPairsRule): (value: string, verdict: KeyVerdict) => boolean {
+type KeptTest = (key: string, value: string, verdict: KeyVerdict) => boolean;
+
+/** True for a value that stays under a key whose verdict says secret: a stand-in, a documentation
+ *  placeholder, a status word, an authorization scheme word under an authorization key, and (under a `string`
+ *  verdict) a plain number. A value longer than `keptMaxLength` is never kept: the tests would cost the whole
+ *  run at every pair. */
+function prepareKeptValue(rule: KeyPairsRule): KeptTest {
     const isDigit = charTest(rule.digitClass);
-    const keptWords = new Set([...rule.statusWords, ...rule.schemeWords]);
-    return (value, verdict) => {
+    const statusWords = new Set(rule.statusWords);
+    const schemeWords = new Set(rule.schemeWords);
+    const schemeKeys = new Set(rule.schemeKeys);
+    return (key, value, verdict) => {
         const isStandIn = value.length >= rule.standInMinLength && isTrivialValue(value);
         if (isStandIn || isDocPlaceholder(value)) return true;
-        if (keptWords.has(foldLower(value.trim()))) return true;
+        const word = foldLower(value.trim());
+        if (statusWords.has(word)) return true;
+        if (schemeWords.has(word) && schemeKeys.has(foldLower(key).replace(/[-_]/g, ''))) return true;
         return verdict === 'string' && [...value].every(isDigit);
     };
 }
 
 type KeyClasses = { gap: CharTest; quote: CharTest; key: CharTest };
 
+const isBackslash = (unit: string): boolean => unit === '\\';
+
 /** The key that stands before the separator at `at`: spaces, an optional (escaped) quote, then up to `keyMax`
  *  units of `keyChar`. `undefined` when no key stands there. */
 function keyBefore(text: string, at: number, classes: KeyClasses, keyMax: number): Range | undefined {
-    let end = at;
-    while (end > 0 && classes.gap(text[end - 1] as string)) end -= 1;
+    let end = labelStart(text, at, classes.gap, Number.POSITIVE_INFINITY);
     if (end > 0 && classes.quote(text[end - 1] as string)) {
-        end -= 1;
-        while (end > 0 && text[end - 1] === '\\') end -= 1;
+        end = labelStart(text, end - 1, isBackslash, Number.POSITIVE_INFINITY);
     }
-    let start = end;
-    while (start > 0 && end - start < keyMax && classes.key(text[start - 1] as string)) start -= 1;
+    const start = labelStart(text, end, classes.key, keyMax);
     return start === end ? undefined : [start, end];
 }
 
@@ -187,28 +196,37 @@ function rememberedRunEnd(text: string, classes: RunClasses): (from: number) => 
     };
 }
 
-/** Where the value of a pair ends and whether it is quoted. A quoted value ends at its closing quote; an
- *  unterminated or over-long one runs to the end of the text (fail closed). */
-function pairValueEnd(
-    text: string,
-    from: number,
-    match: RegExpExecArray,
-    rule: KeyPairsRule,
-    runEnd: (from: number) => number,
-): number {
-    const quote = match[2];
-    if (quote === undefined) return runEnd(from);
+/** The first `&` at or after `from` (or -1), remembered: `from` only grows within one scan. */
+function rememberedAmpersand(text: string): (from: number) => number {
+    let found = -2;
+    return (from) => {
+        if (found === -2 || (found !== -1 && found < from)) found = text.indexOf('&', from);
+        return found;
+    };
+}
+
+/** `trimQueryValue` (SPEC 5.3) for a value inside a URL query, with the next `&` remembered: the search of a
+ *  text of many pairs inside one long run (`?token=` repeated) would otherwise read the run at every pair. */
+function queryValueEnd(text: string, next: (from: number) => number, label: number, value: Range): number {
+    const before = text[label - 1];
+    if (before !== '?' && before !== '&') return value[1];
+    const amp = next(value[0]);
+    return amp === -1 || amp >= value[1] ? value[1] : amp;
+}
+
+/** Where the value of a quoted pair ends, or -1 when it has no closing quote within `valueLimit`. */
+function quotedValueEnd(text: string, from: number, match: RegExpExecArray, rule: KeyPairsRule): number {
     const layers = (match[1] ?? '').length;
     const limit = Math.min(text.length, from + rule.valueLimit);
-    const close = closingQuote(text, from, quote, layers, limit);
-    return close === -1 ? text.length : close;
+    return closingQuote(text, from, match[2] as string, layers, limit);
 }
 
 /**
- * `key: value` pairs decided by the key verdict of SPEC 6, the same one that decides JSON keys: the strict
- * replacement of the quoted and unquoted pair rules. The value is quoted (it may hold spaces and escaped
- * quotes, and an unterminated or over-long one fails closed) or runs to a delimiter. A key without a verdict
- * gives no range and scanning resumes at its value, so a pair inside that value is still found.
+ * `key: value` pairs decided by the key verdict of SPEC 6, the same one that decides JSON keys, added to the
+ * quoted and unquoted pair rules in `strict`. The value is quoted (it may hold spaces and escaped quotes; one
+ * without a closing quote fails closed to the end of the text and ends this scan) or runs to a delimiter and
+ * never starts after a line break. A key without a verdict gives no range; after an unquoted value the search
+ * resumes at the value, so a pair inside it is still found.
  */
 export function prepareKeyPairs(rule: KeyPairsRule): Scanner {
     const pattern = compile(rule.label, 'g');
@@ -223,25 +241,36 @@ export function prepareKeyPairs(rule: KeyPairsRule): Scanner {
     return (text) => {
         const ranges: Range[] = [];
         const runEnd = rememberedRunEnd(text, classes);
+        const nextAmp = rememberedAmpersand(text);
         pattern.lastIndex = 0;
         for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
             const key = keyBefore(text, match.index, keyClasses, rule.keyMax);
             const from = pattern.lastIndex;
             if (key === undefined) continue;
-            const verdict = keyVerdict(text.slice(key[0], key[1]));
+            const keyText = text.slice(key[0], key[1]);
+            const verdict = keyVerdict(keyText);
             if (verdict === 'none') continue;
-            const end = pairValueEnd(text, from, match, rule, runEnd);
-            if (end === from && match[2] === undefined) {
+            const isQuoted = match[2] !== undefined;
+            const close = isQuoted ? quotedValueEnd(text, from, match, rule) : -1;
+            if (isQuoted && close === -1) {
+                if (from < text.length && !isPlaceholderValue(text, from, text.length)) {
+                    ranges.push([from, text.length]);
+                }
+                break;
+            }
+            const end = isQuoted ? close : runEnd(from);
+            if (end === from && !isQuoted) {
                 pattern.lastIndex = match.index + 1;
                 continue;
             }
             const label = labelStart(text, key[0], isIdent, rule.labelLookback);
-            const isQuoted = match[2] !== undefined;
-            const [start, stop] = isQuoted ? [from, end] : trimQueryValue(text, label, [from, end]);
+            const start = from;
+            const stop = isQuoted ? end : queryValueEnd(text, nextAmp, label, [from, end]);
             const isSecret = stop > start && !isPlaceholderValue(text, start, stop);
-            if (!isSecret || isKept(text.slice(start, stop), verdict)) continue;
+            const isShort = stop - start <= rule.keptMaxLength;
+            if (!isSecret || (isShort && isKept(keyText, text.slice(start, stop), verdict))) continue;
             ranges.push([start, stop]);
-            pattern.lastIndex = Math.max(stop, from);
+            pattern.lastIndex = isQuoted ? Math.max(stop, from) : from;
         }
         return ranges;
     };

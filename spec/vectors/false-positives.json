@@ -95,12 +95,6 @@
       "expected": "token: expired"
     },
     {
-      "name": "strict: password required",
-      "input": "password: required",
-      "mode": "strict",
-      "expected": "password: required"
-    },
-    {
       "name": "strict: max tokens 5",
       "input": "max_tokens: 5",
       "mode": "strict",

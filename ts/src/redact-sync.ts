@@ -33,14 +33,11 @@ import { ALGORITHMS_SPEC } from './spec.js';
 import { runStrictSync, strictLimits, strictWalk, type LeafResult } from './strict.js';
 import { detectSyncHits, type DetectOpts } from './sync-rules.js';
 
-const { sync: SYNC_LIMITS, ruleIds: RULE_IDS, text: TEXT_SPEC } = ALGORITHMS_SPEC;
+const { sync: SYNC_LIMITS, ruleIds: RULE_IDS } = ALGORITHMS_SPEC;
 const SIZE_LIMIT = RULE_IDS.sizeLimit;
 const DEPTH_LIMIT = RULE_IDS.depthLimit;
 const CIRCULAR = RULE_IDS.circular;
 const FAILED = RULE_IDS.failed;
-
-/** Below this no rule can match (`Bearer x` is the shortest secret context). */
-const MIN_SCAN_LEN = TEXT_SPEC.minScanLength;
 
 export type RedactTextSyncOpts = {
     maxChars?: number;
@@ -70,7 +67,6 @@ function scanText(text: string, maxChars: number, detect: DetectOpts): { text: s
         const hit: Hit = { ruleId: SIZE_LIMIT, range: [0, text.length] };
         return { text: buildReadPlaceholder(SIZE_LIMIT), hits: [hit] };
     }
-    if (text.length < MIN_SCAN_LEN) return { text, hits: [] };
     const hits = detectSyncHits(text, detect);
     return { text: applyHits(text, hits), hits };
 }
@@ -198,7 +194,6 @@ function walk(value: unknown, depth: number, verdict: KeyVerdict, state: Walk): 
 /** The strict leaf scan: the sync rules, and a placeholder for the whole leaf when they fail. */
 function strictLeaf(text: string, detect: DetectOpts): LeafResult {
     try {
-        if (text.length < MIN_SCAN_LEN) return { text, hits: [] };
         const hits = detectSyncHits(text, detect);
         return { text: applyHits(text, hits), hits };
     } catch {

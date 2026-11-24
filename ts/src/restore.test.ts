@@ -268,3 +268,45 @@ describe('round trip with both redactors', () => {
         expect(restore(redacted, deep)).toEqual({ value: deep, conflicts: [] });
     });
 });
+
+describe('round trip of keys redacted in strict or with pii', () => {
+    const emails = { 'bob@example.com': { n: 1 }, 'alice@example.com': { n: 2 } };
+    const tokens = { 'token=hunter2': 'v', dr_sk_first1: 'w' };
+
+    test('keys that hold emails come back, sync and async', async () => {
+        const options = { pii: true } as const;
+        const sync = redactJsonValueSync(emails, options);
+        expect(Object.keys(sync as object)).toEqual(['[REDACTED:email]', '[REDACTED:email#2]']);
+        expect(restore(sync, emails)).toEqual({ value: emails, conflicts: [] });
+        const async = await redactJsonValue(emails, { hits: [] }, options);
+        expect(restore(async, emails)).toEqual({ value: emails, conflicts: [] });
+    });
+
+    test('keys that only strict redacts come back, sync and async', async () => {
+        const options = { mode: 'strict' } as const;
+        const sync = redactJsonValueSync(tokens, options);
+        const names = ['token=[REDACTED:generic-keyword]', '[REDACTED:platform-key]'];
+        expect(Object.keys(sync as object)).toEqual(names);
+        expect(restore(sync, tokens)).toEqual({ value: tokens, conflicts: [] });
+        const async = await redactJsonValue(tokens, { hits: [] }, options);
+        expect(restore(async, tokens)).toEqual({ value: tokens, conflicts: [] });
+    });
+
+    test('strict and pii together restore keys of both kinds', () => {
+        const stored = { 'bob@example.com': 1, 'token=hunter2': 2 };
+        const redacted = redactJsonValueSync(stored, { mode: 'strict', pii: true });
+        expect(restore(redacted, stored)).toEqual({ value: stored, conflicts: [] });
+    });
+
+    test('a placeholder key that two stored keys could stand for is a conflict, never a guess', () => {
+        const stored = { 'token=12345678': 'valueA', 'token=Abc123xyZQ': 'valueB' };
+        const redacted = redactJsonValueSync(stored, { mode: 'strict' });
+        const out = restore(redacted, stored);
+        const placeholderKey = '$["token=[REDACTED:generic-keyword]"]';
+        expect(out.conflicts).toEqual([placeholderKey, placeholderKey]);
+        expect(out.value).toEqual({
+            'token=[REDACTED:generic-keyword]': '[REDACTED:key-context]',
+            'token=Abc123xyZQ': 'valueB',
+        });
+    });
+});

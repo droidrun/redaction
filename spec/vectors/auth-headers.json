@@ -140,6 +140,18 @@
       "input": "{\\\"hdr\\\":\\\"Bearer abc!defghij\\\"}",
       "mode": "strict",
       "expected": "{\\\"hdr\\\":\\\"Bearer [REDACTED:auth-header]\\\"}"
+    },
+    {
+      "name": "strict: bearer credential in quotes",
+      "input": "Authorization: Bearer \"abcdef\"",
+      "mode": "strict",
+      "expected": "Authorization: Bearer \"[REDACTED:auth-header]\""
+    },
+    {
+      "name": "strict: a second bearer inside the first credential is still found",
+      "input": "Bearer user:abcdefgh&Bearer pwd=null, x",
+      "mode": "strict",
+      "expected": "Bearer [REDACTED:auth-header] [REDACTED:auth-header], x"
     }
   ]
 }

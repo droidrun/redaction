@@ -145,6 +145,36 @@
       "input": "the dr_sk_ prefix marks a key",
       "mode": "strict",
       "expected": "the dr_sk_ prefix marks a key"
+    },
+    {
+      "name": "strict: a text shorter than eight units is scanned for a platform key",
+      "input": "dr_sk_a",
+      "mode": "strict",
+      "expected": "[REDACTED:platform-key]"
+    },
+    {
+      "name": "strict: platform key after an escaped line break",
+      "input": "{\"msg\":\"key:\\ndr_sk_abcdefgh12345678\"}",
+      "mode": "strict",
+      "expected": "{\"msg\":\"key:\\n[REDACTED:platform-key]\"}"
+    },
+    {
+      "name": "strict: platform key after an escaped tab",
+      "input": "line1\\tdr_sk_abcdefgh12345678",
+      "mode": "strict",
+      "expected": "line1\\t[REDACTED:platform-key]"
+    },
+    {
+      "name": "strict: platform key between percent-encoded quotes",
+      "input": "%22dr_sk_abcdefgh12345678%22",
+      "mode": "strict",
+      "expected": "%22[REDACTED:platform-key]%22"
+    },
+    {
+      "name": "strict: platform key after a word and an underscore",
+      "input": "x_dr_sk_abcdefgh12345678",
+      "mode": "strict",
+      "expected": "x_[REDACTED:platform-key]"
     }
   ]
 }

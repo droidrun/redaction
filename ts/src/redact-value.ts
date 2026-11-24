@@ -39,7 +39,7 @@ import { keysHoldingPlaceholder, newPlacer, placeKey } from './place-key.js';
 import { isPrimitive } from './primitive.js';
 import { detectFullTierKeyHits } from './full-rules.js';
 import { isScannableKey, redactKey } from './redact-key.js';
-import { detectSyncHits } from './sync-rules.js';
+import { detectSyncHits, scanFloor } from './sync-rules.js';
 
 export { CREDENTIAL_KEY_RE, STRUCTURAL_SKIP_KEYS };
 
@@ -143,7 +143,7 @@ function standardKey(key: string, hits: Hit[], opts: RedactValueOpts): string {
  *  as of leaves (SPEC 13), else the full-tier rules. */
 async function scanKey(key: string, hits: Hit[], opts: RedactValueOpts): Promise<string> {
     if (opts.detect === undefined) return fullTierKey(key, hits, opts);
-    if (!isScannableKey(key)) return key;
+    if (!isScannableKey(key, scanFloor(opts))) return key;
     try {
         const found = await opts.detect(key);
         if (found.length === 0) return key;
