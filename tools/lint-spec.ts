@@ -89,10 +89,18 @@ function ruleShapeProblems(dir: string): Problem[] {
     );
 }
 
+/** The rule ids a strict edit names: the one it targets and the one of the rule it replaces it with. */
+function strictEditIds(edit: Record<string, unknown>): string[] {
+    const replaced = edit.replace as { id: string } | undefined;
+    return [edit.id, replaced?.id].filter((id): id is string => typeof id === 'string');
+}
+
 function ruleIdProblems(dir: string): Problem[] {
     const spec = readSpecDir(dir);
     const ids = [
         ...spec.rules.pipeline.map((rule) => String(rule.id)),
+        ...spec.rules.pii.map((rule) => String(rule.id)),
+        ...spec.rules.strict.flatMap((edit) => strictEditIds(edit)),
         ...spec.rules.full.map((rule) => String(rule.id)),
         ...Object.values((spec.algorithms as { ruleIds: Record<string, string> }).ruleIds),
     ];

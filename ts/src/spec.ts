@@ -11,11 +11,22 @@ import { ALGORITHMS_DATA, KEYS_DATA, RULES_DATA } from './spec-data.generated.js
 export type WordMacro = { join: string; words?: string[][]; fromKeys?: string };
 export type Macro = string | WordMacro;
 export type Rule = { id: string; kind: string; [param: string]: unknown };
+/** One edit of `rules.json` `strict`: the entries matching `id` and `kind` (those given) get their fields
+ *  `set`, are `replaced` by a rule, or are `removed`. */
+export type StrictEdit = {
+    id?: string;
+    kind?: string;
+    set?: Record<string, unknown>;
+    replace?: Rule;
+    remove?: boolean;
+};
 export type RulesSpec = {
     specVersion: number;
     macros: Record<string, Macro>;
     patterns: { placeholder: string };
     pipeline: Rule[];
+    strict: StrictEdit[];
+    pii: Rule[];
     full: Rule[];
 };
 export type KeysSpec = {
@@ -65,7 +76,8 @@ function loadSpec(): { rules: RulesSpec; keys: KeysSpec; algorithms: AlgorithmsS
     const rules = checked<RulesSpec>(RULES_DATA);
     const keys = checked<KeysSpec>(KEYS_DATA);
     const algorithms = checked<AlgorithmsSpec>(ALGORITHMS_DATA);
-    const hasNoRules = rules.pipeline.length === 0 || rules.full.length === 0;
+    const hasNoRules = rules.pipeline.length === 0 || rules.pii.length === 0 || rules.full.length === 0;
+    if (!Array.isArray(rules.strict)) throw new Error('redaction spec holds no strict rules');
     if (hasNoRules || keys.secretWords.length === 0) {
         throw new Error('redaction spec holds no rules');
     }
@@ -76,6 +88,27 @@ const LOADED = loadSpec();
 export const RULES_SPEC: RulesSpec = LOADED.rules;
 export const KEYS_SPEC: KeysSpec = LOADED.keys;
 export const ALGORITHMS_SPEC: AlgorithmsSpec = LOADED.algorithms;
+
+function matchesEdit(rule: Rule, edit: StrictEdit): boolean {
+    const isId = edit.id === undefined || rule.id === edit.id;
+    const isKind = edit.kind === undefined || rule.kind === edit.kind;
+    return isId && isKind;
+}
+
+function applyEdit(rules: Rule[], edit: StrictEdit): Rule[] {
+    const hasTarget = rules.some((rule) => matchesEdit(rule, edit));
+    if (!hasTarget) throw new Error('a strict edit of the spec matches no rule');
+    if (edit.remove === true) return rules.filter((rule) => !matchesEdit(rule, edit));
+    return rules.map((rule) => {
+        if (!matchesEdit(rule, edit)) return rule;
+        return edit.replace ?? { ...rule, ...edit.set };
+    });
+}
+
+/** The `strict` rule list (SPEC 4.10): the `compat` list (`pipeline`) with the `strict` edits applied. */
+export function strictRules(rules: readonly Rule[]): Rule[] {
+    return LOADED.rules.strict.reduce(applyEdit, [...rules]);
+}
 
 /** An ASCII letter as a two-case class (`a` -> `[aA]`); other characters as they are. */
 function caseInsensitiveChar(char: string): string {

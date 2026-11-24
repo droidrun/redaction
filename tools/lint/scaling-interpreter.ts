@@ -18,6 +18,7 @@ for (const attack of [{ name: '__plain', unit: 'a' }, ...payload.attacks]) {
         const text = attackText(attack, size);
         const started = performance.now();
         detectSyncHits(text);
+        detectSyncHits(text, { mode: 'strict', pii: true });
         detectFullHits(text);
         results.push({ where: 'detect', attack: attack.name, size, ms: performance.now() - started });
     }

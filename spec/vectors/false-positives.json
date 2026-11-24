@@ -75,6 +75,42 @@
       "name": "lone high surrogate inside angle stand-in",
       "input": "password=<\ud83d>",
       "expected": "password=<\ud83d>"
+    },
+    {
+      "name": "strict: session expired",
+      "input": "session: expired",
+      "mode": "strict",
+      "expected": "session: expired"
+    },
+    {
+      "name": "strict: auth failed",
+      "input": "auth: failed",
+      "mode": "strict",
+      "expected": "auth: failed"
+    },
+    {
+      "name": "strict: token expired",
+      "input": "token: expired",
+      "mode": "strict",
+      "expected": "token: expired"
+    },
+    {
+      "name": "strict: password required",
+      "input": "password: required",
+      "mode": "strict",
+      "expected": "password: required"
+    },
+    {
+      "name": "strict: max tokens 5",
+      "input": "max_tokens: 5",
+      "mode": "strict",
+      "expected": "max_tokens: 5"
+    },
+    {
+      "name": "strict: tokenCount 5",
+      "input": "tokenCount: 5",
+      "mode": "strict",
+      "expected": "tokenCount: 5"
     }
   ]
 }

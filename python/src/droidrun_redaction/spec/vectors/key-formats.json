@@ -121,6 +121,30 @@
       "name": "guard: sk- package name",
       "input": "see sk-learn-is-a-name-of-package here",
       "expected": "see sk-learn-is-a-name-of-package here"
+    },
+    {
+      "name": "strict: platform key with a short body",
+      "input": "key dr_sk_first used",
+      "mode": "strict",
+      "expected": "key [REDACTED:platform-key] used"
+    },
+    {
+      "name": "strict: platform key with a hyphen",
+      "input": "key dr_sk_abc-def used",
+      "mode": "strict",
+      "expected": "key [REDACTED:platform-key] used"
+    },
+    {
+      "name": "strict: platform key in upper case",
+      "input": "key DR_SK_abcdefghijklmnopqrstuvwxyz used",
+      "mode": "strict",
+      "expected": "key [REDACTED:platform-key] used"
+    },
+    {
+      "name": "strict: the platform key prefix alone is prose",
+      "input": "the dr_sk_ prefix marks a key",
+      "mode": "strict",
+      "expected": "the dr_sk_ prefix marks a key"
     }
   ]
 }

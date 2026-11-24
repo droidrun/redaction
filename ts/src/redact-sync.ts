@@ -31,7 +31,7 @@ import { redactKey } from './redact-key.js';
 import { buildReadPlaceholder } from './placeholder.js';
 import { ALGORITHMS_SPEC } from './spec.js';
 import { runStrictSync, strictLimits, strictWalk, type LeafResult } from './strict.js';
-import { detectSyncHits } from './sync-rules.js';
+import { detectSyncHits, type DetectOpts } from './sync-rules.js';
 
 const { sync: SYNC_LIMITS, ruleIds: RULE_IDS, text: TEXT_SPEC } = ALGORITHMS_SPEC;
 const SIZE_LIMIT = RULE_IDS.sizeLimit;
@@ -46,6 +46,8 @@ export type RedactTextSyncOpts = {
     maxChars?: number;
     /** `strict` additionally never passes an unscanned value (see `mode.ts`); default `compat`. */
     mode?: RedactMode;
+    /** Also redact emails, phones, IP addresses and OTP codes (the `pii` rule group). Default false. */
+    pii?: boolean;
 };
 
 export type RedactJsonSyncOpts = {
@@ -54,6 +56,8 @@ export type RedactJsonSyncOpts = {
     maxNodes?: number;
     /** `strict` walks iteratively and keeps to the limits (see `strict.ts`); default `compat`. */
     mode?: RedactMode;
+    /** Also redact emails, phones, IP addresses and OTP codes (the `pii` rule group). Default false. */
+    pii?: boolean;
     /** Replaces the default structural skip set (`type`, `id`): primitive values under
      *  these keys are kept as they are; containers under them are still walked. */
     skipKeys?: ReadonlySet<string>;
@@ -61,13 +65,13 @@ export type RedactJsonSyncOpts = {
     stats?: { hits: Hit[] };
 };
 
-function scanText(text: string, maxChars: number): { text: string; hits: Hit[] } {
+function scanText(text: string, maxChars: number, detect: DetectOpts): { text: string; hits: Hit[] } {
     if (text.length > maxChars) {
         const hit: Hit = { ruleId: SIZE_LIMIT, range: [0, text.length] };
         return { text: buildReadPlaceholder(SIZE_LIMIT), hits: [hit] };
     }
     if (text.length < MIN_SCAN_LEN) return { text, hits: [] };
-    const hits = detectSyncHits(text);
+    const hits = detectSyncHits(text, detect);
     return { text: applyHits(text, hits), hits };
 }
 
@@ -76,7 +80,7 @@ function scanText(text: string, maxChars: number): { text: string; hits: Hit[] }
 export function redactTextSync(text: string, opts: RedactTextSyncOpts = {}): { text: string; hits: Hit[] } {
     try {
         const source = typeof text === 'string' ? text : String(text);
-        return scanText(source, opts.maxChars ?? SYNC_LIMITS.maxChars);
+        return scanText(source, opts.maxChars ?? SYNC_LIMITS.maxChars, { mode: opts.mode, pii: opts.pii });
     } catch {
         return { text: buildReadPlaceholder(FAILED), hits: [{ ruleId: FAILED, range: [0, 0] }] };
     }
@@ -89,6 +93,7 @@ type Walk = {
     skip: ReadonlySet<string>;
     hits: Hit[];
     ancestors: WeakSet<object>;
+    detect: DetectOpts;
 };
 
 function walkString(value: string, verdict: KeyVerdict, state: Walk): string {
@@ -103,7 +108,7 @@ function walkString(value: string, verdict: KeyVerdict, state: Walk): string {
         return limitPlaceholder(SIZE_LIMIT, state.hits);
     }
     state.chars -= value.length;
-    const { text, hits } = scanText(value, Number.MAX_SAFE_INTEGER);
+    const { text, hits } = scanText(value, Number.MAX_SAFE_INTEGER, state.detect);
     appendHits(state.hits, hits);
     return text;
 }
@@ -124,7 +129,8 @@ function walkEntries(
 ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     const keys = Object.keys(value);
-    const reserved = keysHoldingPlaceholder(keys).filter((key) => redactKey(key, []) === key);
+    const detectKey = (key: string): Hit[] => detectSyncHits(key, state.detect);
+    const reserved = keysHoldingPlaceholder(keys).filter((key) => redactKey(key, [], detectKey) === key);
     const placer = newPlacer(new Set(reserved));
     for (const key of keys) {
         if (state.nodes <= 0) {
@@ -132,7 +138,7 @@ function walkEntries(
             break;
         }
         const child = (value as Record<string, unknown>)[key];
-        const outKey = redactKey(key, state.hits);
+        const outKey = redactKey(key, state.hits, detectKey);
         if (state.skip.has(key) && isPrimitive(child)) {
             state.nodes -= 1;
             placeKey(out, placer, outKey, outKey !== key, child);
@@ -190,10 +196,10 @@ function walk(value: unknown, depth: number, verdict: KeyVerdict, state: Walk): 
 }
 
 /** The strict leaf scan: the sync rules, and a placeholder for the whole leaf when they fail. */
-function strictLeaf(text: string): LeafResult {
+function strictLeaf(text: string, detect: DetectOpts): LeafResult {
     try {
         if (text.length < MIN_SCAN_LEN) return { text, hits: [] };
-        const hits = detectSyncHits(text);
+        const hits = detectSyncHits(text, detect);
         return { text: applyHits(text, hits), hits };
     } catch {
         return { text: buildReadPlaceholder(FAILED), hits: [{ ruleId: FAILED, range: [0, 0] }] };
@@ -205,7 +211,8 @@ function redactJsonValueStrictSync(value: unknown, opts: RedactJsonSyncOpts): un
     try {
         const limits = strictLimits(opts);
         const skip = opts.skipKeys ?? STRUCTURAL_SKIP_KEYS;
-        const out = runStrictSync(strictWalk(value, limits, skip, hits), strictLeaf);
+        const detect: DetectOpts = { mode: 'strict', pii: opts.pii };
+        const out = runStrictSync(strictWalk(value, limits, skip, hits), (text) => strictLeaf(text, detect));
         if (opts.stats) appendHits(opts.stats.hits, hits);
         return out;
     } catch {
@@ -227,6 +234,7 @@ export function redactJsonValueSync(value: unknown, opts: RedactJsonSyncOpts = {
         skip: opts.skipKeys ?? STRUCTURAL_SKIP_KEYS,
         hits: [],
         ancestors: new WeakSet(),
+        detect: { pii: opts.pii },
     };
     try {
         const out = walk(value, 0, 'none', state);

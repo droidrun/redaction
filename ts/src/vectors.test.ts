@@ -24,7 +24,7 @@ type VectorCase = {
     input?: unknown;
     inputGen?: Parts;
     mode?: 'compat' | 'strict';
-    opts?: { maxChars?: number; maxDepth?: number; maxNodes?: number };
+    opts?: { maxChars?: number; maxDepth?: number; maxNodes?: number; pii?: boolean };
     expected?: unknown;
     expectedSync?: unknown;
     expectedAsync?: unknown;
@@ -37,7 +37,7 @@ const VECTORS_DIR = join(import.meta.dir, '..', '..', 'spec', 'vectors');
 const REQUIRED_FILES = [
     'auth-headers', 'base64', 'entropy', 'false-positives', 'full-keys', 'full', 'key-collisions',
     'key-formats', 'key-names', 'keywords', 'modes',
-    'nested-json', 'url-query',
+    'nested-json', 'pii', 'url-query',
 ];
 
 function loadVectors(): Array<[string, VectorFile]> {
@@ -123,8 +123,11 @@ for (const [fileName, file] of vectors) {
             test(`idempotent on both entry points: ${vector.name}`, async () => {
                 const sync = expectedFor(vector, 'sync');
                 const async = expectedFor(vector, 'async');
-                expect(runSync({ name: vector.name, input: sync, mode: vector.mode })).toEqual(sync);
-                expect(await runAsync({ name: vector.name, input: async, mode: vector.mode })).toEqual(async);
+                const opts = { pii: vector.opts?.pii };
+                expect(runSync({ name: vector.name, input: sync, mode: vector.mode, opts })).toEqual(sync);
+                expect(await runAsync({ name: vector.name, input: async, mode: vector.mode, opts })).toEqual(
+                    async,
+                );
             });
         }
     });

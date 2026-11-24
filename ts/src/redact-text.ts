@@ -38,6 +38,9 @@ export type RedactTextOpts = {
     /** Use the 0.1.1 placeholder `[REDACTED:<rule>:<last4>]` for matches of at least
      *  16 characters. Default: `[REDACTED:<rule>]`, which exposes nothing of the secret. */
     last4?: boolean;
+    /** Also redact emails, phone numbers, IP addresses and OTP codes in prose (the `pii` rule group of the
+     *  spec). Default false. */
+    pii?: boolean;
     /** Overrides the detector. */
     detect?: (text: string) => Promise<Hit[]>;
     /** Receives safe scan metadata. Callback failures cannot interrupt redaction. */
@@ -70,7 +73,8 @@ export async function detectSecrets(text: string, opts: RedactTextOpts = {}): Pr
         });
     }
     const scanned = capped ? text.slice(0, MAX_TOTAL_SCAN_LEN) : text;
-    return dedupeRanges([...scanWindows(scanned).map(withLegacyId), ...detectSyncHits(text)]);
+    const detect = { mode: opts.mode, pii: opts.pii };
+    return dedupeRanges([...scanWindows(scanned).map(withLegacyId), ...detectSyncHits(text, detect)]);
 }
 
 /** The full-tier rules over `text` (already capped), in windows when long. */
@@ -112,15 +116,15 @@ export async function redactText(
         emitEvent(opts, 'redaction.detect.failed', {
             errorName: err instanceof Error ? err.constructor.name : typeof err,
         });
-        return degradedRedaction(text);
+        return degradedRedaction(text, opts);
     }
 }
 
 /** The scanners failed: the deterministic rules still run, and if they fail too
  *  the text is replaced. A scan failure never lets a secret through. */
-function degradedRedaction(text: string): { text: string; hits: Hit[] } {
+function degradedRedaction(text: string, opts: RedactTextOpts): { text: string; hits: Hit[] } {
     try {
-        const hits = detectSyncHits(text);
+        const hits = detectSyncHits(text, { pii: opts.pii });
         return { text: applyHits(text, hits), hits };
     } catch {
         const hit: Hit = { ruleId: ERROR_RULE_ID, range: [0, 0] };

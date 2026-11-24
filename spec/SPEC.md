@@ -10,7 +10,7 @@ vectors alone, without reading the TypeScript.
 Words in capitals (MUST, MUST NOT, MAY) are used in the RFC 2119 sense.
 
 Contents: 1 Scope and units, 2 Portable grammar, 3 Spec files and macros, 4 Detection (4.1 to 4.10 standard
-tier, 4.11 to 4.17 full tier), 5 Shared algorithms, 6 Key names, 7 Placeholders, hits and splicing, 8 JSON
+tier, 4.11 to 4.17 full tier, 4.18 to 4.22 strict pairs and the `pii` group), 5 Shared algorithms, 6 Key names, 7 Placeholders, hits and splicing, 8 JSON
 contract, 9 Tiers and modes, 10 ReDoS rules, 11 Metadata, 12 Spec integrity, 13 TypeScript extensions,
 14 Conformance vectors, 15 Known portability risks.
 
@@ -81,10 +81,12 @@ Banned:
 
 The linter checks **every** regex-bearing field of a rule, found by name: `pattern`, `header`, `footer`,
 `prefix`, `bearer`, `scheme`, `label`, `queryKey` and the list `variablePatterns` hold patterns; `notBefore`,
-`notAfter` and every field ending in `Class`, `Char`, `Stop` or `End` hold exactly one character class; `id`,
+`notAfter` and every field ending in `Class`, `Char`, `Stop` or `End` (`afterGapClass`, `digitClass`, `identChar`, ...)
+hold exactly one character class; `id`,
 `kind`, `lead`, `leads`, `separator`, `footerMarker`, `requireLiteral`, `lit`, `alt`, `tails`, `magic`,
 `ignoreEquals`, `userIgnoreContains`, `passwordIgnoreContains`, `passwordIgnoreEquals`, `stripLiteral`,
-`newline`, `dash`, `underscore`, `check`, `plainWords`, `queryOnlyKeys` are literal text. The check looks into
+`newline`, `dash`, `underscore`, `check`, `plainWords`, `queryOnlyKeys`, `mode`, `ignoreSuffixes`, `ignoreAfterWords`,
+`statusWords`, `schemeWords` are literal text. The check looks into
 nested objects and lists (the `parts` of a token). A string field with another name is an error, so a new field
 cannot escape the checks.
 
@@ -113,7 +115,10 @@ refuse to load. `spec/schema/*.schema.json` are JSON Schemas for the files.
   `{ "join": J, "words": [[w, ...], ...] }` (or `"fromKeys": "secretWords"` instead of `words`,
   which takes the word lists of `keys.json`).
 - `patterns.placeholder`: the placeholder grammar (section 7).
-- `pipeline`: the ordered rule list of the standard tier (sections 4.1 to 4.10).
+- `pipeline`: the ordered rule list of the standard tier in `compat` mode (sections 4.1 to 4.10); it is the v0.2.0
+  contract and holds no rule of `strict` or `pii`.
+- `strict`: the edits that turn the `pipeline` into the rule list of `strict` mode, a list of objects (section 4.10).
+- `pii`: the ordered rules of the opt-in `pii` group (sections 4.19 to 4.22).
 - `full`: the ordered rule list of the full tier, the ported secretlint preset (sections 4.11 to 4.17).
 
 **Expansion.** Every string that is a pattern or a class is expanded before use: each `{{NAME}}`
@@ -139,12 +144,13 @@ of section 5.6); they are named where they are used.
 
 ## 4. Detection
 
-Sections 4.1 to 4.10 are the standard tier, 4.11 to 4.17 the full tier. `detect(text)` returns the merged hits of
-the standard tier.
+Sections 4.1 to 4.10 and 4.18 are the standard tier (4.18 only in `strict`), 4.11 to 4.17 the full tier, 4.19 to
+4.22 the opt-in `pii` group. `detect(text, mode, pii)` returns the merged hits of the standard tier, with `mode` (`compat` or `strict`,
+section 9) and `pii` (boolean, default false, section 9.5).
 
-1. Let `hits` be empty. For each rule of `pipeline` in order, run the rule kind below on the whole
-   text. It returns ranges in the order given by its kind. Append `(rule.id, start, end)` for each
-   range to `hits`. Several pipeline entries may share an id.
+1. Let `hits` be empty. For each rule of the rule list of `mode` (4.10) in order, then, when `pii` is true, for each rule
+   of `pii` in order, run the rule kind below on the whole text. It returns ranges in the order given by its kind.
+   Append `(rule.id, start, end)` for each range to `hits`. Several entries may share an id.
 2. Return `merge(hits)` (section 7).
 
 The rules never see a text shorter than `text.minScanLength` (8): `redact` returns it unchanged
@@ -160,7 +166,8 @@ Rule kinds. `P` is the expanded pattern text; `scan(P)` is the global search of 
 ### 4.1 `regex`
 
 Fields: `pattern`, optional `group` (default 0), `notBefore`, `notAfter`, `requireClass`,
-`requireLiteral`, `dropPlaceholder`, `ignoreEquals`.
+`requireLiteral`, `dropPlaceholder`, `ignoreEquals`, `ignoreSuffixes`, `ignoreAfterWords` with `afterGapClass`,
+`check` with `minColons`.
 
 1. Find matches of `pattern` left to right. The candidate range is the whole match, or the span of
    capture group `group`.
@@ -172,8 +179,16 @@ Fields: `pattern`, optional `group` (default 0), `notBefore`, `notAfter`, `requi
 3. **Filters** on the candidate, all that are present: `requireClass`: the candidate text contains
    a unit of the class; `requireLiteral`: it contains the literal; `dropPlaceholder`: it is not an
    `isPlaceholderValue`; `ignoreEquals`: its text is not equal to one of the listed strings (exact, case
-   sensitive). A candidate that fails a filter is dropped (the search is not
+   sensitive); `ignoreSuffixes`: `lower(candidate)` does not end with one of the listed literals (the file
+   extensions after the host of an email); `ignoreAfterWords`: the **word before the match** (below) is not one of
+   the listed words; `check`: the named check of 5.8 accepts the candidate (`minColons` is its argument). An unknown
+   `check` name stops the package at load time. A candidate that fails a filter is dropped (the search is not
    restarted: the match was consumed).
+
+   **Word before the match.** Let `s` be the start of the **whole match** (not of the group), `g` be `s` minus
+   the length of the maximal run of units of `afterGapClass` (none when the field is absent) that ends at `s`, and
+   the word be the maximal run of ASCII letters `A-Z a-z` that ends at `g`, lower-cased (`lower`, section 3). It is
+   empty when no letter stands there. (`version 1.2.3.4`: the word before `1` is `version`.)
 4. Output the surviving candidates in order.
 
 **A `regex` rule has either a capture `group` or guards, never both.** The guarded path reports whole matches
@@ -360,6 +375,22 @@ keep the first rule's id (section 7): `jwt`, `gcp-api-key`, `xai-api-key`, `plat
 `cookie`, `auth-header`, then `generic-keyword` (keyword pairs, quoted pairs, unquoted pairs in
 that order), then `key-context` (query values).
 
+**The rule list of a mode.** The list of `compat` is `pipeline`, with every field as written (the v0.2.0 contract,
+section 9). The list of `strict` is built from it by the edits of `rules.json` `strict`, applied in order. An edit is an
+object with `id` and/or `kind` (it matches every entry of the list whose `id` and `kind` equal those given; matching no
+entry stops the package at load time) and one of: `set` (an object whose fields replace the fields of the matched entries),
+`replace` (a rule that takes the place of the matched entry, at its position in the order) or `remove` (true: the matched
+entries are dropped). The order of the resulting list is the order of `pipeline`. The edits are the strict-only secret
+fixes, and `compat` does none of them:
+
+1. `platform-key` reads `dr_sk_` in any letter case and with any non-empty body (`dr_sk_first`, `DR_SK_...`), not
+   only a body of 8 units or more in lower case.
+2. `auth-header` takes the whole Bearer credential: every unit up to whitespace, or up to a quote (`"`, `'`), `<`,
+   `>`, `,`, `;` or `\`, not only the units of `[A-Za-z0-9._~+/=-]` (`Bearer abc!defghijklmnop`). The `Basic` and
+   `Token` schemes are unchanged.
+3. The quoted pairs and unquoted pairs of 4.7 and 4.8 are replaced by the `key-pairs` rule of 4.18 (at the place of the
+   quoted pairs; the unquoted pairs are removed).
+
 ### 4.11 `token` (full tier)
 
 A key format: literals and runs of units of a class, an optional letter guard in front, and a class that must
@@ -513,6 +544,112 @@ deviation from the upstream preset, and the parity test names it. Not ported (IN
 `filter-comments`, and the two `npm` branches that need a `package.json` or `.npmrc` file name, which the package
 never supplies.
 
+### 4.18 `key-pairs` (strict)
+
+Fields: `label` (a pattern that starts at the separator: capture 1 = the escape backslashes before an opening quote,
+capture 2 = the opening quote; 1 and 2 take part together or not at all), `valueLimit` (1024), `plainChar`, `escapeStop`,
+`identChar`, `labelLookback`, `keyChar`, `keyMax` (64), `gapClass`, `quoteChar`, `digitClass`, `standInMinLength` (2),
+`statusWords`, `schemeWords`. The text form of the JSON key rule of section 6: a pair `key: value` whose key the **same
+verdict** (`keyVerdict`, section 6) calls secret, so one list of key names serves JSON keys and text. The `label` pattern
+is the separator (`:`, `=` or `=>`), spaces after it and an optional quote of the value; the key is found by looking back
+from the separator (step 1), so no pattern scans an identifier at every start of the text. The kept words, the stand-ins
+and the number rule below are what lets short values be redacted without redacting ordinary prose.
+
+Scan `label` from position 0. For each match `m` (start `ms`, end `from`):
+
+1. **Key.** Let `e` be `ms` minus the length of the maximal run of `gapClass` units that ends at `ms`. When the unit before
+   `e` is in `quoteChar`, move `e` back over it and then over every `\` unit before it (an escaped quote, any number of
+   times). The key is the run of at most `keyMax` units of `keyChar` that ends at `e` (the units nearest to `e`; a longer
+   run gives its last `keyMax` units); with an empty run there is no key: no range, the search continues at `from`.
+   `verdict = keyVerdict(key)`. When it is `none`: no range; the search continues at `from` (a pair inside the value,
+   `a=password=x`, is still found).
+2. The value is **quoted** when capture 2 took part: it ends at the closing quote found as in 4.7 step 1 (`layers` =
+   the length of capture 1, `valueLimit`), and with no closing quote it is `[from, length)` (fail closed: an unterminated
+   or over-long quoted value, multi-line ones included, is redacted to the end of the text). Otherwise it is the guarded
+   run (5.1) of `plainChar` / `escapeStop` from `from`, unbounded; an empty run gives no range and the search restarts at
+   `ms + 1`. The range of an unquoted value is cut at the next `&` when its label is inside a URL query (`labelStart` 5.2
+   from the start of the key, `trimQueryValue` 5.3). **The end of a run is the same from every start inside it**, so an
+   implementation measures a run once (it remembers the last run: a text of many pairs inside one long run, such as
+   `&token=` repeated, is then linear); a run measured again at every pair is quadratic and not conforming.
+3. The value is **kept** (no range, the search continues at `from`) when it is empty, an `isPlaceholderValue`, a
+   **stand-in** (`isTrivialValue` or `isDocPlaceholder`, 5.5; `isTrivialValue` counts only for a value of at least
+   `standInMinLength` units, so a single `x` or `*` is a value), a **kept word** (`lower(trim(value))` is in
+   `statusWords`: `expired`, `required`, `failed`, `missing`, `invalid`, `true`, `false`, `null`, `none`; or in
+   `schemeWords`: `bearer`, `basic`, `digest`, an authorization scheme whose credential the `auth-header` rule finds),
+   or, when `verdict` is `string`, made only of units of `digitClass` (`max_tokens: 5`, `tokenCount: 5` stay).
+   A `string` verdict is a plural or a count word (`tokens`, `max_tokens`), an `any` verdict is a singular key
+   (`password`, `token`, `otp`, `DB_PASS`, `signing_key`).
+4. Otherwise output the range and restart the search at `max(end, from)`.
+
+### 4.19 The `pii` group and `email`
+
+The opt-in group of section 9.5: the rules of `pii`, run after the rules of the mode, in this order: `email`, `phone`,
+`ip`, `otp`. They are `regex` rules (4.1) with the filters of 4.1; placeholders are `[REDACTED:email]`,
+`[REDACTED:phone]`, `[REDACTED:ip]`, `[REDACTED:otp]` (section 7). Their hits go into the same merge as the secret rules:
+where a PII range touches a secret range the group keeps the id of the earlier start (so `https://u:pass@host.com`
+with the option on becomes `https://u:[REDACTED:url-credentials]`, the host included: the email rule covers
+`pass@host.com`).
+
+`email`: the standard is the WHATWG "valid e-mail address" (html.spec.whatwg.org/multipage/input.html), narrowed to
+what prose carries. A local part of 1 to 64 units of `[A-Za-z0-9._%+-]`, `@`, a host of units of `[A-Za-z0-9.-]` (1 to
+253), a last label of 2 to 24 ASCII letters and a word boundary. The last label is not a **file extension**
+(`ignoreSuffixes`, a list of lower-case suffixes such as `.png`, `.json`, `.ts`): `icon@2x.png` stays. A host with no
+letters-only last label (`react@18.2.0`, `pkg@1.2.3`) and a host without a dot (`user@localhost`) do not match.
+
+### 4.20 `phone`
+
+The standard is ITU-T E.164 for numbers with a `+` (country code and national number, at most 15 digits), plus the
+North American Numbering Plan (NANP) and the common grouped national forms. Five entries, each a `regex` rule:
+
+1. `+` and 8 to 15 digits, each digit optionally preceded by one of ` `, `.`, `(`, `)`, `-`, and a word boundary
+   (`+44 20 7946 0958`, `+33.6.12.34.56.78`, `+491701234567`). More than 15 digits is not a number.
+2. NANP with the area code in parentheses, optional `+1` first: `(415) 555-0123`, `+1 (415) 555-0123`.
+3. NANP with separators: three, three and four digits separated by one of ` `, `.`, `-`, optional `+1` or `1` first:
+   `415-555-0123`, `1-415-555-0123`.
+4. National form with the trunk prefix `0`: `0`, 2 to 4 digits, then groups of 3 to 4 and 3 to 4 digits
+   (`020 7946 0958`).
+5. National form in pairs: `0`, one digit, then four groups of two digits (`06 12 34 56 78`).
+
+A run of digits **without a separator** and without a `+` is never a number (`Request ID 1234567890`,
+`/devices/1234567890`), nor are dates and times (`2026-11-19 10:00:59`), nor versions (`v0.3.0`).
+
+### 4.21 `ip`
+
+Three entries. The range is the address only (a port stays: `192.0.2.123:8080` gives `[REDACTED:ip]:8080`).
+
+1. **IPv4**, RFC 791 dotted quad: four decimal octets 0 to 255 without leading zeros between word
+   boundaries, and `ignoreAfterWords` `v`, `version`, `build`, `android`, `ios` with `afterGapClass` of whitespace, `:` and
+   `=`: a version context keeps the text (`version 1.2.3.4`, `android 14.0.0.1`). `v1.2.3.4` has no word boundary and
+   `999.1.1.1` no octet, so neither matches.
+2. **IPv6, bare**: a run of 5 to 45 units of `[0-9A-Fa-f:]` between word boundaries that passes the check `ipv6` (5.8)
+   with at least 3 colons (`2001:db8::1`). A run with fewer colons (`fe80::1`) is not matched, and neither is a run that
+   is not an address (`std::vector` has no word boundary before its `d`; the MAC address `aa:bb:cc:dd:ee:ff` has six
+   groups and no `::`).
+3. **IPv6 in brackets**: `[` , 2 to 45 units of `[0-9A-Fa-f:]` as `group` 1, `]`: the check `ipv6` with at least 2 colons
+   (`[fdab::cafe]:8080`, `[::1]`); the brackets and the port stay.
+
+The standards are RFC 4291 section 2.2 (text forms) and RFC 5952. A zone id (`%eth0`) and an IPv4 tail
+(`::ffff:1.2.3.4`) are not part of the IPv6 forms; the IPv4 tail is found by the IPv4 entry.
+
+### 4.22 `otp`
+
+The standards are RFC 4226 and RFC 6238 (codes of 6 to 8 digits). The range is the digits (`group` 1); the noun stays.
+Two entries:
+
+1. **An explicit noun**, 4 to 8 digits: the macro `OTP_NOUN` (`OTP`, `OTP code`, `passcode`, `verification code`,
+   `security code`, `confirmation code`, `auth code`, `authentication code`, `login code`, `MFA code`, `2FA code`,
+   `SMS code`, `one-time password`, `one-time code`, `Bestätigungscode`, `Verifizierungscode`, `Sicherheitscode`,
+   `Einmalpasswort`, `code de vérification`, `code de sécurité`, `code de confirmation`, matched with either case,
+   after a word boundary) or the macro `OTP_NOUN_CJK` (`验证码`, `驗證碼`, `校验码`, `动态码`, `認証コード`, `確認コード`,
+   `認証番号`, `確認番号`, `ワンタイムパスワード`), then the macro `OTP_JOIN`: up to three units of whitespace, `:`, `=` or `：`,
+   optionally one of `ist`, `is`, `est`, `lautet`, `为`, `是`, `は` and up to three more separator units.
+2. **The bare noun `code`**, 6 to 8 digits (`your code is 123456`; `your code is 4821` stays), unless the word before it
+   (4.1) is `error`, `exit` or `status` (`ignoreAfterWords`, `afterGapClass` whitespace): `error code 123456`,
+   `exit code 1370`, `status code 404` stay.
+
+The digits end at a word boundary: a longer run is not a code. Numbers under a key (`max_tokens: 5`, `port 8080`) are not
+OTP codes; a code under a key such as `otp` is the JSON key rule's business (section 6), with or without the option.
+
 ## 5. Shared algorithms
 
 ### 5.1 Guarded run
@@ -620,6 +757,15 @@ Unicode 17: only code points added to Unicode after 15.0).
    numbers `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`; strings with units from U+0020, the escapes `\" \\ \/
    \b \f \n \r \t` and `\uXXXX`; no trailing comma) whose top value is an **object or array**. The check is
    iterative (no depth limit): do not use a library parser.
+
+### 5.8 The `ipv6` check
+
+`isIpv6(text, minColons)` (the `check` `ipv6` of 4.1; `text` has only units of `[0-9A-Fa-f:]`): false when `text` has fewer
+than `minColons` colons. Split `text` at the text `::` (non-overlapping, left to right). More than two parts: false. One
+part (no `::`): true when it has exactly 7 colons and each of its 8 groups (the text between colons) is 1 to 4 hexadecimal
+digits. Two parts: each side is empty (no groups) or a list of groups separated by `:`, every group 1 to 4 hexadecimal
+digits (so `:::` or a leading single colon is false); true when the groups of both sides together are fewer than 8
+(`::` stands for at least one group of zeros, RFC 4291).
 
 ## 6. Key names
 
@@ -766,7 +912,8 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
 - `null` and booleans are untouched. The empty string is untouched.
 - **Strings** are scanned as texts (4) and a string under a secret key is replaced whole (section 6 and 9).
 - **Keys** are redacted: a key of length from 8 up to 4096 is scanned with the `detect` of the tier (the standard
-  rules in the standard tier; in the full tier the full-tier rules too, 9.4) and spliced when it holds a secret (it
+  rules of the mode and, with the `pii` option, the `pii` rules; in the full tier the full-tier rules too, 9.4) and spliced
+  when it holds a secret or a personal datum (it
   can hold one, e.g. `{"password=hunter2xx": 1}`, or in the full tier a key that is itself an npm token); a shorter
   key cannot match and a longer one is left as it is in `compat` (strict: section 9).
 - **Invalid JSON.** A JSON entry point that takes JSON **text** (Python and Go; the TypeScript entry points take
@@ -792,16 +939,19 @@ A **JSON value** is what a JSON parser produces: object, array, string, number, 
   the cap is reported as the event `redaction.scan.capped`.
 
 **Entry points** (TypeScript names; the contract is language neutral): redact a text, redact a JSON
-value; each in the `standard` tier (the sync entry) and the `full` tier (the async entry).
+value; each in the `standard` tier (the sync entry) and the `full` tier (the async entry). Every entry point takes the
+mode and the boolean option `pii` (default false, 9.5).
 
 **Modes**:
 
-- `compat` (TypeScript default; reproduces v0.2.0). The standard tier fails closed. The full tier fails
+- `compat` (TypeScript default; reproduces v0.2.0). The rule list is the `compat` list of 4.10 and the output is
+  byte-identical to v0.2.0 (the golden corpus pins it). The standard tier fails closed. The full tier fails
   open: when its rules fail it falls back to the standard rules, and a text beyond the scan cap is
   scanned by the standard rules only.
 - `strict` (Python and Go default; an option in TypeScript). **No path returns text that was not scanned.**
   Any internal error, cap or limit gives an error placeholder or `[REDACTED:size-limit]` for the unscanned
-  remainder.
+  remainder. Its rule list is the `strict` list of 4.10: the short-secret fixes (short values under secret keys in text,
+  escaped-quote keys and the `=>` separator, every `dr_sk_` form, the full Bearer credential) exist in `strict` only.
 
 ### 9.1 Text, standard tier
 
@@ -810,7 +960,7 @@ value; each in the `standard` tier (the sync entry) and the `full` tier (the asy
 1. If `length > maxChars` (default `sync.maxChars`, 4,000,000): return `[REDACTED:size-limit]` with the hit
    `(size-limit, 0, length)`.
 2. If `length < 8`: return the text and no hits.
-3. `hits = detect(text)`; return `splice(text, hits)` and `hits` (already merged).
+3. `hits = detect(text, mode, pii)`; return `splice(text, hits)` and `hits` (already merged).
 4. An unexpected failure at any point (both modes): return `[REDACTED:redaction-failed]` and the hit
    `(redaction-failed, 0, 0)`.
 
@@ -880,6 +1030,17 @@ Everything else (order, verdicts, number handling, key redaction) is as in 9.2.
   length)` is merged with any hit it touches), and `last4` is ignored (no hit of the strict mode carries a
   character of the text: the placeholder is always the read form). JSON: the strict walk of 9.3 with each leaf scanned by this text rule and each key scanned with the
   full tier's `detect` as in `compat` (the key size rules of 9.3 are unchanged).
+
+### 9.5 The `pii` option
+
+`pii` (boolean, default false) is an option of every entry point, both tiers and both modes. When it is true, `detect`
+(4.) runs the rules of `pii` (4.19 to 4.22) after the rules of the mode, and everything else is as without it: the
+same merge and splice (section 7), the same limits, the keys of a JSON value scanned with the same `detect` (8), and
+in `strict` the same walk (9.3). It adds the rule ids `email`, `phone`, `ip` and `otp`, and nothing else changes;
+with the option false the output is byte-identical to the output of a version without the option. The option is
+passed to the leaf scan of the full tier too (9.4: its hits are merged with the full-tier hits). It is **not** a mode and
+not a tier: the same `pii: true` works in `compat` and in `strict`. Out of scope: names, postal addresses and any
+detection that needs a model.
 
 ## 10. ReDoS rules
 
@@ -989,14 +1150,14 @@ can hide:
 ## 14. Conformance vectors
 
 `vectors/*.json`: `{ "description", "cases": [ ... ] }`. A case has `name`, `input` (or `inputGen`), an
-optional `mode` (`compat` default, `strict`) and `opts` (`maxChars`, `maxDepth`, `maxNodes`), and either
+optional `mode` (`compat` default, `strict`) and `opts` (`maxChars`, `maxDepth`, `maxNodes`, and the boolean `pii`), and either
 `expected` (both tiers give the same output) or `expectedSync` and `expectedAsync` (the full tier finds more).
 `inputGen` and `expectedGenSync` / `expectedGenAsync` give a long string as `{ "parts": [[unit, times], ...] }`,
 the concatenation of each unit repeated. A string input runs through the text entry point, any other JSON
 value through the JSON entry point. The output (a string or a JSON value) must equal the expected value
 exactly; for JSON, object key order is compared as the contract order. Field names are fixed (consumers
-read `expectedSync` / `expectedAsync`). Every vector must also be idempotent (redacting the expected output
-gives the same output).
+read `expectedSync` / `expectedAsync`). Every vector must also be idempotent (redacting the expected output, with
+the same mode and the same `pii` option, gives the same output).
 
 The vectors cross every cap: text longer than `maxChars`, depth and node limits, leaf and key size limits,
 the scan cap and the window overlap of the full tier. `corpus/` holds the seeded differential corpus
@@ -1018,3 +1179,26 @@ same seeded corpus through every implementation.
 - **Unit counting** (section 1): the most likely source of drift (astral characters inside values and keys,
   lone surrogates, invalid UTF-8 in Go).
 - **Numbers**: the double model of section 8 is the contract; big integers are rounded, not preserved.
+
+### Known detection gaps
+
+These are limits of what the rules find, not portability risks. A vector pins what is found; a gap is not a vector
+that expects the miss, so closing one later changes no existing vector.
+
+- **Secrets in prose**: a secret that stands after a word and no separator is not found (`the password hunter2 was
+  rejected`). `key-pairs` and the keyword rules need `:`, `=` or `=>`.
+- **Internationalised email addresses**: `email` is ASCII (local part and host). An address with a non-ASCII letter or in
+  Punycode form with a Unicode local part is not found.
+- **URL-encoded values**: `person%40example.com`, `%2B441234567890` and a code inside an encoded query value are not
+  decoded by the `pii` rules (the `key-context` rule decodes only the names of query parameters and one level of a nested
+  query, 4.9).
+- **Email local parts** longer than 64 units: the match starts 64 units before the `@`; what stands before is left.
+- **Phone numbers**: only the `+` form, NANP forms and two national forms (4.20) are found; a number without separators
+  and without a `+` is not, and a `+` number that is longer than 15 digits is not.
+- **IPv4** needs four groups with word boundaries: the first four groups of a five-group version string (`1.2.3.4.5`)
+  are an address, and a version is kept only after the words of 4.21. **IPv6** with fewer than three colons is found only
+  in brackets (`fe80::1` is not; `[fe80::1]` is), and a zone id or an IPv4 tail is not part of the address.
+- **OTP codes** need a noun of 4.22 in the same sentence, directly before the digits; a code in a table cell, a code
+  split by spaces (`482 913`) and a code under a noun of another language are not found.
+- **Key verdicts in text** (4.18) are those of JSON keys, so a design token such as `spacing_token: 16px` is redacted in
+  `strict`, as `{"spacing_token": "16px"}` is in JSON.

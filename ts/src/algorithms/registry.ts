@@ -7,7 +7,7 @@ import type { Hit } from '../hits.js';
 import type { Rule } from '../spec.js';
 import { prepareAuthValues } from './auth-values.js';
 import { prepareDottedToken } from './dotted-token.js';
-import { prepareKeywordPairs, prepareQuotedPairs, prepareUnquotedPairs } from './pairs.js';
+import { prepareKeyPairs, prepareKeywordPairs, prepareQuotedPairs, prepareUnquotedPairs } from './pairs.js';
 import { preparePemBlocks } from './pem-blocks.js';
 import { prepareQueryValues } from './query-values.js';
 import { prepareCookieLines, prepareRegexRule, type Scanner } from './regex-rule.js';
@@ -23,6 +23,7 @@ export const STANDARD_KINDS: KindTable = {
     'keyword-pairs': prepareKeywordPairs,
     'quoted-pairs': prepareQuotedPairs,
     'unquoted-pairs': prepareUnquotedPairs,
+    'key-pairs': prepareKeyPairs,
     'query-values': prepareQueryValues,
 };
 

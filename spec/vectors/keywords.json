@@ -111,6 +111,108 @@
       "name": "value that merely starts like a placeholder",
       "input": "password=[REDACTED]tail1234",
       "expected": "password=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under password",
+      "input": "password=x",
+      "mode": "strict",
+      "expected": "password=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under token",
+      "input": "token=hunter2",
+      "mode": "strict",
+      "expected": "token=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under client_secret",
+      "input": "client_secret=abc123xyz",
+      "mode": "strict",
+      "expected": "client_secret=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under api_key",
+      "input": "api_key=x",
+      "mode": "strict",
+      "expected": "api_key=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under DB_PASS",
+      "input": "DB_PASS=hunter2",
+      "mode": "strict",
+      "expected": "DB_PASS=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under SECRET_KEY",
+      "input": "SECRET_KEY=abc123",
+      "mode": "strict",
+      "expected": "SECRET_KEY=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under aws_secret_access_key",
+      "input": "aws_secret_access_key=abc",
+      "mode": "strict",
+      "expected": "aws_secret_access_key=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value under signing_key",
+      "input": "signing_key=abc",
+      "mode": "strict",
+      "expected": "signing_key=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: short value in json text",
+      "input": "{\"password\":\"x\"}",
+      "mode": "strict",
+      "expected": "{\"password\":\"[REDACTED:generic-keyword]\"}"
+    },
+    {
+      "name": "strict: escaped json in a quoted string",
+      "input": "upstream body: \"{\\\"token\\\":\\\"hunter2\\\",\\\"otp\\\":\\\"482913\\\"}\"",
+      "mode": "strict",
+      "expected": "upstream body: \"{\\\"token\\\":\\\"[REDACTED:generic-keyword]\\\",\\\"otp\\\":\\\"[REDACTED:generic-keyword]\\\"}\""
+    },
+    {
+      "name": "strict: arrow separator",
+      "input": "password => \"hunter2\"",
+      "mode": "strict",
+      "expected": "password => \"[REDACTED:generic-keyword]\""
+    },
+    {
+      "name": "strict: multiline quoted value is redacted through the closing quote",
+      "input": "password=\"first\nhunter2\"",
+      "mode": "strict",
+      "expected": "password=\"[REDACTED:generic-keyword]\""
+    },
+    {
+      "name": "strict: number under a count key is kept, text under it is not",
+      "input": "max_tokens: 5 and max_tokens: five",
+      "mode": "strict",
+      "expected": "max_tokens: 5 and max_tokens: [REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: status word in capitals is kept",
+      "input": "TOKEN: EXPIRED and auth: Failed",
+      "mode": "strict",
+      "expected": "TOKEN: EXPIRED and auth: Failed"
+    },
+    {
+      "name": "strict: auth scheme word is kept for the auth header rule",
+      "input": "Authorization: Bearer abc12345",
+      "mode": "strict",
+      "expected": "Authorization: Bearer [REDACTED:auth-header]"
+    },
+    {
+      "name": "strict: pair after a key without a verdict",
+      "input": "user=bob note=password=hunter2",
+      "mode": "strict",
+      "expected": "user=bob note=password=[REDACTED:generic-keyword]"
+    },
+    {
+      "name": "strict: a lone mask character is a value, a run of them is a stand-in",
+      "input": "password=* and secret=****",
+      "mode": "strict",
+      "expected": "password=[REDACTED:generic-keyword] and secret=****"
     }
   ]
 }

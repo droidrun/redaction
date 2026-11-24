@@ -9,7 +9,7 @@ import { collectHits, prepareRules } from './algorithms/registry.js';
 import { dedupeRanges, type Hit } from './hits.js';
 import { registerFullKeyDetector } from './key-detectors.js';
 import { ALGORITHMS_SPEC, RULES_SPEC } from './spec.js';
-import { detectSyncHits } from './sync-rules.js';
+import { detectSyncHits, type DetectOpts } from './sync-rules.js';
 
 const FULL = prepareRules(RULES_SPEC.full, FULL_KINDS);
 
@@ -27,8 +27,8 @@ export function withLegacyId(hit: Hit): Hit {
 
 /** The merged hits of the full tier over one short text (an object key, SPEC 9.4): the full-tier rules, then
  *  the standard rules, no windows (a key is at most `sync.maxKeyChars` long). */
-export function detectFullTierKeyHits(key: string): Hit[] {
-    return dedupeRanges([...detectFullHits(key).map(withLegacyId), ...detectSyncHits(key)]);
+export function detectFullTierKeyHits(key: string, opts: DetectOpts = {}): Hit[] {
+    return dedupeRanges([...detectFullHits(key).map(withLegacyId), ...detectSyncHits(key, opts)]);
 }
 
 registerFullKeyDetector(detectFullTierKeyHits);

@@ -13,6 +13,8 @@ export type SpecDir = {
         macros: Record<string, Macro>;
         patterns: Record<string, string>;
         pipeline: Array<Record<string, unknown>>;
+        strict: Array<Record<string, unknown>>;
+        pii: Array<Record<string, unknown>>;
         full: Array<Record<string, unknown>>;
     };
     keys: Record<string, unknown>;
@@ -69,6 +71,10 @@ const LITERAL_FIELDS = new Set([
     'check',
     'plainWords',
     'queryOnlyKeys',
+    'ignoreSuffixes',
+    'ignoreAfterWords',
+    'statusWords',
+    'schemeWords',
 ]);
 /** Fields that hold a pattern (the other regex-bearing fields hold one character class). */
 const PATTERN_FIELDS = new Set([
@@ -93,8 +99,8 @@ export function fieldRole(name: string): FieldRole {
     return CLASS_FIELD.test(name) ? 'class' : 'unknown';
 }
 
-export type RuleList = 'pipeline' | 'full';
-export const RULE_LISTS: RuleList[] = ['pipeline', 'full'];
+export type RuleList = 'pipeline' | 'strict' | 'pii' | 'full';
+export const RULE_LISTS: RuleList[] = ['pipeline', 'strict', 'pii', 'full'];
 type StringField = { path: string; name: string; value: string };
 
 /** Every string of a rule (also inside nested parts and lists of strings), with the name of its field. */
