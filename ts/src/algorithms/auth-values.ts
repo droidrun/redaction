@@ -13,6 +13,7 @@ import type { Rule } from '../spec.js';
 type AuthRule = Rule & {
     bearer: string;
     bearerAlso?: string;
+    header?: string;
     scheme: string;
     valueClass: string;
     minValueLength: number;
@@ -79,10 +80,21 @@ export function prepareAuthValues(rule: AuthRule): Scanner {
     const plainWords = new Set(rule.plainWords);
     const bearer = prepareBearer(rule);
     const scheme = prepareScheme(rule);
+    const header = rule.header && compile(rule.header, 'gd');
     return (text) => {
-        return [...bearer(text), ...scheme(text)].filter(([start, end]) => {
+        const ranges = [...bearer(text), ...scheme(text)].filter(([start, end]) => {
             const word = text.slice(start, end).toLowerCase();
             return !plainWords.has(word) && !isPlaceholderValue(text, start, end);
         });
+        if (header) {
+            for (const m of text.matchAll(header)) {
+                const [start, end] = m.indices![1]!;
+                const arg = m.indices![3]![0];
+                if (m[2]!.toLowerCase() !== 'bearer' && !isPlaceholderValue(text, arg, end)) {
+                    ranges.push([start, end]);
+                }
+            }
+        }
+        return ranges;
     };
 }

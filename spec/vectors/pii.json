@@ -743,6 +743,22 @@
           ]
         ]
       }
-    }
+    },
+    {"name": "feedback: Your verification code is 123 456", "input": "Your verification code is 123 456", "mode": "strict", "opts": {"pii": true}, "expected": "Your verification code is [REDACTED:otp]"},
+    {"name": "feedback: OTP code is 123-456", "input": "OTP code is 123-456", "mode": "strict", "opts": {"pii": true}, "expected": "OTP code is [REDACTED:otp]"},
+    {"name": "feedback: OTP was 123-456", "input": "OTP was 123-456", "mode": "strict", "opts": {"pii": true}, "expected": "OTP was [REDACTED:otp]"},
+    {"name": "feedback: Your one-time password is 123-456", "input": "Your one-time password is 123-456", "mode": "strict", "opts": {"pii": true}, "expected": "Your one-time password is [REDACTED:otp]"},
+    {"name": "feedback: passcode was 123 456", "input": "passcode was 123 456", "mode": "strict", "opts": {"pii": true}, "expected": "passcode was [REDACTED:otp]"},
+    {"name": "feedback: 2FA: 123456", "input": "2FA: 123456", "mode": "strict", "opts": {"pii": true}, "expected": "2FA: [REDACTED:otp]"},
+    {"name": "feedback: +49 (0)30 12345678", "input": "+49 (0)30 12345678", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "feedback: +44 (0) 20 7946 0958 ext. 12", "input": "+44 (0) 20 7946 0958 ext. 12", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "feedback: +41 (44) 668 18 00", "input": "+41 (44) 668 18 00", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "feedback: +123  45  67  89", "input": "+123  45  67  89", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "feedback: 415-555-0123 ext. 12", "input": "415-555-0123 ext. 12", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "feedback: fdab::cafe", "input": "fdab::cafe", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:ip]"},
+    {"name": "feedback: fdab::", "input": "fdab::", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:ip]"},
+    {"name": "feedback: react@18.2.0", "input": "react@18.2.0", "mode": "strict", "opts": {"pii": true}, "expected": "react@18.2.0"},
+    {"name": "known gap: trunk prefix and double spaces", "input": "+44 (0) 20  7946 0958 ext. 12", "mode": "strict", "opts": {"pii": true}, "expected": "+44 (0) 20  7946 0958 ext. 12"},
+    {"name": "review: only three-digit groups are joined", "input": "OTP was 2026-2027", "mode": "strict", "opts": {"pii": true}, "expected": "OTP was 2026-2027"}
   ]
 }

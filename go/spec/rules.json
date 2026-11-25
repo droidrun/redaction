@@ -6,6 +6,12 @@
     "ESCAPED_QUOTE": "(?:\\\\*[\"'])",
     "UUID": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
     "HSPACE": "\t\u000b\f \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff",
+    "FIELD_KEY": "(?:\\b|[_-])(?:[tT][oO][kK][eE][nN]|{{SECRET_WORDS}})",
+    "FIELD_OP": "[\"']?[ \t]*(?:=>|:=|[:=])[ \t]*",
+    "SESSION": "(?:\\b|[_.-])[sS][eE][sS][sS][iI][oO][nN](?:[iI][dD])?",
+    "SCHEME": {"join": "", "words": [["basic"], ["bearer"], ["token"], ["digest"], ["apikey"], ["negotiate"]]},
+    "BARE_VALUE": "[^{{WS}},;\"'{}\\[\\]\\\\]+",
+    "PHONE_EXT": "(?:[ \t]{1,4}(?:[eE][xX][tT]\\.?|[xX])[ \t]{0,4}[0-9]{1,8}\\b)?",
     "OCTET": "(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])",
     "OTP_JOIN": "[{{WS}}:=：]{0,3}(?:(?:{{OTP_IS}}|[为是は])[{{WS}}:：]{0,3})?",
     "OTP_NOUN_CJK": "(?:验证码|驗證碼|校验码|动态码|認証コード|確認コード|認証番号|確認番号|ワンタイムパスワード)",
@@ -180,6 +186,9 @@
             "est"
           ],
           [
+            "was"
+          ],
+          [
             "lautet"
           ]
         ]
@@ -224,6 +233,9 @@
           [
             "mfa",
             "code"
+          ],
+          [
+            "2fa"
           ],
           [
             "2fa",
@@ -434,7 +446,8 @@
     {
       "id": "auth-header",
       "set": {
-        "bearerAlso": "\\b{{BEARER}}[{{WS}}]+[\"']?([^{{WS}}\"'<>,;\\\\]+)"
+        "bearerAlso": "\\b{{BEARER}}[{{WS}}]+[\"']?([^{{WS}}\"'<>,;\\\\]+(?:[,;][^{{WS}}\"'<>\\\\]*[^{{WS}}\"'<>\\\\,;])?)",
+        "header": "(?:\\b|[_-])[aA][uU][tT][hH][oO][rR][iI][zZ][aA][tT][iI][oO][nN][\"']?[ \t]*[:=][ \t]*(([!#$%&'*+.\\^_`|~A-Za-z0-9-]+)[ \t]+([^ \t\r\n][^\r\n]*))"
       }
     },
     {
@@ -495,7 +508,14 @@
           "auth"
         ]
       }
-    }
+    },
+    {"kind": "auth-values", "add": {"id": "auth-header", "kind": "regex", "pattern": "\\b{{BEARER}}[{{HSPACE}}]+\"((?:\\\\[^\r\n]|[^\"\\\\\r\n])+)\"", "group": 1, "requireClass": "[ ,;\t]", "dropPlaceholder": true}},
+    {"kind": "auth-values", "add": {"id": "auth-header", "kind": "regex", "pattern": "\\b{{BEARER}}[{{HSPACE}}]+'((?:\\\\[^\r\n]|[^'\\\\\r\n])+)'", "group": 1, "requireClass": "[ ,;\t]", "dropPlaceholder": true}},
+    {"kind": "auth-values", "add": {"id": "secret", "kind": "regex", "pattern": "{{FIELD_KEY}}{{FIELD_OP}}({{SCHEME}}[ \t]+(?:\"(?:[^\"\\\\\r\n]|\\\\[^\r\n])*\"|'(?:[^'\\\\\r\n]|\\\\[^\r\n])*'|{{BARE_VALUE}}))", "group": 1}},
+    {"kind": "auth-values", "add": {"id": "secret", "kind": "regex", "pattern": "{{SESSION}}{{FIELD_OP}}({{BARE_VALUE}})", "group": 1, "ignoreEquals": ["expired", "failed", "missing", "invalid", "required"], "ignoreBeforeClass": "[?&]"}},
+    {"kind": "auth-values", "add": {"id": "secret", "kind": "regex", "pattern": "[?&][sS][eE][sS][sS][iI][oO][nN][iI][dD]=([^{{WS}}&#\"\\'<>]+)", "group": 1, "dropPlaceholder": true}},
+    {"kind": "auth-values", "add": {"id": "secret", "kind": "regex", "pattern": "{{SESSION}}{{FIELD_OP}}'((?:[^'\\\\]|\\\\[^\r\n])+)'", "group": 1, "dropPlaceholder": true}},
+    {"kind": "auth-values", "add": {"id": "secret", "kind": "regex", "pattern": "{{SESSION}}{{FIELD_OP}}\"((?:[^\"\\\\]|\\\\[^\r\n])+)\"", "group": 1, "dropPlaceholder": true}}
   ],
   "pii": [
     {
@@ -554,27 +574,32 @@
     {
       "id": "phone",
       "kind": "regex",
-      "pattern": "\\+[0-9](?:[ .()-]?[0-9]){7,14}\\b"
+      "pattern": "\\+[0-9]{1,3}[ .-]?\\([0-9]{1,4}\\)[ .-]?[0-9](?:[ .-]?[0-9]){4,12}\\b{{PHONE_EXT}}"
     },
     {
       "id": "phone",
       "kind": "regex",
-      "pattern": "(?:\\+1[ .-])?\\([0-9]{3}\\)[ .-]?[0-9]{3}[ .-]?[0-9]{4}\\b"
+      "pattern": "\\+[0-9](?:(?:[ .()-]|[ \t][ \t])?[0-9]){7,14}\\b{{PHONE_EXT}}"
     },
     {
       "id": "phone",
       "kind": "regex",
-      "pattern": "(?:\\+1[ .-]|\\b1[ .-])?\\b[0-9]{3}[ .-][0-9]{3}[ .-][0-9]{4}\\b"
+      "pattern": "(?:\\+1[ .-])?\\([0-9]{3}\\)[ .-]?[0-9]{3}[ .-]?[0-9]{4}\\b{{PHONE_EXT}}"
     },
     {
       "id": "phone",
       "kind": "regex",
-      "pattern": "\\b0[0-9]{2,4}[ .-][0-9]{3,4}[ .-][0-9]{3,4}\\b"
+      "pattern": "(?:\\+1[ .-]|\\b1[ .-])?\\b[0-9]{3}[ .-][0-9]{3}[ .-][0-9]{4}\\b{{PHONE_EXT}}"
     },
     {
       "id": "phone",
       "kind": "regex",
-      "pattern": "\\b0[0-9][ .-][0-9]{2}[ .-][0-9]{2}[ .-][0-9]{2}[ .-][0-9]{2}\\b"
+      "pattern": "\\b0[0-9]{2,4}[ .-][0-9]{3,4}[ .-][0-9]{3,4}\\b{{PHONE_EXT}}"
+    },
+    {
+      "id": "phone",
+      "kind": "regex",
+      "pattern": "\\b0[0-9][ .-][0-9]{2}[ .-][0-9]{2}[ .-][0-9]{2}[ .-][0-9]{2}\\b{{PHONE_EXT}}"
     },
     {
       "id": "ip",
@@ -611,10 +636,20 @@
       "minColons": 2
     },
     {
+      "id": "ip",
+      "kind": "regex",
+      "pattern": "[fF][cCdD][0-9A-Fa-f]{2}:[0-9A-Fa-f:]{1,35}",
+      "ignoreBeforeClass": "[0-9A-Za-z_:\\[]",
+      "ignoreAfterClass": "[0-9A-Za-z_:\\]]",
+      "check": "ipv6",
+      "minColons": 2
+    },
+    {
       "id": "otp",
       "kind": "regex",
-      "pattern": "(?:\\b{{OTP_NOUN}}|{{OTP_NOUN_CJK}}){{OTP_JOIN}}([0-9]{4,8})\\b",
-      "group": 1
+      "pattern": "(?:\\b{{OTP_NOUN}}|{{OTP_NOUN_CJK}}){{OTP_JOIN}}([0-9]{3}[ -][0-9]{3}|[0-9]{4,8})\\b",
+      "group": 1,
+      "ignoreAfterClass": "[-0-9]"
     },
     {
       "id": "otp",

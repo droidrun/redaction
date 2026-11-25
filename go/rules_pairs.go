@@ -58,7 +58,8 @@ func (e *engine) newKeywordPairs(b *builder, raw json.RawMessage) (scanner, erro
 }
 
 func (k *keywordPairs) accepts(t *text, value span) bool {
-	if value.end <= value.start || k.holders.isValue(t, value.start, value.end) {
+	markerEnd := k.holders.endAt(t, value.start)
+	if value.end <= value.start || markerEnd >= value.end || (markerEnd >= 0 && markerEnd == value.end-1 && t.units[markerEnd] == '}') {
 		return false
 	}
 	return k.evidence.hasValueEvidence(t.units[value.start:value.end])

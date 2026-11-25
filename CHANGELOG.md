@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Strict text redaction covers scheme-prefixed assignments and session IDs. An existing marker no longer consumes the closing JSON brace.
+- Strict authorization detection covers custom schemes, short Basic credentials, and quoted or punctuation-bearing Bearer tokens. Existing Bearer header formatting stays intact.
+- Opt-in PII detection now covers grouped verification codes, international phone prefixes and extensions, and bare unique-local IPv6 addresses such as `fdab::`.
+
 ## 0.4.0 (2026-11-24)
 
 Adds the opt-in `pii` option and short-secret detection in `strict` mode to all three implementations (TypeScript,

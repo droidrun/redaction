@@ -21,7 +21,7 @@ from ._patterns import (
     run_pattern,
     search_from,
 )
-from ._placeholder import is_placeholder_value
+from ._placeholder import is_placeholder_value, placeholder_end_at
 from ._runs import (
     guarded_run_end,
     label_start,
@@ -304,6 +304,7 @@ def prepare_auth_values(rule: dict[str, Any]) -> Scanner:
     bearers = [compile_pattern(rule[name]) for name in ("bearer", "bearerAlso") if name in rule]
     scheme = _prepare_scheme(rule)
     plain_words = frozenset(rule["plainWords"])
+    header = compile_pattern(rule["header"]) if "header" in rule else None
 
     def bearer_spans(text: str) -> list[Range]:
         """Group 1 of every match of `bearer`, then of `bearerAlso`: each is a search of its own (SPEC 4.5)."""
@@ -312,11 +313,17 @@ def prepare_auth_values(rule: dict[str, Any]) -> Scanner:
 
     def scan(text: str) -> list[Range]:
         candidates = bearer_spans(text) + scheme(text)
-        return [
+        ranges = [
             (start, end)
             for start, end in candidates
             if fold_lower(text[start:end]) not in plain_words and not is_placeholder_value(text, start, end)
         ]
+        if header:
+            for match in header.finditer(text):
+                arg, end = match.span(3)
+                if fold_lower(match[2]) != "bearer" and not is_placeholder_value(text, arg, end):
+                    ranges.append(match.span(1))
+        return ranges
 
     return scan
 
@@ -352,9 +359,10 @@ def prepare_keyword_pairs(rule: dict[str, Any]) -> Scanner:
                 continue
             label = label_start(text, match.start(), is_ident, lookback)
             start, end = trim_query_value(text, label, (value_start, value_end))
+            marker_end = placeholder_end_at(text, start)
             accepted = (
-                end > start
-                and not is_placeholder_value(text, start, end)
+                end > start and marker_end < end
+                and not (marker_end == end - 1 and text[marker_end:end] == "}")
                 and has_value_evidence(text[start:end])
             )
             if not accepted:

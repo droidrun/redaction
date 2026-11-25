@@ -66,7 +66,8 @@ export function prepareKeywordPairs(rule: KeywordRule): Scanner {
             }
             const label = labelStart(text, match.index, isIdent, rule.labelLookback);
             const [start, end] = trimQueryValue(text, label, [valueStart, valueEnd]);
-            const isPlaceholder = placeholderEndAt(text, start) >= end;
+            const markerEnd = placeholderEndAt(text, start);
+            const isPlaceholder = markerEnd >= end || (markerEnd === end - 1 && text[markerEnd] === '}');
             const accepted = end > start && !isPlaceholder && hasValueEvidence(text.slice(start, end));
             if (!accepted) {
                 pattern.lastIndex = valueStart;

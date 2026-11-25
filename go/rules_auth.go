@@ -3,6 +3,7 @@ package redaction
 import "encoding/json"
 
 type authSpec struct {
+	Header         string   `json:"header"`
 	Bearer         string   `json:"bearer"`
 	BearerAlso     string   `json:"bearerAlso"`
 	Scheme         string   `json:"scheme"`
@@ -17,6 +18,7 @@ type authSpec struct {
 // authValues is SPEC 4.5: `Bearer <value>`, and `Basic`/`Token <value>` when the value looks
 // like a credential and not like a word.
 type authValues struct {
+	header       *searcher
 	bearers      []*searcher
 	scheme       *searcher
 	value        *unitSet
@@ -37,7 +39,12 @@ func (e *engine) newAuthValues(b *builder, raw json.RawMessage) (scanner, error)
 	if spec.BearerAlso != "" {
 		bearers = append(bearers, b.searcher(spec.BearerAlso))
 	}
+	var header *searcher
+	if spec.Header != "" {
+		header = b.searcher(spec.Header)
+	}
 	return &authValues{
+		header:       header,
 		bearers:      bearers,
 		scheme:       b.searcher(spec.Scheme),
 		value:        b.class(spec.ValueClass),
@@ -117,6 +124,18 @@ func (a *authValues) scan(t *text) []span {
 		word := foldString(t.units[found.start:found.end])
 		if !a.plainWords[word] && !a.placeholders.isValue(t, found.start, found.end) {
 			kept = append(kept, found)
+		}
+	}
+	if a.header != nil {
+		for from := 0; ; {
+			m := a.header.find(t, from)
+			if m == nil {
+				break
+			}
+			from = m[1]
+			if foldString(t.units[m[4]:m[5]]) != "bearer" && !a.placeholders.isValue(t, m[6], m[7]) {
+				kept = append(kept, span{m[2], m[3]})
+			}
 		}
 	}
 	return kept

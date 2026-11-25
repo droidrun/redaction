@@ -296,7 +296,8 @@ Scan `prefix` from position 0. For each match `m` (start `ms`, end `v`):
    `valueEnd - v < minValueLength` (8): restart the search at `ms + 1`; no range.
 2. `label = labelStart(ms)` (5.2). `[start, end) = trimQueryValue(label, [v, valueEnd))` (5.3).
 3. The candidate is **accepted** when `end > start`, it is not an `isPlaceholderValue(start, end)`, and
-   `hasValueEvidence(text[start..end])` (5.4).
+   `hasValueEvidence(text[start..end])` (5.4). In both `compat` and `strict`, also reject a candidate that
+   consists of one complete placeholder followed by a single `}`. The brace belongs to the surrounding text.
 4. Not accepted: restart the search at `v` (the start of the rejected value, so a value that is itself a
    label still starts its own pair; this keeps `a_token=a_token=...` linear).
 5. Accepted: if `end - start == window` the value filled the capture window and is **extended**: the
@@ -395,12 +396,17 @@ The edits, in order, and `compat` does none of them:
 
 1. `platform-key` reads `dr_sk_` in any letter case, with any non-empty body and without a word boundary before it
    (`dr_sk_first`, `DR_SK_...`, `x_dr_sk_...`, an escaped `\n` or `%22` before it).
-2. `auth-header` gets `bearerAlso`: the whole Bearer credential, every unit up to whitespace or up to a quote (`"`,
-   `'`), `<`, `>`, `,`, `;` or `\`, after an optional opening quote (`Bearer abc!defghijklmnop`, `Bearer "abc"`). The
-   narrow `bearer` pattern is still searched, so no credential found before is lost. `Basic` and `Token` are unchanged.
+2. `auth-header` also scans Bearer credentials with internal punctuation and quoted credentials with spaces.
+   Trailing prose punctuation stays. The optional `header` pattern captures a scheme and argument after an
+   authorization label. Redact the entire value to end of line unless the scheme is Bearer or the argument is
+   already a placeholder. This preserves existing Bearer formatting while covering short Basic, Digest and custom credentials.
 3. `keyword-pairs` (prefix), `quoted-pairs` (label) and `unquoted-pairs` (prefix) accept `=>` and `:=` as a separator
    next to `:` and `=`, so `password => "x"` is a pair and `token=>abc` is a fixed point of redaction.
 4. The `key-pairs` rule of 4.18 is **added** right after the unquoted pairs.
+5. Strict regex rules recognize session labels and scheme-prefixed assignments before the generic pair rules.
+   **Known gaps:** compound objects and arrays, SQL doubled quotes, next-line JSON values and unquoted
+   multiword passwords can remain partly or wholly visible. The `known gap` text vectors in `keywords.json`
+   pin these limitations; redact parsed JSON rather than relying on the text scanner for structured data.
 
 **Superset.** For every input, the `strict` of this version redacts every range the `strict` of 0.3.0 redacted, with
 one narrow exception: where `=>` or `:=` is the separator, 0.3.0 read the `>` or `=` as the first unit of the value, so
@@ -627,7 +633,8 @@ letters-only last label (`react@18.2.0`, `pkg@1.2.3`) and a host without a dot (
 ### 4.20 `phone`
 
 The standard is ITU-T E.164 for numbers with a `+` (country code and national number, at most 15 digits), plus the
-North American Numbering Plan (NANP) and the common grouped national forms. Five entries, each a `regex` rule:
+North American Numbering Plan (NANP) and the common grouped national forms. The following `regex` rules
+also consume an immediately following numeric `ext`, `ext.` or `x` extension:
 
 1. `+` and 8 to 15 digits, each digit optionally preceded by one of ` `, `.`, `(`, `)`, `-`, and a word boundary
    (`+44 20 7946 0958`, `+33.1.99.00.12.34`, `+493023125123`). A run of more than 15 digits **without separators** is not a
@@ -639,13 +646,15 @@ North American Numbering Plan (NANP) and the common grouped national forms. Five
 4. National form with the trunk prefix `0`: `0`, 2 to 4 digits, then groups of 3 to 4 and 3 to 4 digits
    (`020 7946 0958`).
 5. National form in pairs: `0`, one digit, then four groups of two digits (`01 99 00 12 34`).
+6. An international prefix may precede a parenthesized trunk or area group (`+49 (0)30`, `+41 (44)`).
+   International groups can also be separated by two spaces.
 
 A run of digits **without a separator** and without a `+` is never a number (`Request ID 1234567890`,
 `/devices/1234567890`), nor are dates and times (`2026-11-19 10:00:59`), nor versions (`v0.3.0`).
 
 ### 4.21 `ip`
 
-Three entries. The range is the address only (a port stays: `192.0.2.123:8080` gives `[REDACTED:ip]:8080`).
+The range is the address only (a port stays: `192.0.2.123:8080` gives `[REDACTED:ip]:8080`).
 
 1. **IPv4**, RFC 791 dotted quad: four decimal octets 0 to 255 without leading zeros between word
    boundaries, and `ignoreAfterWords` `v`, `version`, `build`, `android`, `ios`, `firmware`, `sdk`, `os`, `kernel` with `afterGapClass` of whitespace, `:` and
@@ -659,6 +668,8 @@ Three entries. The range is the address only (a port stays: `192.0.2.123:8080` g
    groups and no `::`).
 3. **IPv6 in brackets**: `[` , 2 to 45 units of `[0-9A-Fa-f:]` as `group` 1, `]`: the check `ipv6` with at least 2 colons
    (`[fdab::cafe]:8080`, `[::1]`); the brackets and the port stay.
+4. **Bare unique-local IPv6**: for `fc00::/7`, permit two colons as in `fdab::` and `fdab::cafe`.
+   Validate the complete candidate and reject pieces of identifiers or bracketed addresses.
 
 The standards are RFC 4291 section 2.2 (text forms) and RFC 5952. A zone id (`%eth0`) and an IPv4 tail
 (`::ffff:1.2.3.4`) are not part of the IPv6 forms; the IPv4 tail is found by the IPv4 entry.
@@ -674,7 +685,8 @@ Two entries:
    `Einmalpasswort`, `code de vérification`, `code de sécurité`, `code de confirmation`, matched with either case of the ASCII
    letters only (`BESTÄTIGUNGSCODE` with a capital `Ä` is not matched), after a word boundary) or the macro `OTP_NOUN_CJK` (`验证码`, `驗證碼`, `校验码`, `动态码`, `認証コード`, `確認コード`,
    `認証番号`, `確認番号`, `ワンタイムパスワード`), then the macro `OTP_JOIN`: up to three units of whitespace, `:`, `=` or `：`,
-   optionally one of `ist`, `is`, `est`, `lautet`, `为`, `是`, `は` and up to three more separator units.
+   optionally one of `ist`, `is`, `was`, `est`, `lautet`, `为`, `是`, `は` and up to three more separator units.
+   An explicit noun (including bare `2FA`) also accepts two groups of three digits separated by a space or hyphen.
 2. **The bare noun `code`**, 6 to 8 digits (`your code is 123456`; `your code is 4821` stays), unless the word before it
    (4.1) is `error`, `exit`, `status`, `response`, `postal`, `zip`, `area` or `country` (`ignoreAfterWords`, `afterGapClass`
    whitespace): `error code 123456`, `exit code 1370`, `response code 200000`, `postal code 941031` stay.

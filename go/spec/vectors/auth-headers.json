@@ -152,6 +152,19 @@
       "input": "Bearer user:abcdefgh&Bearer pwd=null, x",
       "mode": "strict",
       "expected": "Bearer [REDACTED:auth-header] [REDACTED:auth-header], x"
-    }
+    },
+    {"name": "feedback: Bearer abc;def", "input": "Bearer abc;def", "mode": "strict", "opts": {"pii": true}, "expected": "Bearer [REDACTED:auth-header]"},
+    {"name": "feedback: Bearer abc,def", "input": "Bearer abc,def", "mode": "strict", "opts": {"pii": true}, "expected": "Bearer [REDACTED:auth-header]"},
+    {"name": "feedback: Bearer \"abc;def tail\"", "input": "Bearer \"abc;def tail\"", "mode": "strict", "opts": {"pii": true}, "expected": "Bearer \"[REDACTED:auth-header]\""},
+    {"name": "feedback: Authorization: ApiKey hunter2", "input": "Authorization: ApiKey hunter2", "mode": "strict", "opts": {"pii": true}, "expected": "Authorization: [REDACTED:auth-header]"},
+    {"name": "feedback: Authorization: Basic eDp5", "input": "Authorization: Basic eDp5", "mode": "strict", "opts": {"pii": true}, "expected": "Authorization: [REDACTED:auth-header]"},
+    {"name": "feedback: HTTP_AUTHORIZATION: Digest username=alice, response=sample_digest", "input": "HTTP_AUTHORIZATION: Digest username=alice, response=sample_digest", "mode": "strict", "opts": {"pii": true}, "expected": "HTTP_AUTHORIZATION: [REDACTED:auth-header]"},
+    {"name": "feedback: Proxy-Authorization: Custom hunter2", "input": "Proxy-Authorization: Custom hunter2", "mode": "strict", "opts": {"pii": true}, "expected": "Proxy-Authorization: [REDACTED:auth-header]"},
+    {"name": "feedback: Bearer tokens, are rejected", "input": "Bearer tokens, are rejected", "mode": "strict", "opts": {"pii": true}, "expected": "Bearer tokens, are rejected"},
+    {"name": "feedback: complete prefixed Basic header, not the next line", "input": "X-Authorization: Basic dXNlcjpwYXNz\r\nnext", "mode": "strict", "opts": {"pii": true}, "expected": "X-Authorization: [REDACTED:auth-header]\r\nnext"},
+    {"name": "review: token punctuation", "input": "Authorization: Acme.v2+v1 hunter2", "mode": "strict", "opts": {"pii": true}, "expected": "Authorization: [REDACTED:auth-header]"},
+    {"name": "review: label boundary", "input": "preauthorization: payment was declined", "mode": "strict", "opts": {"pii": true}, "expected": "preauthorization: payment was declined"},
+    {"name": "known gap: escaped quote in Bearer", "input": "Bearer \"abc\\\"def\"", "mode": "strict", "opts": {"pii": true}, "expected": "Bearer \"[REDACTED:auth-header]\\\"def\""},
+    {"name": "known gap: Bearer prose word in header", "input": "Authorization: Bearer tokens", "mode": "strict", "opts": {"pii": true}, "expected": "Authorization: Bearer tokens"}
   ]
 }
