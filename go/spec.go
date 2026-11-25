@@ -36,10 +36,11 @@ type rulesFile struct {
 	Patterns    struct {
 		Placeholder string `json:"placeholder"`
 	} `json:"patterns"`
-	Pipeline []json.RawMessage `json:"pipeline"`
-	Strict   []strictEdit      `json:"strict"`
-	PII      []json.RawMessage `json:"pii"`
-	Full     []json.RawMessage `json:"full"`
+	Pipeline    []json.RawMessage `json:"pipeline"`
+	StatusWords []string          `json:"statusWords"`
+	Strict      []strictEdit      `json:"strict"`
+	PII         []json.RawMessage `json:"pii"`
+	Full        []json.RawMessage `json:"full"`
 }
 
 type keysFile struct {

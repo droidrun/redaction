@@ -10,7 +10,7 @@ import { guardedRunEnd, runClasses } from './guarded-run.js';
 import { isIpv6 } from './ipv6.js';
 import { isPlaceholderValue } from './placeholder-value.js';
 import { wordBefore } from './word-before.js';
-import type { Rule } from '../spec.js';
+import { RULES_SPEC, type Rule } from '../spec.js';
 
 export type Scanner = (text: string) => Range[];
 
@@ -22,6 +22,7 @@ type Filter = {
     requireLiteral?: string;
     dropPlaceholder?: boolean;
     ignoreEquals?: string[];
+    ignoreStatusWords?: boolean;
     ignoreSuffixes?: string[];
     ignoreAfterWords?: string[];
     afterGapClass?: string;
@@ -88,6 +89,7 @@ function prepareFilter(filter: Filter): (text: string, candidate: Candidate) => 
         if (!hasClass(value)) return false;
         if (filter.requireLiteral !== undefined && !value.includes(filter.requireLiteral)) return false;
         if (filter.ignoreEquals?.includes(value) === true) return false;
+        if (filter.ignoreStatusWords === true && RULES_SPEC.statusWords.includes(foldLower(value))) return false;
         if (hasIgnoredSuffix(value)) return false;
         if (hasIgnoredContext(text, matchStart)) return false;
         if (isPiece(text, matchStart, matchEnd)) return false;

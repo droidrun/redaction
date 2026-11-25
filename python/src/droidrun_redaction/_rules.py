@@ -32,11 +32,12 @@ from ._runs import (
     trim_query_value,
     word_before,
 )
-from ._spec import SpecError
+from ._spec import RULES, SpecError
 
 Scanner = Callable[[str], list[Range]]
 Filter = Callable[[str, Range, Range], bool]
 _CHECKS = {"ipv6": is_ipv6}
+_STATUS_WORDS = frozenset(RULES["statusWords"])
 
 
 def _group_span(match: re.Match[str], group: int) -> Range | None:
@@ -88,6 +89,7 @@ def _prepare_filter(rule: dict[str, Any]) -> Filter:
     has_class = contains_test(rule["requireClass"]) if "requireClass" in rule else None
     literal = rule.get("requireLiteral")
     ignored = frozenset(rule.get("ignoreEquals", ()))
+    ignore_status_words = rule.get("ignoreStatusWords") is True
     drops_placeholder = rule.get("dropPlaceholder") is True
     has_ignored_suffix = _prepare_ignored_suffix(rule)
     has_ignored_context = _prepare_ignored_context(rule)
@@ -102,6 +104,8 @@ def _prepare_filter(rule: dict[str, Any]) -> Filter:
         if literal is not None and literal not in value:
             return False
         if value in ignored or has_ignored_suffix(value):
+            return False
+        if ignore_status_words and fold_lower(value) in _STATUS_WORDS:
             return False
         if has_ignored_context(text, whole[0]) or is_piece(text, whole[0], whole[1]):
             return False
@@ -301,13 +305,13 @@ def _prepare_scheme(rule: dict[str, Any]) -> Scanner:
 
 
 def prepare_auth_values(rule: dict[str, Any]) -> Scanner:
-    bearers = [compile_pattern(rule[name]) for name in ("bearer", "bearerAlso") if name in rule]
+    bearers = [compile_pattern(rule[name]) for name in ("bearer", "bearerAlso", "bearerWide") if name in rule]
     scheme = _prepare_scheme(rule)
     plain_words = frozenset(rule["plainWords"])
-    header = compile_pattern(rule["header"]) if "header" in rule else None
+    headers = [compile_pattern(pattern) for pattern in rule.get("header", ())]
 
     def bearer_spans(text: str) -> list[Range]:
-        """Group 1 of every match of `bearer`, then of `bearerAlso`: each is a search of its own (SPEC 4.5)."""
+        """Group 1 of every match: each Bearer pattern is a search of its own (SPEC 4.5)."""
         spans = (_group_span(match, 1) for pattern in bearers for match in pattern.finditer(text))
         return [span for span in spans if span is not None]
 
@@ -318,7 +322,7 @@ def prepare_auth_values(rule: dict[str, Any]) -> Scanner:
             for start, end in candidates
             if fold_lower(text[start:end]) not in plain_words and not is_placeholder_value(text, start, end)
         ]
-        if header:
+        for header in headers:
             for match in header.finditer(text):
                 arg, end = match.span(3)
                 if fold_lower(match[2]) != "bearer" and not is_placeholder_value(text, arg, end):
@@ -441,7 +445,6 @@ def _prepare_kept_value(rule: dict[str, Any]) -> Callable[[str, str, str], bool]
     authorization key, and (under a `string` verdict) a plain number."""
     is_digit = char_test(rule["digitClass"])
     min_stand_in = rule["standInMinLength"]
-    status_words = frozenset(rule["statusWords"])
     scheme_words = frozenset(rule["schemeWords"])
     scheme_keys = frozenset(rule["schemeKeys"])
 
@@ -450,7 +453,7 @@ def _prepare_kept_value(rule: dict[str, Any]) -> Callable[[str, str, str], bool]
         if is_stand_in or is_doc_placeholder(value):
             return True
         word = fold_lower(trim(value))
-        if word in status_words:
+        if word in _STATUS_WORDS:
             return True
         if word in scheme_words and fold_lower(key).replace("-", "").replace("_", "") in scheme_keys:
             return True

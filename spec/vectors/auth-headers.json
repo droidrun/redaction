@@ -164,7 +164,12 @@
     {"name": "feedback: complete prefixed Basic header, not the next line", "input": "X-Authorization: Basic dXNlcjpwYXNz\r\nnext", "mode": "strict", "opts": {"pii": true}, "expected": "X-Authorization: [REDACTED:auth-header]\r\nnext"},
     {"name": "review: token punctuation", "input": "Authorization: Acme.v2+v1 hunter2", "mode": "strict", "opts": {"pii": true}, "expected": "Authorization: [REDACTED:auth-header]"},
     {"name": "review: label boundary", "input": "preauthorization: payment was declined", "mode": "strict", "opts": {"pii": true}, "expected": "preauthorization: payment was declined"},
-    {"name": "known gap: escaped quote in Bearer", "input": "Bearer \"abc\\\"def\"", "mode": "strict", "opts": {"pii": true}, "expected": "Bearer \"[REDACTED:auth-header]\\\"def\""},
-    {"name": "known gap: Bearer prose word in header", "input": "Authorization: Bearer tokens", "mode": "strict", "opts": {"pii": true}, "expected": "Authorization: Bearer tokens"}
+    {"name": "review: punctuation does not hide the next Bearer credential", "input": "Bearer abc;Bearer second!secret", "mode": "strict", "opts": {"pii": true}, "expected": "Bearer [REDACTED:auth-header] [REDACTED:auth-header]"},
+    {"name": "review: punctuation does not hide the next quoted Bearer credential", "input": "Bearer abc;Bearer \"ab!private\"", "mode": "strict", "opts": {"pii": true}, "expected": "Bearer [REDACTED:auth-header] \"[REDACTED:auth-header]\""},
+    {"name": "review: a punctuated Bearer header still uses credential-level redaction", "input": "Authorization: Bearer abc;Bearer \"ab!private\"", "mode": "strict", "opts": {"pii": true}, "expected": "Authorization: Bearer [REDACTED:auth-header] \"[REDACTED:auth-header]\""},
+    {"name": "review: single-quoted Authorization does not consume the next field", "input": "{'Authorization': 'Basic abc', 'other': 'visible'}", "mode": "strict", "opts": {"pii": true}, "expected": "{'Authorization': '[REDACTED:auth-header]', 'other': 'visible'}"},
+    {"name": "review: double-quoted Authorization does not consume the next field", "input": "{\"Authorization\": \"Basic abc\", \"other\": \"visible\"}", "mode": "strict", "opts": {"pii": true}, "expected": "{\"Authorization\": \"[REDACTED:auth-header]\", \"other\": \"visible\"}"},
+    {"name": "review: a placeholder argument exempts the Basic header", "input": "Authorization: Basic [REDACTED:x]", "mode": "strict", "opts": {"pii": true}, "expected": "Authorization: Basic [REDACTED:x]"},
+    {"name": "compat: no short Basic authorization scan", "input": "Authorization: Basic eDp5", "mode": "compat", "opts": {"pii": true}, "expected": "Authorization: Basic eDp5"}
   ]
 }

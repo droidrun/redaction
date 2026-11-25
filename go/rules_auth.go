@@ -3,9 +3,10 @@ package redaction
 import "encoding/json"
 
 type authSpec struct {
-	Header         string   `json:"header"`
+	Header         []string `json:"header"`
 	Bearer         string   `json:"bearer"`
 	BearerAlso     string   `json:"bearerAlso"`
+	BearerWide     string   `json:"bearerWide"`
 	Scheme         string   `json:"scheme"`
 	ValueClass     string   `json:"valueClass"`
 	MinValueLength int      `json:"minValueLength"`
@@ -18,7 +19,7 @@ type authSpec struct {
 // authValues is SPEC 4.5: `Bearer <value>`, and `Basic`/`Token <value>` when the value looks
 // like a credential and not like a word.
 type authValues struct {
-	header       *searcher
+	headers      []*searcher
 	bearers      []*searcher
 	scheme       *searcher
 	value        *unitSet
@@ -36,15 +37,17 @@ func (e *engine) newAuthValues(b *builder, raw json.RawMessage) (scanner, error)
 		return nil, err
 	}
 	bearers := []*searcher{b.searcher(spec.Bearer)}
-	if spec.BearerAlso != "" {
-		bearers = append(bearers, b.searcher(spec.BearerAlso))
+	for _, pattern := range []string{spec.BearerAlso, spec.BearerWide} {
+		if pattern != "" {
+			bearers = append(bearers, b.searcher(pattern))
+		}
 	}
-	var header *searcher
-	if spec.Header != "" {
-		header = b.searcher(spec.Header)
+	var headers []*searcher
+	for _, pattern := range spec.Header {
+		headers = append(headers, b.searcher(pattern))
 	}
 	return &authValues{
-		header:       header,
+		headers:      headers,
 		bearers:      bearers,
 		scheme:       b.searcher(spec.Scheme),
 		value:        b.class(spec.ValueClass),
@@ -72,8 +75,7 @@ func credentialRanges(search *searcher, t *text) []span {
 	}
 }
 
-// bearerRanges are the credentials of `bearer`, then those of `bearerAlso`: each is searched on its own, so
-// a wider pattern never consumes what the other would find.
+// Each Bearer pattern searches independently, so a wider match cannot suppress narrower hits.
 func (a *authValues) bearerRanges(t *text) []span {
 	var found []span
 	for _, search := range a.bearers {
@@ -126,9 +128,9 @@ func (a *authValues) scan(t *text) []span {
 			kept = append(kept, found)
 		}
 	}
-	if a.header != nil {
+	for _, header := range a.headers {
 		for from := 0; ; {
-			m := a.header.find(t, from)
+			m := header.find(t, from)
 			if m == nil {
 				break
 			}

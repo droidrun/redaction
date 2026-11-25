@@ -8,6 +8,7 @@
     "macros",
     "patterns",
     "pipeline",
+    "statusWords",
     "strict",
     "pii",
     "full"
@@ -145,6 +146,9 @@
                   "minLength": 1
                 },
                 "minItems": 1
+              },
+              "ignoreStatusWords": {
+                "type": "boolean"
               },
               "ignoreSuffixes": {
                 "type": "array",
@@ -335,6 +339,18 @@
               "bearerAlso": {
                 "type": "string",
                 "minLength": 1
+              },
+              "bearerWide": {
+                "type": "string",
+                "minLength": 1
+              },
+              "header": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
               }
             }
           },
@@ -572,7 +588,6 @@
               "labelLookback",
               "digitClass",
               "standInMinLength",
-              "statusWords",
               "schemeWords",
               "keyChar",
               "gapClass",
@@ -624,14 +639,6 @@
                 "minimum": 1,
                 "maximum": 1000
               },
-              "statusWords": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "minItems": 1
-              },
               "schemeWords": {
                 "type": "array",
                 "items": {
@@ -674,6 +681,15 @@
           }
         ]
       }
+    },
+    "statusWords": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z]+$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
     },
     "strict": {
       "type": "array",

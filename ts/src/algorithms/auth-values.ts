@@ -13,7 +13,8 @@ import type { Rule } from '../spec.js';
 type AuthRule = Rule & {
     bearer: string;
     bearerAlso?: string;
-    header?: string;
+    bearerWide?: string;
+    header?: string[];
     scheme: string;
     valueClass: string;
     minValueLength: number;
@@ -36,12 +37,11 @@ function prepareBearerPattern(source: string): Scanner {
     };
 }
 
-/** `bearer`, and `bearerAlso` when the rule has it: each is searched on its own, so a wider pattern never
- *  consumes what the other would have found. */
+/** Each Bearer pattern searches independently, so a wider match cannot suppress narrower hits. */
 function prepareBearer(rule: AuthRule): Scanner {
-    const scanners = [rule.bearer, ...(rule.bearerAlso === undefined ? [] : [rule.bearerAlso])].map(
-        prepareBearerPattern,
-    );
+    const scanners = [rule.bearer, rule.bearerAlso, rule.bearerWide]
+        .filter((source): source is string => source !== undefined)
+        .map(prepareBearerPattern);
     return (text) => scanners.flatMap((scan) => scan(text));
 }
 
@@ -80,13 +80,13 @@ export function prepareAuthValues(rule: AuthRule): Scanner {
     const plainWords = new Set(rule.plainWords);
     const bearer = prepareBearer(rule);
     const scheme = prepareScheme(rule);
-    const header = rule.header && compile(rule.header, 'gd');
+    const headers = (rule.header ?? []).map((pattern) => compile(pattern, 'gd'));
     return (text) => {
         const ranges = [...bearer(text), ...scheme(text)].filter(([start, end]) => {
             const word = text.slice(start, end).toLowerCase();
             return !plainWords.has(word) && !isPlaceholderValue(text, start, end);
         });
-        if (header) {
+        for (const header of headers) {
             for (const m of text.matchAll(header)) {
                 const [start, end] = m.indices![1]!;
                 const arg = m.indices![3]![0];

@@ -10,6 +10,7 @@ type filters struct {
 	requireLiteral  []uint16
 	dropPlaceholder bool
 	ignoreEquals    [][]uint16
+	statusWords     map[string]bool
 	ignoreSuffixes  [][]uint16
 	ignoreWords     map[string]bool
 	wordGap         *unitSet
@@ -25,6 +26,7 @@ type filterSpec struct {
 	RequireLiteral    string   `json:"requireLiteral"`
 	DropPlaceholder   bool     `json:"dropPlaceholder"`
 	IgnoreEquals      []string `json:"ignoreEquals"`
+	IgnoreStatusWords bool     `json:"ignoreStatusWords"`
 	IgnoreSuffixes    []string `json:"ignoreSuffixes"`
 	IgnoreAfterWords  []string `json:"ignoreAfterWords"`
 	AfterGapClass     string   `json:"afterGapClass"`
@@ -68,6 +70,9 @@ func (e *engine) newFilters(b *builder, spec filterSpec) filters {
 		placeholders:    e.placeholders,
 	}
 	found.requireClass = b.optionalClass(spec.RequireClass)
+	if spec.IgnoreStatusWords {
+		found.statusWords = toSet(b.spec.rules.StatusWords)
+	}
 	return found
 }
 
@@ -112,6 +117,9 @@ func (f *filters) passes(t *text, candidate span, match span) bool {
 		if equalUnits(value, ignored) {
 			return false
 		}
+	}
+	if len(f.statusWords) > 0 && f.statusWords[foldString(value)] {
+		return false
 	}
 	if f.endsWithSuffix(value) {
 		return false
