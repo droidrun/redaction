@@ -91,3 +91,13 @@ test('a composite retry whose own baseline is fast enough passes', async () => {
     const retry = { times: { 100_000: 20, 1_000_000: 300 }, plain: 20 };
     expect(await bestAttempt(first, messages, async () => retry, () => undefined)).toEqual([]);
 });
+
+// The linear `pwd:` attack passed at ~8.8 s on PR CI but took 10.7–10.9 s on main/Publish, just over the old cap.
+// Pin 12 s as acceptable runner variance and 16 s as a real slowdown the cap must still catch.
+test('a linear interpreter attack is limited by the absolute 1 MB cap', () => {
+    const attack = 'pwd';
+    expect(interpreterMessages(attack, { times: { 100_000: 1200, 1_000_000: 12_000 }, plain: 0 }, false)).toEqual([]);
+    expect(
+        interpreterMessages(attack, { times: { 100_000: 1600, 1_000_000: 16_000 }, plain: 0 }, false),
+    ).toEqual(['interpreter scaling: pwd: 1600 ms at 100 KB, 16000 ms at 1 MB']);
+});
