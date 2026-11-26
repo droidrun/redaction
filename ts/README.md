@@ -18,7 +18,7 @@ for every npm install, also for a public package: a GitHub token with `read:pack
 Provide `NODE_AUTH_TOKEN` through your secret manager (a GitHub token with `read:packages`), then install:
 
 ```sh
-pnpm add @droidrun/redaction@0.4.0
+pnpm add @droidrun/redaction@0.4.1
 ```
 
 For Docker, use a BuildKit secret instead of a build argument or a token stored in the image:
@@ -345,7 +345,7 @@ marker in values, keys, escaped JSON, URL userinfo, nested queries, cookies; ide
 round trip, also after deleting, inserting and reordering items), the perf and adversarial budgets,
 a 0.1.1 export-compat test, the golden replay, and the spec-integrity tests.
 
-After merge, a `v<version>` tag (for example `v0.4.0`) triggers publishing to GitHub Packages (the repository is
+After merge, a `v<version>` tag (for example `v0.4.1`) triggers publishing to GitHub Packages (the repository is
 MIT-licensed, see `LICENSE`; third-party notices are in `NOTICE`). The workflow
 checks the tag against `package.json`, requires the tagged commit to be on `main`,
 runs typecheck and tests, and uses `GITHUB_TOKEN` with `packages:write`.

@@ -1,6 +1,6 @@
 {
   "name": "@droidrun/redaction",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Secret detection and redaction for text and JSON values, sync and async, with restore",
   "license": "MIT",
   "homepage": "https://github.com/droidrun/redaction#readme",
