@@ -8,15 +8,15 @@ limits. It has no runtime dependencies and needs Python 3.11 or newer.
 ## Install
 
 The package is not on a package index. Add it as a git dependency over https, pinned to a full commit SHA, with
-`subdirectory = "python"`. For release 0.4.0 the SHA is the commit of the tag `v0.4.0`
-(`git rev-parse v0.4.0^{commit}`):
+`subdirectory = "python"`. For release 0.4.1 the SHA is the commit of the tag `v0.4.1`
+(`git rev-parse v0.4.1^{commit}`):
 
 ```toml
 [project]
 dependencies = ["droidrun-redaction"]
 
 [tool.uv.sources]
-droidrun-redaction = { git = "https://github.com/droidrun/redaction.git", rev = "<40-character SHA of the commit of tag v0.4.0>", subdirectory = "python" }
+droidrun-redaction = { git = "https://github.com/droidrun/redaction.git", rev = "<40-character SHA of the commit of tag v0.4.1>", subdirectory = "python" }
 ```
 
 With pip: `pip install "droidrun-redaction @ git+https://github.com/droidrun/redaction.git@<40-character SHA>#subdirectory=python"`.

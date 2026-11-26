@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 (2026-11-26)
 
 - Strict text redaction covers scheme-prefixed assignments and session IDs.
 - In both `compat` and `strict`, an existing redaction marker no longer consumes the closing JSON brace.
