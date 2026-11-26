@@ -21,6 +21,9 @@ export function attackText(attack: Attack, size: number): string {
 const CLUSTER_STARTS = 170;
 
 const FIXED_UNITS = [
+    'Bearer abc;def,', 'Bearer "abc;', "Bearer 'abc;", 'Proxy-Authorization: Digest a=b, ',
+    'token=Basic ', '?sessionid=a&', 'sessionid: "x', "sessionid='x",
+    'OTP was 123-', '2FA: 12345', '+44 (0) 20 ', '+123  45  ', '415-555-0123 ext. ', 'fdab::',
     'a-',
     'a_',
     'A-',

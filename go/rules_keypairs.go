@@ -16,7 +16,6 @@ type keyPairsSpec struct {
 	DigitClass       string   `json:"digitClass"`
 	StandInMinLength int      `json:"standInMinLength"`
 	KeptMaxLength    int      `json:"keptMaxLength"`
-	StatusWords      []string `json:"statusWords"`
 	SchemeWords      []string `json:"schemeWords"`
 	SchemeKeys       []string `json:"schemeKeys"`
 }
@@ -61,7 +60,7 @@ func (e *engine) newKeyPairs(b *builder, raw json.RawMessage) (scanner, error) {
 		digit:      b.class(spec.DigitClass),
 		standInMin: spec.StandInMinLength,
 		keptMax:    spec.KeptMaxLength,
-		status:     toSet(spec.StatusWords),
+		status:     toSet(b.spec.rules.StatusWords),
 		schemeWord: toSet(spec.SchemeWords),
 		schemeKey:  toSet(spec.SchemeKeys),
 	}, b.err

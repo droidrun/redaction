@@ -79,7 +79,6 @@ const LITERAL_FIELDS = new Set([
     'queryOnlyKeys',
     'ignoreSuffixes',
     'ignoreAfterWords',
-    'statusWords',
     'schemeKeys',
     'schemeWords',
 ]);
@@ -91,6 +90,7 @@ const PATTERN_FIELDS = new Set([
     'prefix',
     'bearer',
     'bearerAlso',
+    'bearerWide',
     'scheme',
     'label',
     'queryKey',

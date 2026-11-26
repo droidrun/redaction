@@ -18,6 +18,7 @@ export type RulesSpec = {
     specVersion: number;
     macros: Record<string, Macro>;
     patterns: { placeholder: string };
+    statusWords: string[];
     pipeline: Rule[];
     strict: StrictEdit[];
     pii: Rule[];

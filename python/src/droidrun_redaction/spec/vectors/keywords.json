@@ -427,6 +427,29 @@
           ]
         ]
       }
-    }
+    },
+    {"name": "feedback: token=Basic hunter2", "input": "token=Basic hunter2", "mode": "strict", "opts": {"pii": true}, "expected": "token=[REDACTED:secret]"},
+    {"name": "feedback: token: Token abc123", "input": "token: Token abc123", "mode": "strict", "opts": {"pii": true}, "expected": "token: [REDACTED:secret]"},
+    {"name": "feedback: {\"token\":[REDACTED:github]}", "input": "{\"token\":[REDACTED:github]}", "mode": "strict", "opts": {"pii": true}, "expected": "{\"token\":[REDACTED:github]}"},
+    {"name": "feedback: sessionid=x", "input": "sessionid=x", "mode": "strict", "opts": {"pii": true}, "expected": "sessionid=[REDACTED:secret]"},
+    {"name": "feedback: session=x", "input": "session=x", "mode": "strict", "opts": {"pii": true}, "expected": "session=[REDACTED:secret]"},
+    {"name": "feedback: sessionid: hunter2", "input": "sessionid: hunter2", "mode": "strict", "opts": {"pii": true}, "expected": "sessionid: [REDACTED:secret]"},
+    {"name": "feedback: {\"sessionid\":\"hunter2\"}", "input": "{\"sessionid\":\"hunter2\"}", "mode": "strict", "opts": {"pii": true}, "expected": "{\"sessionid\":\"[REDACTED:secret]\"}"},
+    {"name": "feedback: session: abc&def", "input": "session: abc&def", "mode": "strict", "opts": {"pii": true}, "expected": "session: [REDACTED:secret]"},
+    {"name": "feedback: X_SESSION: hunter2", "input": "X_SESSION: hunter2", "mode": "strict", "opts": {"pii": true}, "expected": "X_SESSION: [REDACTED:secret]"},
+    {"name": "feedback: session: expired", "input": "session: expired", "mode": "strict", "opts": {"pii": true}, "expected": "session: expired"},
+    {"name": "feedback: max_tokens: 5 requested, 3 available", "input": "max_tokens: 5 requested, 3 available", "mode": "strict", "opts": {"pii": true}, "expected": "max_tokens: 5 requested, 3 available"},
+    {"name": "feedback: prompt_tokens: 120 used", "input": "prompt_tokens: 120 used", "mode": "strict", "opts": {"pii": true}, "expected": "prompt_tokens: 120 used"},
+    {"name": "feedback: a closing brace inside a credential is not a delimiter", "input": "password=Zq93abc}stillsecret", "mode": "strict", "opts": {"pii": true}, "expected": "password=[REDACTED:generic-keyword]"},
+    {"name": "feedback: a scheme argument can be quoted", "input": "token=Basic \"two words\"", "mode": "strict", "opts": {"pii": true}, "expected": "token=[REDACTED:secret]"},
+    {"name": "review: sessionid in query", "input": "https://a.test/?sessionid=hunter2&keep=1", "mode": "strict", "opts": {"pii": true}, "expected": "https://a.test/?sessionid=[REDACTED:secret]&keep=1"},
+    {"name": "review: single quoted sessionid", "input": "sessionid='hunter2'", "mode": "strict", "opts": {"pii": true}, "expected": "sessionid='[REDACTED:secret]'"},
+    {"name": "review: double-quoted session ID cannot close on the next line", "input": "sessionid: \"abc\nnext: \"visible\"", "mode": "strict", "opts": {"pii": true}, "expected": "sessionid: \"abc\nnext: \"visible\""},
+    {"name": "review: single-quoted session ID cannot close after CRLF", "input": "sessionid: 'abc\r\nnext: 'visible'", "mode": "strict", "opts": {"pii": true}, "expected": "sessionid: 'abc\r\nnext: 'visible'"},
+    {"name": "review: a null session is not a secret", "input": "session: null", "mode": "strict", "opts": {"pii": true}, "expected": "session: null"},
+    {"name": "review: a session start message is not a secret", "input": "session: started at 10:00", "mode": "strict", "opts": {"pii": true}, "expected": "session: started at 10:00"},
+    {"name": "compat: no scheme-prefixed token assignment scan", "input": "token=Basic hunter2", "mode": "compat", "opts": {"pii": true}, "expected": "token=Basic hunter2"},
+    {"name": "compat: no sessionid assignment scan", "input": "sessionid=x", "mode": "compat", "opts": {"pii": true}, "expected": "sessionid=x"},
+    {"name": "compat: a placeholder does not consume the closing brace", "input": "{\"token\":[REDACTED:github]}", "mode": "compat", "opts": {"pii": true}, "expected": "{\"token\":[REDACTED:github]}"}
   ]
 }

@@ -18,7 +18,7 @@ import { labelStart, trimQueryValue } from './query-value.js';
 import { keyVerdict, type KeyVerdict } from '../key-names.js';
 import { placeholderEndAt } from '../placeholder.js';
 import type { Scanner } from './regex-rule.js';
-import type { Rule } from '../spec.js';
+import { RULES_SPEC, type Rule } from '../spec.js';
 
 type KeywordRule = Rule & {
     prefix: string;
@@ -45,7 +45,6 @@ type KeyPairsRule = Rule & {
     digitClass: string;
     standInMinLength: number;
     keptMaxLength: number;
-    statusWords: string[];
     schemeWords: string[];
     schemeKeys: string[];
 };
@@ -66,7 +65,8 @@ export function prepareKeywordPairs(rule: KeywordRule): Scanner {
             }
             const label = labelStart(text, match.index, isIdent, rule.labelLookback);
             const [start, end] = trimQueryValue(text, label, [valueStart, valueEnd]);
-            const isPlaceholder = placeholderEndAt(text, start) >= end;
+            const markerEnd = placeholderEndAt(text, start);
+            const isPlaceholder = markerEnd >= end || (markerEnd === end - 1 && text[markerEnd] === '}');
             const accepted = end > start && !isPlaceholder && hasValueEvidence(text.slice(start, end));
             if (!accepted) {
                 pattern.lastIndex = valueStart;
@@ -155,7 +155,7 @@ type KeptTest = (key: string, value: string, verdict: KeyVerdict) => boolean;
  *  run at every pair. */
 function prepareKeptValue(rule: KeyPairsRule): KeptTest {
     const isDigit = charTest(rule.digitClass);
-    const statusWords = new Set(rule.statusWords);
+    const statusWords = new Set(RULES_SPEC.statusWords);
     const schemeWords = new Set(rule.schemeWords);
     const schemeKeys = new Set(rule.schemeKeys);
     return (key, value, verdict) => {

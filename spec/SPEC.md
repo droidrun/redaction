@@ -80,13 +80,13 @@ Banned:
 | rule id outside `^[a-z0-9-]+$` | ids are part of the placeholder |
 
 The linter checks **every** regex-bearing field of a rule, found by name: `pattern`, `header`, `footer`,
-`prefix`, `bearer`, `scheme`, `label`, `queryKey`, `bearerAlso` and the list `variablePatterns` hold patterns; `notBefore`,
+`prefix`, `bearer`, `bearerAlso`, `bearerWide`, `scheme`, `label`, `queryKey` and `variablePatterns` hold patterns; `notBefore`,
 `notAfter` and every field ending in `Class`, `Char`, `Stop` or `End` (`afterGapClass`, `digitClass`, `identChar`, ...)
 hold exactly one character class; `id`,
 `kind`, `lead`, `leads`, `separator`, `footerMarker`, `requireLiteral`, `lit`, `alt`, `tails`, `magic`,
 `ignoreEquals`, `userIgnoreContains`, `passwordIgnoreContains`, `passwordIgnoreEquals`, `stripLiteral`,
 `newline`, `dash`, `underscore`, `check`, `plainWords`, `queryOnlyKeys`, `mode`, `ignoreSuffixes`, `ignoreAfterWords`,
-`statusWords`, `schemeWords`, `schemeKeys` are literal text. The check looks into
+`schemeWords`, `schemeKeys` are literal text. The check looks into
 nested objects and lists (the `parts` of a token). A string field with another name is an error, so a new field
 cannot escape the checks.
 
@@ -170,7 +170,7 @@ Rule kinds. `P` is the expanded pattern text; `scan(P)` is the global search of 
 ### 4.1 `regex`
 
 Fields: `pattern`, optional `group` (default 0), `notBefore`, `notAfter`, `requireClass`,
-`requireLiteral`, `dropPlaceholder`, `ignoreEquals`, `ignoreSuffixes`, `ignoreAfterWords` with `afterGapClass`,
+`requireLiteral`, `dropPlaceholder`, `ignoreEquals`, `ignoreStatusWords`, `ignoreSuffixes`, `ignoreAfterWords` with `afterGapClass`,
 `ignoreBeforeClass`, `ignoreAfterClass`, `check` with `minColons`.
 
 1. Find matches of `pattern` left to right. The candidate range is the whole match, or the span of
@@ -183,7 +183,8 @@ Fields: `pattern`, optional `group` (default 0), `notBefore`, `notAfter`, `requi
 3. **Filters** on the candidate, all that are present: `requireClass`: the candidate text contains
    a unit of the class; `requireLiteral`: it contains the literal; `dropPlaceholder`: it is not an
    `isPlaceholderValue`; `ignoreEquals`: its text is not equal to one of the listed strings (exact, case
-   sensitive); `ignoreSuffixes`: `lower(candidate)` does not end with one of the listed literals (the file
+   sensitive); `ignoreStatusWords`: `lower(candidate)` is not in `rules.json`'s shared `statusWords` list (4.18);
+   `ignoreSuffixes`: `lower(candidate)` does not end with one of the listed literals (the file
    extensions after the host of an email); `ignoreAfterWords`: the **word before the match** (below) is not one of
    the listed words; `ignoreBeforeClass` / `ignoreAfterClass`: the unit before the **whole match** is not in the class,
    and the unit after it is not in the class (the match is not a piece of something longer; unlike `notBefore` and
@@ -262,15 +263,14 @@ it passes the filters of 4.1 step 3.
 
 ### 4.5 `auth-values`
 
-Fields: `bearer`, optional `bearerAlso`, `scheme`, `valueClass`, `minValueLength`, `lowerClass`, `upperClass`,
-`wordClass`, `plainWords`.
+Fields: `bearer`, optional `bearerAlso`, `bearerWide` and `header` (a list of patterns), `scheme`, `valueClass`,
+`minValueLength`, `lowerClass`, `upperClass`, `wordClass`, `plainWords`.
 
-The rule output is all Bearer ranges in text order, then all scheme ranges in text order, with
-both filtered by step 3.
+The rule outputs the Bearer ranges in pattern order, then the scheme ranges, both filtered by step 3, then the header
+ranges from step 4. Matches within a pattern are in text order.
 
-1. **Bearer**: for each match of `bearer`, the range of capture group 1; then the same for `bearerAlso` when the rule
-   has it (a second search of its own, so that a wider pattern never consumes what the first would find; the ranges
-   of both are output).
+1. **Bearer**: output the range of capture group 1 for each match of `bearer`, then `bearerAlso` and `bearerWide` when
+   present. Each searches independently, so wider matches cannot suppress narrower hits.
 2. **Scheme** (`Basic` / `Token`, also ordinary words): for each match of `scheme` (it ends after
    the whitespace): `v` is the match end; `end` is the end of the maximal run of `valueClass` from
    `v`. Reject when any of: `end - v < minValueLength`; **plain word**: the maximal run of
@@ -281,6 +281,10 @@ both filtered by step 3.
    outputs `[v, end)` and restarts at `end`.
 3. **Filter**: drop a range when `lower(text[start..end])` is in `plainWords` ("Missing or invalid
    bearer token" is prose), or when it is an `isPlaceholderValue`.
+4. **Authorization header**: each `header` pattern captures the value, scheme and argument as groups 1, 2 and 3.
+   The scheme cannot start with a quote. For an unquoted header, the value ends at CR, LF or the end of the text;
+   for a quoted header, the value stops before the matching closing quote on the same line. Output group 1 unless
+   the scheme is Bearer (ASCII case-insensitive) or the argument is an `isPlaceholderValue`.
 
 ### 4.6 `keyword-pairs`
 
@@ -296,7 +300,8 @@ Scan `prefix` from position 0. For each match `m` (start `ms`, end `v`):
    `valueEnd - v < minValueLength` (8): restart the search at `ms + 1`; no range.
 2. `label = labelStart(ms)` (5.2). `[start, end) = trimQueryValue(label, [v, valueEnd))` (5.3).
 3. The candidate is **accepted** when `end > start`, it is not an `isPlaceholderValue(start, end)`, and
-   `hasValueEvidence(text[start..end])` (5.4).
+   `hasValueEvidence(text[start..end])` (5.4). Also reject a candidate that
+   consists of one complete placeholder followed by a single `}`. The brace belongs to the surrounding text.
 4. Not accepted: restart the search at `v` (the start of the rejected value, so a value that is itself a
    label still starts its own pair; this keeps `a_token=a_token=...` linear).
 5. Accepted: if `end - start == window` the value filled the capture window and is **extended**: the
@@ -391,16 +396,20 @@ checks it. An edit has `set` (an object whose fields replace the fields of every
 inserted right after the matched entry; the edit must match exactly one entry). There is no edit that removes or
 replaces a rule: **strict is a superset of 0.3.0 strict** (section 9).
 
-The edits, in order, and `compat` does none of them:
+The following rule-list edits apply only in `strict`. The placeholder-brace guard in 4.6 is part of the shared
+`keyword-pairs` scanner, not a rule-list edit.
 
 1. `platform-key` reads `dr_sk_` in any letter case, with any non-empty body and without a word boundary before it
    (`dr_sk_first`, `DR_SK_...`, `x_dr_sk_...`, an escaped `\n` or `%22` before it).
-2. `auth-header` gets `bearerAlso`: the whole Bearer credential, every unit up to whitespace or up to a quote (`"`,
-   `'`), `<`, `>`, `,`, `;` or `\`, after an optional opening quote (`Bearer abc!defghijklmnop`, `Bearer "abc"`). The
-   narrow `bearer` pattern is still searched, so no credential found before is lost. `Basic` and `Token` are unchanged.
+2. `auth-header` also scans Bearer credentials with internal punctuation and quoted credentials with spaces.
+   Trailing prose punctuation stays. The `header` patterns cover short Basic, Digest and custom credentials while
+   leaving Bearer to the individual credential scans (4.5).
 3. `keyword-pairs` (prefix), `quoted-pairs` (label) and `unquoted-pairs` (prefix) accept `=>` and `:=` as a separator
    next to `:` and `=`, so `password => "x"` is a pair and `token=>abc` is a fixed point of redaction.
 4. The `key-pairs` rule of 4.18 is **added** right after the unquoted pairs.
+5. Strict regex rules recognize session labels and scheme-prefixed assignments before the generic pair rules.
+   Quoted session values must close on the same line. Bare session assignments keep the shared status words (4.18)
+   and the literal `started`.
 
 **Superset.** For every input, the `strict` of this version redacts every range the `strict` of 0.3.0 redacted, with
 one narrow exception: where `=>` or `:=` is the separator, 0.3.0 read the `>` or `=` as the first unit of the value, so
@@ -568,7 +577,7 @@ redacted. Fields: `label` (a pattern that starts at the separator `=>`, `:=`, `:
 not start a new line (macro `HSPACE`) and an optional quote of the value: capture 1 = the escape backslashes before the
 opening quote, capture 2 = the opening quote; 1 and 2 take part together or not at all), `valueLimit` (1024),
 `plainChar`, `escapeStop`, `identChar`, `labelLookback`, `keyChar`, `keyMax` (64), `gapClass`, `quoteChar`, `digitClass`,
-`standInMinLength` (2), `keptMaxLength` (64), `statusWords`, `schemeWords`, `schemeKeys`. The text form of the JSON key
+`standInMinLength` (2), `keptMaxLength` (64), `schemeWords`, `schemeKeys`. The text form of the JSON key
 rule of section 6: a pair `key: value` whose key the **same verdict** (`keyVerdict`, section 6) calls secret, so one list
 of key names serves JSON keys and text. The key is found by looking back from the separator (step 1), so no pattern scans
 an identifier at every start of the text. The kept words, the stand-ins and the number rule below are what lets short
@@ -596,7 +605,7 @@ Scan `label` from position 0. For each match `m` (start `ms`, end `from`):
 3. **Kept.** A value of at most `keptMaxLength` units is **kept** (no range, the search continues at `from`) when it is
    empty, an `isPlaceholderValue`, a **stand-in** (`isTrivialValue` or `isDocPlaceholder`, 5.5; `isTrivialValue` counts
    only for a value of at least `standInMinLength` units, so a single `x` or `*` is a value), a **status word**
-   (`lower(trim(value))` is in `statusWords`: `expired`, `required`, `failed`, `missing`, `invalid`, `true`, `false`,
+   (`lower(trim(value))` is in `rules.json`'s shared `statusWords`: `expired`, `required`, `failed`, `missing`, `invalid`, `true`, `false`,
    `null`, `none`), a **scheme word** (in `schemeWords`: `bearer`, `basic`, `digest`) when the key, lower-cased without
    `-` and `_`, is in `schemeKeys` (`authorization`, `proxyauthorization`, `auth`: an authorization scheme whose credential
    the `auth-header` rule finds; `password=Bearer` is a value), or, when `verdict` is `string`, made only of units of
@@ -627,7 +636,8 @@ letters-only last label (`react@18.2.0`, `pkg@1.2.3`) and a host without a dot (
 ### 4.20 `phone`
 
 The standard is ITU-T E.164 for numbers with a `+` (country code and national number, at most 15 digits), plus the
-North American Numbering Plan (NANP) and the common grouped national forms. Five entries, each a `regex` rule:
+North American Numbering Plan (NANP) and the common grouped national forms. The following `regex` rules
+also consume an immediately following numeric `ext`, `ext.` or `x` extension:
 
 1. `+` and 8 to 15 digits, each digit optionally preceded by one of ` `, `.`, `(`, `)`, `-`, and a word boundary
    (`+44 20 7946 0958`, `+33.1.99.00.12.34`, `+493023125123`). A run of more than 15 digits **without separators** is not a
@@ -639,13 +649,19 @@ North American Numbering Plan (NANP) and the common grouped national forms. Five
 4. National form with the trunk prefix `0`: `0`, 2 to 4 digits, then groups of 3 to 4 and 3 to 4 digits
    (`020 7946 0958`).
 5. National form in pairs: `0`, one digit, then four groups of two digits (`01 99 00 12 34`).
+6. An international prefix may precede a parenthesized trunk or area group (`+49 (0)30`, `+41 (44)`).
+   International groups can also be separated by two spaces.
+
+The five original patterns (1–5) scan without extensions, independently of the extension-aware entries. If an
+extension-aware match overlaps a second phone number, both ranges are merged (section 7), so the tail of the
+second number does not remain visible.
 
 A run of digits **without a separator** and without a `+` is never a number (`Request ID 1234567890`,
 `/devices/1234567890`), nor are dates and times (`2026-11-19 10:00:59`), nor versions (`v0.3.0`).
 
 ### 4.21 `ip`
 
-Three entries. The range is the address only (a port stays: `192.0.2.123:8080` gives `[REDACTED:ip]:8080`).
+The range is the address only (a port stays: `192.0.2.123:8080` gives `[REDACTED:ip]:8080`).
 
 1. **IPv4**, RFC 791 dotted quad: four decimal octets 0 to 255 without leading zeros between word
    boundaries, and `ignoreAfterWords` `v`, `version`, `build`, `android`, `ios`, `firmware`, `sdk`, `os`, `kernel` with `afterGapClass` of whitespace, `:` and
@@ -654,11 +670,13 @@ Three entries. The range is the address only (a port stays: `192.0.2.123:8080` g
 2. **IPv6, bare**: a run of 4 to 45 units of `[0-9A-Fa-f:]` that ends with a hexadecimal digit or with `::`, whose
    neighbours are not part of something longer (`ignoreBeforeClass` `[0-9A-Za-z_:]`, `ignoreAfterClass` `[0-9A-Za-z_]`: a
    colon before the run is part of it, so `::ffff:abcd:1234` and `2001:db8:1::` are whole), and that passes the check
-   `ipv6` (5.8) with at least 3 colons (`2001:db8::1`). A run with fewer colons (`fe80::1`) is not matched, and neither is a
+   `ipv6` (5.8) with at least 3 colons (`2001:db8::1`). This entry does not match a run with fewer colons (`fe80::1`) or a
    run that is not an address (`std::vector` has a word unit before its `d`; the MAC address `aa:bb:cc:dd:ee:ff` has six
    groups and no `::`).
 3. **IPv6 in brackets**: `[` , 2 to 45 units of `[0-9A-Fa-f:]` as `group` 1, `]`: the check `ipv6` with at least 2 colons
    (`[fdab::cafe]:8080`, `[::1]`); the brackets and the port stay.
+4. **Bare unique-local IPv6**: for `fc00::/7`, permit two colons as in `fdab::` and `fdab::cafe`.
+   Validate the complete candidate and reject pieces of identifiers or bracketed addresses.
 
 The standards are RFC 4291 section 2.2 (text forms) and RFC 5952. A zone id (`%eth0`) and an IPv4 tail
 (`::ffff:1.2.3.4`) are not part of the IPv6 forms; the IPv4 tail is found by the IPv4 entry.
@@ -666,7 +684,7 @@ The standards are RFC 4291 section 2.2 (text forms) and RFC 5952. A zone id (`%e
 ### 4.22 `otp`
 
 The standards are RFC 4226 and RFC 6238 (codes of 6 to 8 digits). The range is the digits (`group` 1); the noun stays.
-Two entries:
+Four entries:
 
 1. **An explicit noun**, 4 to 8 digits: the macro `OTP_NOUN` (`OTP`, `OTP code`, `passcode`, `verification code`,
    `security code`, `confirmation code`, `auth code`, `authentication code`, `login code`, `MFA code`, `2FA code`,
@@ -675,7 +693,11 @@ Two entries:
    letters only (`BESTÄTIGUNGSCODE` with a capital `Ä` is not matched), after a word boundary) or the macro `OTP_NOUN_CJK` (`验证码`, `驗證碼`, `校验码`, `动态码`, `認証コード`, `確認コード`,
    `認証番号`, `確認番号`, `ワンタイムパスワード`), then the macro `OTP_JOIN`: up to three units of whitespace, `:`, `=` or `：`,
    optionally one of `ist`, `is`, `est`, `lautet`, `为`, `是`, `は` and up to three more separator units.
-2. **The bare noun `code`**, 6 to 8 digits (`your code is 123456`; `your code is 4821` stays), unless the word before it
+2. **Grouped digits**, after an explicit noun or bare `2FA`, with the same join or `was`: two groups of three digits
+   separated by a space or hyphen (`verification code: 482 913`). Reject a match followed by a digit or hyphen.
+3. **Additional compact forms**, 4 to 8 digits after an explicit noun joined by `was`, or after bare `2FA` with
+   either join. Reject a match followed by a digit or hyphen, so `OTP was 2026-2027` and `2FA: 2026-2027` stay.
+4. **The bare noun `code`**, 6 to 8 digits with either join (`your code is 123456`; `your code is 4821` stays), unless the word before it
    (4.1) is `error`, `exit`, `status`, `response`, `postal`, `zip`, `area` or `country` (`ignoreAfterWords`, `afterGapClass`
    whitespace): `error code 123456`, `exit code 1370`, `response code 200000`, `postal code 941031` stay.
 
@@ -976,8 +998,9 @@ mode and the boolean option `pii` (default false, 9.5).
 
 **Modes**:
 
-- `compat` (TypeScript default; reproduces v0.2.0). The rule list is the `compat` list of 4.10 and the output is
-  byte-identical to v0.2.0 (the golden corpus pins it). The standard tier fails closed. The full tier fails
+- `compat` (TypeScript default). The rule list is the `compat` list of 4.10. With `pii` off, output follows v0.2.0
+  (pinned by the golden corpus) except when the shared placeholder guard in 4.6 preserves a closing brace:
+  `{"token":[REDACTED:github]}` stays unchanged. The standard tier fails closed. The full tier fails
   open: when its rules fail it falls back to the standard rules, and a text beyond the scan cap is
   scanned by the standard rules only.
 - `strict` (Python and Go default; an option in TypeScript). **No path returns text that was not scanned.**
@@ -1239,20 +1262,31 @@ that expects the miss, so closing one later changes no existing vector.
   query, 4.9).
 - **Email local parts** longer than 64 units: the match starts 64 units before the `@`; what stands before is left.
 - **Phone numbers**: only the `+` form, NANP forms and two national forms (4.20) are found; a number without separators
-  and without a `+` is not, and a `+` number that is longer than 15 digits is not.
+  and without a `+` is not, and a `+` number that is longer than 15 digits is not, unless it has a parenthesized area part
+  (`+123 (1234) 1234567890123` is found). Combining a parenthesized trunk prefix
+  with double spaces can still miss (`+44 (0) 20  7946 0958 ext. 12`).
 - **IPv4** needs four groups with word boundaries: the first four groups of a five-group version string (`1.2.3.4.5`)
-  are an address, and a version is kept only after the words of 4.21. **IPv6** with fewer than three colons is found only
-  in brackets (`fe80::1` is not; `[fe80::1]` is), and a zone id or an IPv4 tail is not part of the address.
-- **OTP codes** need a noun of 4.22 in the same sentence, directly before the digits; a code in a table cell, a code
-  split by spaces (`482 913`) and a code under a noun of another language are not found.
+  are an address, and a version is kept only after the words of 4.21. **IPv6** with two colons is found in brackets or,
+  for unique-local addresses in `fc00::/7`, bare. Bare `fe80::1`, `fe80::1%eth0` and `::1` still miss; zone IDs and IPv4 tails are not
+  part of the IPv6 match.
+- **OTP codes** need a supported noun and join (4.22). Digits alone in a table cell, codes under unsupported nouns,
+  and grouped codes after only the bare noun `code` are not found.
+- **Bearer credentials** may stop at an escaped quote (`Bearer "abc\"def"`), or look like a kept prose word
+  (`Authorization: Bearer tokens`).
+- **Structured or multiword values in text** can remain partly or wholly visible. Examples: nested objects
+  (`{"token": {"value": "hunter2"}}`, `token := {"value": "hunter2"}`, `token => {"value": "hunter2"}`), arrays
+  (`password=[x,hunter2] tail`), and values starting on the next line (`{"token":\n {"value": "hunter2"}}`,
+  `{"token":\n "abc"}`, `{"password":\n "x"}`, `{"sessionid":\n "hunter2"}`, where `\n` represents a line break).
+  SQL-style doubled quotes (`password: 'it''s secret'`, `client.auth='it''s hunter2'`) and unquoted multiword passwords
+  (`DB_PASSWORD: correct horse battery staple`) can also leave a visible suffix. Redact parsed JSON for structured data.
 - **Key verdicts in text** (4.18) are those of JSON keys, so a design token such as `spacing_token: 16px` is redacted in
   `strict`, as `{"spacing_token": "16px"}` is in JSON.
 - **Known over-redactions** (kept on purpose, not fixed here): `git@github.com:org/repo` is an email; `offset +10000000` is
   a phone number (a `+` and 8 digits); the Bearer credential of `strict` takes everything up to whitespace or a quote, so
   `Bearer abc)` takes the parenthesis.
-- **Known misses** (also not fixed here): `+49 (0) 170 1234567` and `0049 170 1234567` (trunk digit in parentheses,
-  `00` prefix); `config['password'] = 'x'` (the key is in quotes and brackets); a YAML block scalar (`password: |` and
-  the indented lines after it); an unseparated number such as `4155550123`; `::1` and `fe80::1%eth0`; the version word
+- **Known misses** (also not fixed here): `0049 170 1234567` (`00` prefix);
+  `config['password'] = 'x'` (the key is in quotes and brackets); a YAML block scalar (`password: |` and
+  the indented lines after it); an unseparated number such as `4155550123`; the version word
   list of 4.21 is not exhaustive (`ios: 10.0.0.1` with a colon is kept, `release 1.2.3.4` is not).
 - **Template values**: `password="{hunter2}"` is redacted up to the closing brace (`{hunter2`), as in 0.3.0: the unquoted
   pair rule stops at a brace, and the quoted `{hunter2}` alone would be a stand-in (5.5).

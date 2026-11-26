@@ -743,6 +743,31 @@
           ]
         ]
       }
-    }
+    },
+    {"name": "feedback: Your verification code is 123 456", "input": "Your verification code is 123 456", "mode": "strict", "opts": {"pii": true}, "expected": "Your verification code is [REDACTED:otp]"},
+    {"name": "feedback: OTP code is 123-456", "input": "OTP code is 123-456", "mode": "strict", "opts": {"pii": true}, "expected": "OTP code is [REDACTED:otp]"},
+    {"name": "feedback: OTP was 123-456", "input": "OTP was 123-456", "mode": "strict", "opts": {"pii": true}, "expected": "OTP was [REDACTED:otp]"},
+    {"name": "feedback: Your one-time password is 123-456", "input": "Your one-time password is 123-456", "mode": "strict", "opts": {"pii": true}, "expected": "Your one-time password is [REDACTED:otp]"},
+    {"name": "feedback: passcode was 123 456", "input": "passcode was 123 456", "mode": "strict", "opts": {"pii": true}, "expected": "passcode was [REDACTED:otp]"},
+    {"name": "feedback: 2FA: 123456", "input": "2FA: 123456", "mode": "strict", "opts": {"pii": true}, "expected": "2FA: [REDACTED:otp]"},
+    {"name": "feedback: +49 (0)30 12345678", "input": "+49 (0)30 12345678", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "feedback: +44 (0) 20 7946 0958 ext. 12", "input": "+44 (0) 20 7946 0958 ext. 12", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "feedback: +41 (44) 668 18 00", "input": "+41 (44) 668 18 00", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "feedback: +123  45  67  89", "input": "+123  45  67  89", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "feedback: 415-555-0123 ext. 12", "input": "415-555-0123 ext. 12", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "review: x extension does not hide the next phone in strict", "input": "415-555-0123 x 212-555-0123", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "review: x extension does not hide the next phone in compat", "input": "415-555-0123 x 212-555-0123", "mode": "compat", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "review: ext does not hide the next phone", "input": "415-555-0123 ext 212-555-0123", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:phone]"},
+    {"name": "feedback: fdab::cafe", "input": "fdab::cafe", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:ip]"},
+    {"name": "feedback: fdab::", "input": "fdab::", "mode": "strict", "opts": {"pii": true}, "expected": "[REDACTED:ip]"},
+    {"name": "feedback: react@18.2.0", "input": "react@18.2.0", "mode": "strict", "opts": {"pii": true}, "expected": "react@18.2.0"},
+    {"name": "review: only three-digit groups are joined", "input": "OTP was 2026-2027", "mode": "strict", "opts": {"pii": true}, "expected": "OTP was 2026-2027"},
+    {"name": "review: compact OTP before a hyphenated suffix", "input": "Your OTP is 123456-valid for 5 minutes", "mode": "strict", "opts": {"pii": true}, "expected": "Your OTP is [REDACTED:otp]-valid for 5 minutes"},
+    {"name": "review: keep compact OTP detection after was", "input": "OTP was 123456", "mode": "strict", "opts": {"pii": true}, "expected": "OTP was [REDACTED:otp]"},
+    {"name": "review: a year range after bare 2FA is not an OTP", "input": "2FA: 2026-2027", "mode": "strict", "opts": {"pii": true}, "expected": "2FA: 2026-2027"},
+    {"name": "review: a compact verification code before a hyphen and digits", "input": "verification code: 1234-5678", "mode": "strict", "opts": {"pii": true}, "expected": "verification code: [REDACTED:otp]-5678"},
+    {"name": "review: an attempt count is not an OTP", "input": "OTP was 3 attempts", "mode": "strict", "opts": {"pii": true}, "expected": "OTP was 3 attempts"},
+    {"name": "review: a 2FA status is not an OTP", "input": "2FA: enabled", "mode": "strict", "opts": {"pii": true}, "expected": "2FA: enabled"},
+    {"name": "review: a unique-local prefix with one colon is not IPv6", "input": "fdab:1", "mode": "strict", "opts": {"pii": true}, "expected": "fdab:1"}
   ]
 }
