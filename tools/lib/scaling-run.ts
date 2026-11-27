@@ -22,7 +22,9 @@ const ROOT = resolve(import.meta.dir, '..', '..');
 const SCALING_DEADLINE_MS = 900_000;
 const RETRY_DEADLINE_MS = 120_000;
 export const SCALING_RETRIES = 2;
-const MAX_INTERPRETER_MS_AT_LARGE = 10_000;
+/** Absolute 1 MB interpreter ceiling, alongside the MAX_RATIO growth check. `pwd:` (most keys per MB) grows ~9x from 100 KB and
+ *  takes ~8.5–11 s alone on GitHub runners; 10 s failed v0.4.1 Publish, so 15 s leaves room for runner variance. */
+const MAX_INTERPRETER_MS_AT_LARGE = 15_000;
 /** A composite attack (short cluster, long run) may cost at most this many times the plain text of its size. */
 const MAX_COMPOSITE_FACTOR = 20;
 const COMPOSITE_FLOOR_MS = 20;
